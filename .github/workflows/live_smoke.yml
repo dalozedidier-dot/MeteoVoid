@@ -28,7 +28,7 @@ jobs:
 
       - name: Build and start stack
         run: |
-          docker compose -f docker-compose.yml up -d --build
+          docker compose -f docker-compose.yml up -d --build redis meteovoid-live meteovoid-api
           docker compose -f docker-compose.yml ps
 
       - name: Wait for API to be ready
@@ -49,13 +49,7 @@ jobs:
 
       - name: Push synthetic live data
         run: |
-          docker compose -f docker-compose.yml run --rm meteovoid-live simulate \
-            --redis-url redis://redis:6379/0 \
-            --stream meteovoid:observations \
-            --station-id DEMO_BE_0001 \
-            --variable wind_gust_ms \
-            --steps 250 \
-            --sleep 0.01
+          docker compose -f docker-compose.yml run --rm meteovoid-simulate
 
       - name: Wait for first live report
         run: |
