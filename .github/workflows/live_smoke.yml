@@ -1,0 +1,96 @@
+# File: .github/workflows/live_smoke.yml
+name: Live Smoke (Docker Compose)
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */6 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show versions
+        run: |
+          docker version
+          docker compose version
+
+      - name: Build and start stack
+        run: |
+          docker compose -f docker-compose.yml up -d --build
+          docker compose -f docker-compose.yml ps
+
+      - name: Wait for API to be ready
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://localhost:8000/health > /dev/null; then
+              echo "API is up"
+              exit 0
+            fi
+            echo "Waiting for API... ($i)"
+            sleep 2
+          done
+          echo "API did not become ready in time"
+          docker compose -f docker-compose.yml ps
+          docker compose -f docker-compose.yml logs --no-color
+          exit 1
+
+      - name: Push synthetic live data
+        run: |
+          docker compose -f docker-compose.yml run --rm meteovoid-live \
+            simulate \
+              --redis-url redis://redis:6379/0 \
+              --station-id DEMO_BE_0001 \
+              --variable wind_gust_ms \
+              --steps 250 \
+              --sleep 0.01
+
+      - name: Wait for first live report
+        run: |
+          for i in {1..30}; do
+            echo "Checking for live report ($i)"
+            resp=$(curl -fsS "http://localhost:8000/latest?station_id=DEMO_BE_0001&variable=wind_gust_ms" || true)
+            echo "$resp"
+            echo "$resp" | python - <<'PY'
+import json,sys
+try:
+    data=json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+
+if "score" in data and "state" in data:
+    print("OK:", data["state"], data["score"])
+    sys.exit(0)
+
+sys.exit(1)
+PY
+            sleep 2
+          done
+
+          echo "No live report produced in time"
+          docker compose -f docker-compose.yml ps
+          docker compose -f docker-compose.yml logs --no-color
+          exit 1
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          docker compose -f docker-compose.yml ps
+          docker compose -f docker-compose.yml logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: |
+          docker compose -f docker-compose.yml down -v
