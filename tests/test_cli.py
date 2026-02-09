@@ -5,13 +5,13 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from meteovoid.cli import cli
+from meteovoid.cli import app
 
 runner = CliRunner()
 
 
 def test_cli_help() -> None:
-    res = runner.invoke(cli, ["--help"], prog_name="meteovoid")
+    res = runner.invoke(app, ["--help"])
     assert res.exit_code == 0
     assert "meteovoid" in res.output.lower()
     assert "scan" in res.output.lower()
@@ -20,7 +20,7 @@ def test_cli_help() -> None:
 def test_cli_scan_writes_report(simple_series_csv: Path, tmp_path: Path) -> None:
     out = tmp_path / "report.json"
     res = runner.invoke(
-        cli,
+        app,
         [
             "scan",
             str(simple_series_csv),
@@ -29,7 +29,6 @@ def test_cli_scan_writes_report(simple_series_csv: Path, tmp_path: Path) -> None
             "--out",
             str(out),
         ],
-        prog_name="meteovoid",
     )
     assert res.exit_code == 0, res.output
     assert out.exists()

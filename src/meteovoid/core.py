@@ -26,7 +26,7 @@ def scan_series_for_voids(
     if value_col not in df.columns:
         raise ValueError(f"Missing value column: {value_col}")
 
-    ts = pd.to_datetime(df[time_col], utc=True, errors="coerce")
+    ts = pd.to_datetime(df[time_col], utc=True, errors="coerce", format="ISO8601")
     if ts.isna().any():
         bad = int(ts.isna().sum())
         raise ValueError(f"{bad} timestamps could not be parsed in column {time_col}")

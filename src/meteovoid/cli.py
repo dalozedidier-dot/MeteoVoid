@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 
 import typer
-from typer.main import get_command
 
 from .core import scan_series_for_voids
 
@@ -13,6 +12,14 @@ app = typer.Typer(
     add_completion=True,
     help="Detects data voids (unexpected gaps) and basic anomalies in CSV time series.",
 )
+
+
+@app.callback()
+def _root() -> None:
+    """MeteoVoid CLI."""
+    # Having a callback forces Typer to generate a Group,
+    # so the CLI stays stable as `meteovoid scan ...` even with a single command.
+    return
 
 
 @app.command()
@@ -44,10 +51,7 @@ def scan(
     typer.echo(str(out))
 
 
-# Click Command object (stable for Typer/CliRunner + setuptools console_scripts)
-cli = get_command(app)
-
-
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     """Console entry point."""
-    app()
+    # Typer uses sys.argv by default; argv is here mainly for testability.
+    app(prog_name="meteovoid", args=argv)

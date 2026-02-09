@@ -5,7 +5,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from meteovoid.cli import cli
+from meteovoid.cli import app
 
 runner = CliRunner()
 
@@ -27,7 +27,7 @@ def test_end_to_end_scan_default_output(tmp_path: Path) -> None:
             encoding="utf-8",
         )
 
-        res = runner.invoke(cli, ["scan", str(csv)], prog_name="meteovoid")
+        res = runner.invoke(app, ["scan", str(csv)])
         assert res.exit_code == 0, res.output
 
         out_path = work / "meteo_void_report.json"
