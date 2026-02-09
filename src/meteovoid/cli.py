@@ -8,15 +8,21 @@ from .core import scan_series_for_voids
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="meteovoid", description="Detects data voids and simple anomalies in CSV series.")
+    p = argparse.ArgumentParser(
+        prog="meteovoid", description="Detects data voids and simple anomalies in CSV series."
+    )
     sub = p.add_subparsers(dest="cmd", required=True)
 
     scan = sub.add_parser("scan", help="Scan a CSV file and output a JSON report.")
     scan.add_argument("csv", type=Path, help="Path to a CSV file.")
     scan.add_argument("--time-col", default="timestamp", help="Name of the timestamp column.")
     scan.add_argument("--value-col", default="value", help="Name of the numeric value column.")
-    scan.add_argument("--max-gap-seconds", type=int, default=3600, help="Gap threshold to call a void.")
-    scan.add_argument("--out", type=Path, default=Path("meteo_void_report.json"), help="Output JSON file.")
+    scan.add_argument(
+        "--max-gap-seconds", type=int, default=3600, help="Gap threshold to call a void."
+    )
+    scan.add_argument(
+        "--out", type=Path, default=Path("meteo_void_report.json"), help="Output JSON file."
+    )
 
     return p
 
