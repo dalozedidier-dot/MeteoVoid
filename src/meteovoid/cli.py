@@ -1,46 +1,45 @@
 from __future__ import annotations
 
-import argparse
 import json
 from pathlib import Path
+from typing import Optional
+
+import typer
 
 from .core import scan_series_for_voids
 
+app = typer.Typer(
+    name="meteovoid",
+    add_completion=True,
+    help="Detects data voids (unexpected gaps) and basic anomalies in CSV time series.",
+)
 
-def _build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        prog="meteovoid", description="Detects data voids and simple anomalies in CSV series."
+
+@app.command()
+def scan(
+    csv: Path = typer.Argument(..., exists=True, readable=True, help="Path to a CSV file."),
+    time_col: str = typer.Option("timestamp", "--time-col", help="Name of the timestamp column."),
+    value_col: str = typer.Option("value", "--value-col", help="Name of the numeric value column."),
+    max_gap_seconds: int = typer.Option(3600, "--max-gap-seconds", help="Gap threshold to call a void."),
+    out: Path = typer.Option(
+        Path("meteo_void_report.json"),
+        "--out",
+        "-o",
+        help="Output JSON file.",
+    ),
+) -> None:
+    """Scan a CSV file and output a JSON report."""
+    report = scan_series_for_voids(
+        csv_path=csv,
+        time_col=time_col,
+        value_col=value_col,
+        max_gap_seconds=max_gap_seconds,
     )
-    sub = p.add_subparsers(dest="cmd", required=True)
-
-    scan = sub.add_parser("scan", help="Scan a CSV file and output a JSON report.")
-    scan.add_argument("csv", type=Path, help="Path to a CSV file.")
-    scan.add_argument("--time-col", default="timestamp", help="Name of the timestamp column.")
-    scan.add_argument("--value-col", default="value", help="Name of the numeric value column.")
-    scan.add_argument(
-        "--max-gap-seconds", type=int, default=3600, help="Gap threshold to call a void."
-    )
-    scan.add_argument(
-        "--out", type=Path, default=Path("meteo_void_report.json"), help="Output JSON file."
-    )
-
-    return p
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    typer.echo(str(out))
 
 
-def main(argv: list[str] | None = None) -> int:
-    p = _build_parser()
-    args = p.parse_args(argv)
-
-    if args.cmd == "scan":
-        report = scan_series_for_voids(
-            csv_path=args.csv,
-            time_col=args.time_col,
-            value_col=args.value_col,
-            max_gap_seconds=args.max_gap_seconds,
-        )
-        args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
-        print(str(args.out))
-        return 0
-
-    raise SystemExit(2)
+def main(argv: Optional[list[str]] = None) -> None:
+    # Typer uses sys.argv by default; argv is here mainly for testability.
+    app(standalone_mode=True, prog_name="meteovoid", args=argv)

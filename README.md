@@ -10,6 +10,10 @@ python -m pip install -U pip
 pip install -e ".[dev]"
 ```
 
+## CLI
+
+La CLI est construite avec Typer (Click sous le capot) et supporte l'auto-complétion.
+
 ## Exemple rapide
 
 Un exemple de CSV est fourni dans `examples/sample_timeseries.csv`.
@@ -23,7 +27,7 @@ cat report.json
 
 ```bash
 pre-commit install
-pytest -q
+pytest
 ```
 
 ## Scripts GitHub
