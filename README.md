@@ -36,3 +36,21 @@ Le dossier `scripts/` contient des scripts optionnels pour créer un dépôt Git
 ## Licence
 
 MIT, voir `LICENSE`.
+
+
+## Release (GitHub + PyPI)
+
+### GitHub Release
+- Sur un tag `v*` : la release est créée automatiquement.
+- En manuel (Actions > Release) : indique le tag dans l'input `tag`.
+
+### PyPI
+Deux options :
+
+1) API token (simple)
+- Ajoute un secret GitHub `PYPI_API_TOKEN` (token PyPI)
+- Le workflow publie automatiquement sur tag.
+
+2) Trusted Publishing (OIDC)
+- Configure un Trusted Publisher sur PyPI pour ce repo + environnement `pypi`
+- Ajoute une variable de repo `PYPI_TRUSTED_PUBLISHING=true` (pour activer la publication sur tags)

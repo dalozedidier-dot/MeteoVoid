@@ -5,6 +5,19 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (example: v0.1.0). Used only for workflow_dispatch."
+        required: true
+        default: "v0.1.0"
+      publish_pypi:
+        description: "Publish to PyPI (true/false). Requires PYPI_API_TOKEN secret or trusted publishing config."
+        required: false
+        default: "false"
+      pypi_use_oidc:
+        description: "Use PyPI trusted publishing (OIDC) when PYPI_API_TOKEN is not set (true/false)."
+        required: false
+        default: "false"
 
 permissions:
   contents: write
@@ -38,6 +51,13 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     environment: pypi
+    # For tags: publish automatically if PYPI_API_TOKEN is set (token mode) or if you enable OIDC via repo vars.
+    # For workflow_dispatch: publish only when inputs.publish_pypi == 'true'.
+    if: >-
+      ${{
+        (startsWith(github.ref, 'refs/tags/') && (secrets.PYPI_API_TOKEN != '' || vars.PYPI_TRUSTED_PUBLISHING == 'true'))
+        || (github.event_name == 'workflow_dispatch' && inputs.publish_pypi == 'true' && (secrets.PYPI_API_TOKEN != '' || inputs.pypi_use_oidc == 'true'))
+      }}
     steps:
       - name: Download dist artifact
         uses: actions/download-artifact@v4
@@ -45,7 +65,17 @@ jobs:
           name: dist
           path: dist/
 
-      - name: Publish to PyPI
+      - name: Publish to PyPI (API token)
+        if: ${{ secrets.PYPI_API_TOKEN != '' }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          packages-dir: dist
+          skip-existing: true
+
+      - name: Publish to PyPI (OIDC trusted publishing)
+        if: ${{ secrets.PYPI_API_TOKEN == '' && (vars.PYPI_TRUSTED_PUBLISHING == 'true' || inputs.pypi_use_oidc == 'true') }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
@@ -54,6 +84,7 @@ jobs:
   github-release:
     needs: build
     runs-on: ubuntu-latest
+    if: ${{ startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch' }}
     steps:
       - name: Download dist artifact
         uses: actions/download-artifact@v4
@@ -64,4 +95,6 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          target_commitish: ${{ github.sha }}
           files: dist/*
