@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+# Virtual env
+.venv/
+venv/
+ENV/
+# Testing
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+# Editors
+.vscode/
+.idea/
+*.swp
+# OS
+.DS_Store
+Thumbs.db
+# Local outputs
+_ci_out/
+*.log
