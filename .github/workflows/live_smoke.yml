@@ -1,4 +1,3 @@
-# File: .github/workflows/live_smoke.yml
 name: Live Smoke (Docker Compose)
 
 on:
@@ -34,8 +33,9 @@ jobs:
 
       - name: Wait for API to be ready
         run: |
-          for i in {1..30}; do
-            if curl -fsS http://localhost:8000/health > /dev/null; then
+          set -e
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/health >/dev/null; then
               echo "API is up"
               exit 0
             fi
@@ -49,34 +49,26 @@ jobs:
 
       - name: Push synthetic live data
         run: |
-          docker compose -f docker-compose.yml run --rm meteovoid-live \
-            simulate \
-              --redis-url redis://redis:6379/0 \
-              --station-id DEMO_BE_0001 \
-              --variable wind_gust_ms \
-              --steps 250 \
-              --sleep 0.01
+          docker compose -f docker-compose.yml run --rm meteovoid-live simulate \
+            --redis-url redis://redis:6379/0 \
+            --stream meteovoid:observations \
+            --station-id DEMO_BE_0001 \
+            --variable wind_gust_ms \
+            --steps 250 \
+            --sleep 0.01
 
       - name: Wait for first live report
         run: |
-          for i in {1..30}; do
+          set -e
+          for i in $(seq 1 30); do
             echo "Checking for live report ($i)"
-            resp=$(curl -fsS "http://localhost:8000/latest?station_id=DEMO_BE_0001&variable=wind_gust_ms" || true)
+            resp="$(curl -fsS "http://localhost:8000/latest?station_id=DEMO_BE_0001&variable=wind_gust_ms" || true)"
             echo "$resp"
-            echo "$resp" | python - <<'PY'
-import json,sys
-try:
-    data=json.load(sys.stdin)
-except Exception:
-    sys.exit(1)
-
-if "score" in data and "state" in data:
-    print("OK:", data["state"], data["score"])
-    sys.exit(0)
-
-sys.exit(1)
-PY
-            sleep 2
+            python -c "import json,sys; d=json.loads(sys.stdin.read() or '{}'); import sys as _s; _s.exit(0 if ('score' in d and 'state' in d) else 1)" <<EOF
+$resp
+EOF
+            echo "Report OK"
+            exit 0
           done
 
           echo "No live report produced in time"
