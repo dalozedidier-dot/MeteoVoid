@@ -34,17 +34,17 @@ def run_live_worker(
 ) -> None:
     """
     Live Redis Streams worker:
-    - consumes observations
-    - maintains rolling buffers per (station, variable)
-    - computes instability report
-    - writes latest report to Redis
+    - consume observations from `in_stream`
+    - maintain rolling buffers per (station, variable)
+    - compute instability report using analyze_window(values)
+    - write latest report to Redis key meteovoid:latest:{station}:{variable}
+    - optionally emit report events to `out_stream`
     """
-
     r: Redis = make_redis(redis_url)
 
     buffers: Dict[Tuple[str, str], List[float]] = {}
 
-    # IMPORTANT: live mode → consume only NEW messages
+    # Live mode: read only NEW messages
     last_id = "$"
 
     while True:
@@ -64,7 +64,6 @@ def run_live_worker(
                 buf = buffers.setdefault(key, [])
                 buf.append(value)
 
-                # IMPORTANT: call analyze_window WITHOUT cfg
                 report = analyze_window(buf)
                 report["station_id"] = station_id
                 report["variable"] = variable
