@@ -1,51 +1,31 @@
-from __future__ import annotations
-
+from typing import Any, Dict
 import json
-from typing import Any, Optional
+from fastapi import FastAPI, Query
+from redis import Redis
 
-from fastapi import FastAPI, HTTPException, Query
-import redis
+app = FastAPI(title="MeteoVoid Live API")
 
-app = FastAPI(title="MeteoVoid Live API", version="0.2.0")
+def make_redis(url: str) -> Redis:
+    return Redis.from_url(url, decode_responses=True)
 
-
-def _make_redis(url: str) -> redis.Redis:
-    return redis.Redis.from_url(url, decode_responses=True)
+REDIS_URL = "redis://redis:6379/0"
+r = make_redis(REDIS_URL)
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
+def health() -> Dict[str, str]:
     return {"status": "ok"}
 
 
 @app.get("/latest")
 def latest(
-    station_id: str = Query(..., description="Station identifier"),
-    variable: str = Query(..., description="Variable name"),
-    redis_url: str = Query("redis://redis:6379/0", description="Redis URL"),
-) -> dict[str, Any]:
-    r = _make_redis(redis_url)
+    station_id: str = Query(...),
+    variable: str = Query(...),
+) -> Dict[str, Any]:
     key = f"meteovoid:latest:{station_id}:{variable}"
-    payload = r.get(key)
-    if payload is None:
-        raise HTTPException(status_code=404, detail="No report found")
-    return json.loads(payload)
+    raw = r.get(key)
 
+    if raw is None:
+        return {"status": "not_found"}
 
-@app.get("/stations")
-def stations(
-    pattern: str = Query("*", description="Pattern for station_id match, glob-style"),
-    redis_url: str = Query("redis://redis:6379/0", description="Redis URL"),
-) -> dict[str, Any]:
-    r = _make_redis(redis_url)
-    # Keys are meteovoid:latest:<station_id>:<variable>
-    keys = r.keys(f"meteovoid:latest:{pattern}:*")
-    stations: dict[str, set[str]] = {}
-    for k in keys:
-        parts = k.split(":")
-        if len(parts) < 4:
-            continue
-        station = parts[2]
-        var = parts[3]
-        stations.setdefault(station, set()).add(var)
-    return {"stations": {s: sorted(list(vs)) for s, vs in stations.items()}}
+    return json.loads(raw)
