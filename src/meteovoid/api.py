@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI, Query
 
@@ -19,7 +19,8 @@ def health() -> dict[str, str]:
 @app.get("/latest")
 def latest(station_id: str = Query(...), variable: str = Query(...)) -> dict[str, Any]:
     key = f"meteovoid:latest:{station_id}:{variable}"
-    raw = r.get(key)
+    raw_any = r.get(key)
+    raw = cast(str | bytes | bytearray | None, raw_any)
     if raw is None:
         return {"status": "not_found"}
 

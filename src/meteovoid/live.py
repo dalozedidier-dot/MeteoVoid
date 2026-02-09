@@ -2,20 +2,79 @@ from __future__ import annotations
 
 import statistics
 import time
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Literal, TypedDict
+
+State = Literal["stable", "transition", "unstable"]
 
 
 class WindowReport(TypedDict, total=False):
     ts: float
     score: float
-    state: Literal["stable", "transition", "unstable"]
+    state: State
 
 
-def analyze_window(values: list[float]) -> WindowReport:
+@dataclass(frozen=True, slots=True)
+class LiveConfig:
+    window_s: int = 180
+    stable_threshold: float = 0.15
+    unstable_threshold: float = 0.30
+
+
+class RollingWindow:
+    """Rolling time-window over (timestamp, value) pairs."""
+
+    def __init__(self, window_s: int = 180) -> None:
+        if window_s <= 0:
+            raise ValueError("window_s must be > 0")
+        self.window_s = window_s
+        self._buf: list[tuple[datetime, float]] = []
+
+    def push(self, ts: datetime, value: float) -> None:
+        if ts.tzinfo is None:
+            # keep things explicit and consistent in CI
+            raise ValueError("timestamp must be timezone-aware")
+        self._buf.append((ts, value))
+
+    def values(self, now: datetime) -> list[float]:
+        if now.tzinfo is None:
+            raise ValueError("now must be timezone-aware")
+
+        cutoff = now - timedelta(seconds=self.window_s)
+        # drop old points
+        i = 0
+        for i, (ts, _v) in enumerate(self._buf):
+            if ts >= cutoff:
+                break
+        else:
+            # all points are older
+            self._buf.clear()
+            return []
+
+        if i > 0:
+            del self._buf[:i]
+
+        return [v for _ts, v in self._buf]
+
+
+def analyze_window(values: list[float], cfg: LiveConfig | None = None) -> WindowReport:
+    """Compute a lightweight stability score + state for the last window."""
+    if cfg is None:
+        cfg = LiveConfig()
+
     if not values:
         return {"score": 0.0, "state": "stable"}
 
-    w = values[-180:]
+    w = values[-max(1, cfg.window_s) :]
     score = min(1.0, abs(statistics.pstdev(w)))
-    state = "stable" if score < 0.15 else "unstable" if score > 0.30 else "transition"
+
+    state: State
+    if score < cfg.stable_threshold:
+        state = "stable"
+    elif score > cfg.unstable_threshold:
+        state = "unstable"
+    else:
+        state = "transition"
+
     return {"ts": time.time(), "score": score, "state": state}

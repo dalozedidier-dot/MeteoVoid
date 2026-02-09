@@ -3,16 +3,24 @@ from __future__ import annotations
 import json
 import os
 import time
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from redis.typing import EncodableT
 
-from .live import analyze_window
+from .live import LiveConfig, RollingWindow, analyze_window
 from .utils import make_redis
 
 StreamFields = dict[str, str]
 Message = tuple[str, StreamFields]
 XReadResponse = list[tuple[str, list[Message]]]
+
+
+def _parse_ts(ts: str) -> datetime:
+    try:
+        return datetime.fromtimestamp(float(ts), tz=UTC)
+    except (TypeError, ValueError):
+        return datetime(1970, 1, 1, tzinfo=UTC)
 
 
 def _to_float(value: Any) -> float | None:
@@ -22,16 +30,14 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
-def run_live_worker(redis_url: str, in_stream: str, out_stream: str) -> None:
+def run_live_worker(redis_url: str, in_stream: str, out_stream: str, cfg: LiveConfig | None = None) -> None:
     r = make_redis(redis_url)
+    cfg = cfg or LiveConfig()
 
-    buffers: dict[tuple[str, str], list[float]] = {}
+    windows: dict[tuple[str, str], RollingWindow] = {}
 
     # CI-friendly: consommer depuis le début pour lire les messages seedés
-    if os.getenv("GITHUB_ACTIONS") or os.getenv("CI"):
-        last_id = "0-0"
-    else:
-        last_id = "$"
+    last_id = "0-0" if (os.getenv("GITHUB_ACTIONS") or os.getenv("CI")) else "$"
 
     while True:
         resp_any = r.xread({in_stream: last_id}, block=1000, count=200)
@@ -47,17 +53,17 @@ def run_live_worker(redis_url: str, in_stream: str, out_stream: str) -> None:
                 station_id = str(fields.get("station_id", "")).strip()
                 variable = str(fields.get("variable", "")).strip()
                 value = _to_float(fields.get("value"))
+                ts = _parse_ts(str(fields.get("ts", "0")))
 
                 if not station_id or not variable or value is None:
                     continue
 
                 key = (station_id, variable)
-                buf = buffers.setdefault(key, [])
-                buf.append(value)
-                if len(buf) > 180:
-                    del buf[:-180]
+                win = windows.setdefault(key, RollingWindow(window_s=cfg.window_s))
+                win.push(ts, float(value))
 
-                report = dict(analyze_window(buf))
+                values = win.values(ts)
+                report = dict(analyze_window(values, cfg))
                 report.update(
                     {
                         "station_id": station_id,
