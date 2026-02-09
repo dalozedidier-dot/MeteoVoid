@@ -1,77 +1,79 @@
-# File: src/meteovoid/stream.py
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List, Tuple
+import os
+import time
+from typing import Any, cast
 
-from redis import Redis
+from redis.typing import EncodableT
 
 from .live import analyze_window
 from .utils import make_redis
 
+StreamFields = dict[str, str]
+Message = tuple[str, StreamFields]
+XReadResponse = list[tuple[str, list[Message]]]
 
-def _as_float(v: Any) -> float:
+
+def _to_float(value: Any) -> float | None:
     try:
-        return float(v)
-    except Exception:
-        return 0.0
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
-def _json_dumpable_fields(d: Dict[str, Any]) -> Dict[str, str]:
-    out: Dict[str, str] = {}
-    for k, v in d.items():
-        if isinstance(v, (dict, list)):
-            out[k] = json.dumps(v)
-        else:
-            out[k] = str(v)
-    return out
+def run_live_worker(redis_url: str, in_stream: str, out_stream: str) -> None:
+    r = make_redis(redis_url)
 
+    buffers: dict[tuple[str, str], list[float]] = {}
 
-def run_live_worker(
-    redis_url: str,
-    in_stream: str = "meteovoid:observations",
-    out_stream: str = "meteovoid:reports",
-) -> None:
-    """Live Redis Streams worker (CI-friendly).
-
-    The CI smoke test seeds the stream before starting the worker, so we start at
-    '0-0' to consume the seeded messages and immediately produce a latest report.
-    """
-    r: Redis = make_redis(redis_url)
-
-    buffers: Dict[Tuple[str, str], List[float]] = {}
-
-    # CI-friendly: consume from the beginning
-    last_id = "0-0"
+    # CI-friendly: consommer depuis le début pour lire les messages seedés
+    if os.getenv("GITHUB_ACTIONS") or os.getenv("CI"):
+        last_id = "0-0"
+    else:
+        last_id = "$"
 
     while True:
-        res = r.xread({in_stream: last_id}, block=5000, count=200)
-        if not res:
+        resp_any = r.xread({in_stream: last_id}, block=1000, count=200)
+        resp = cast(XReadResponse, resp_any)
+
+        if not resp:
             continue
 
-        for _, entries in res:
-            for msg_id, data in entries:
+        for _stream_name, messages in resp:
+            for msg_id, fields in messages:
                 last_id = msg_id
 
-                station_id = str(data.get("station_id", "UNKNOWN"))
-                variable = str(data.get("variable", "value"))
-                value = _as_float(data.get("value", 0.0))
+                station_id = str(fields.get("station_id", "")).strip()
+                variable = str(fields.get("variable", "")).strip()
+                value = _to_float(fields.get("value"))
+
+                if not station_id or not variable or value is None:
+                    continue
 
                 key = (station_id, variable)
                 buf = buffers.setdefault(key, [])
                 buf.append(value)
+                if len(buf) > 180:
+                    del buf[:-180]
 
-                report = analyze_window(buf)
-                report["station_id"] = station_id
-                report["variable"] = variable
-                report["event_ts"] = str(data.get("ts", ""))
-
-                latest_key = f"meteovoid:latest:{station_id}:{variable}"
-                r.set(latest_key, json.dumps(report), ex=7 * 24 * 3600)
-
-                r.xadd(
-                    out_stream,
-                    _json_dumpable_fields(report),
-                    maxlen=200_000,
-                    approximate=True,
+                report = dict(analyze_window(buf))
+                report.update(
+                    {
+                        "station_id": station_id,
+                        "variable": variable,
+                        "stream_id": msg_id,
+                        "ts_ingest": time.time(),
+                    }
                 )
+
+                payload = json.dumps(report, separators=(",", ":"), sort_keys=True)
+
+                r.set(f"meteovoid:latest:{station_id}:{variable}", payload)
+
+                out_fields: dict[EncodableT, EncodableT] = {
+                    "station_id": station_id,
+                    "variable": variable,
+                    "payload": payload,
+                }
+                r.xadd(out_stream, out_fields)
