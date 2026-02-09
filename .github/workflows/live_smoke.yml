@@ -62,13 +62,12 @@ jobs:
           set -e
           for i in $(seq 1 30); do
             echo "Checking for live report ($i)"
-            resp="$(curl -fsS "http://localhost:8000/latest?station_id=DEMO_BE_0001&variable=wind_gust_ms" || true)"
-            echo "$resp"
-            python -c "import json,sys; d=json.loads(sys.stdin.read() or '{}'); import sys as _s; _s.exit(0 if ('score' in d and 'state' in d) else 1)" <<EOF
-$resp
-EOF
-            echo "Report OK"
-            exit 0
+            if curl -fsS "http://localhost:8000/latest?station_id=DEMO_BE_0001&variable=wind_gust_ms" \
+              | python -c "import json,sys; d=json.load(sys.stdin); sys.exit(0 if ('score' in d and 'state' in d) else 1)"; then
+              echo "Report OK"
+              exit 0
+            fi
+            sleep 2
           done
 
           echo "No live report produced in time"
