@@ -1,12 +1,8 @@
-# File: docker-compose.yml
 version: "3.9"
 
 services:
   redis:
     image: redis:7-alpine
-    # Décommente si tu as besoin d'accéder à Redis depuis ta machine
-    # ports:
-    #   - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s
@@ -18,7 +14,16 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-    command: ["live", "--redis-url", "redis://redis:6379/0"]
+    command:
+      [
+        "live",
+        "--redis-url",
+        "redis://redis:6379/0",
+        "--in-stream",
+        "meteovoid:observations",
+        "--out-stream",
+        "meteovoid:reports"
+      ]
     restart: unless-stopped
 
   meteovoid-api:
@@ -41,3 +46,26 @@ services:
       timeout: 2s
       retries: 30
     restart: unless-stopped
+
+  meteovoid-simulate:
+    build: .
+    depends_on:
+      redis:
+        condition: service_healthy
+    command:
+      [
+        "simulate",
+        "--redis-url",
+        "redis://redis:6379/0",
+        "--stream",
+        "meteovoid:observations",
+        "--station-id",
+        "DEMO_BE_0001",
+        "--variable",
+        "wind_gust_ms",
+        "--steps",
+        "250",
+        "--sleep",
+        "0.01"
+      ]
+    restart: "no"

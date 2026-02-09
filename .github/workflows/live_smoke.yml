@@ -26,9 +26,22 @@ jobs:
           docker version
           docker compose version
 
-      - name: Build and start stack
+      - name: Build images
         run: |
-          docker compose -f docker-compose.yml up -d --build
+          docker compose -f docker-compose.yml build
+
+      - name: Start Redis only
+        run: |
+          docker compose -f docker-compose.yml up -d redis
+          docker compose -f docker-compose.yml ps
+
+      - name: Push synthetic live data (seed stream)
+        run: |
+          docker compose -f docker-compose.yml run --rm meteovoid-simulate
+
+      - name: Start live services
+        run: |
+          docker compose -f docker-compose.yml up -d meteovoid-live meteovoid-api
           docker compose -f docker-compose.yml ps
 
       - name: Wait for API to be ready
@@ -46,16 +59,6 @@ jobs:
           docker compose -f docker-compose.yml ps
           docker compose -f docker-compose.yml logs --no-color
           exit 1
-
-      - name: Push synthetic live data
-        run: |
-          docker compose -f docker-compose.yml run --rm meteovoid-live simulate \
-            --redis-url redis://redis:6379/0 \
-            --stream meteovoid:observations \
-            --station-id DEMO_BE_0001 \
-            --variable wind_gust_ms \
-            --steps 250 \
-            --sleep 0.01
 
       - name: Wait for first live report
         run: |

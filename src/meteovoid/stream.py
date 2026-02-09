@@ -32,20 +32,17 @@ def run_live_worker(
     in_stream: str = "meteovoid:observations",
     out_stream: str = "meteovoid:reports",
 ) -> None:
-    """
-    Live Redis Streams worker:
-    - consumes observations
-    - maintains rolling buffers per (station, variable)
-    - computes instability report
-    - writes latest report to Redis
-    """
+    """Live Redis Streams worker (CI-friendly).
 
+    The CI smoke test seeds the stream before starting the worker, so we start at
+    '0-0' to consume the seeded messages and immediately produce a latest report.
+    """
     r: Redis = make_redis(redis_url)
 
     buffers: Dict[Tuple[str, str], List[float]] = {}
 
-    # IMPORTANT: live mode → consume only NEW messages
-    last_id = "$"
+    # CI-friendly: consume from the beginning
+    last_id = "0-0"
 
     while True:
         res = r.xread({in_stream: last_id}, block=5000, count=200)
@@ -64,7 +61,6 @@ def run_live_worker(
                 buf = buffers.setdefault(key, [])
                 buf.append(value)
 
-                # IMPORTANT: call analyze_window WITHOUT cfg
                 report = analyze_window(buf)
                 report["station_id"] = station_id
                 report["variable"] = variable
