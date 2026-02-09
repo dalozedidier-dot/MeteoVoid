@@ -59,14 +59,11 @@ jobs:
 
       - name: Wait for first live report
         run: |
-          set -e
           for i in $(seq 1 30); do
             echo "Checking for live report ($i)"
-            if curl -fsS "http://localhost:8000/latest?station_id=DEMO_BE_0001&variable=wind_gust_ms" \
-              | python -c "import json,sys; d=json.load(sys.stdin); sys.exit(0 if ('score' in d and 'state' in d) else 1)"; then
-              echo "Report OK"
-              exit 0
-            fi
+            curl -fsS "http://localhost:8000/latest?station_id=DEMO_BE_0001&variable=wind_gust_ms" \
+              | python -c "import json,sys; d=json.load(sys.stdin); sys.exit(0 if ('score' in d and 'state' in d) else 1)" \
+              && echo "Report OK" && exit 0 || true
             sleep 2
           done
 
