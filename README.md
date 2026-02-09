@@ -58,3 +58,14 @@ Deux options :
 2) Trusted Publishing (OIDC)
 - Configure un Trusted Publisher sur PyPI pour ce repo + environnement `pypi`
 - Ajoute une variable de repo `PYPI_TRUSTED_PUBLISHING=true` (pour activer la publication sur tags)
+
+
+## Live pipeline (Redis Streams)
+
+MeteoVoid supports a streaming mode to compute a lightweight instability score from live observations.
+
+- Start the live stack: `docker compose up --build`
+- Publish demo data: `docker compose run --rm meteovoid-live meteovoid simulate --sleep 0.01`
+- Query latest report: `curl "http://localhost:8000/latest?station_id=DEMO_BE_0001&variable=wind_gust_ms"`
+
+See `docs/LIVE_PIPELINE.md` for details.
