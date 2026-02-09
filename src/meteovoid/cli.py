@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import typer
+from typer.main import get_command
 
 from .core import scan_series_for_voids
 
@@ -43,6 +44,10 @@ def scan(
     typer.echo(str(out))
 
 
-def main(argv: list[str] | None = None) -> None:
-    # Typer uses sys.argv by default; argv is here mainly for testability.
-    app(standalone_mode=True, prog_name="meteovoid", args=argv)
+# Click Command object (stable for Typer/CliRunner + setuptools console_scripts)
+cli = get_command(app)
+
+
+def main() -> None:
+    """Console entry point."""
+    app()
