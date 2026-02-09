@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Optional
 
 import typer
 
@@ -20,7 +19,11 @@ def scan(
     csv: Path = typer.Argument(..., exists=True, readable=True, help="Path to a CSV file."),
     time_col: str = typer.Option("timestamp", "--time-col", help="Name of the timestamp column."),
     value_col: str = typer.Option("value", "--value-col", help="Name of the numeric value column."),
-    max_gap_seconds: int = typer.Option(3600, "--max-gap-seconds", help="Gap threshold to call a void."),
+    max_gap_seconds: int = typer.Option(
+        3600,
+        "--max-gap-seconds",
+        help="Gap threshold to call a void.",
+    ),
     out: Path = typer.Option(
         Path("meteo_void_report.json"),
         "--out",
@@ -40,6 +43,6 @@ def scan(
     typer.echo(str(out))
 
 
-def main(argv: Optional[list[str]] = None) -> None:
+def main(argv: list[str] | None = None) -> None:
     # Typer uses sys.argv by default; argv is here mainly for testability.
     app(standalone_mode=True, prog_name="meteovoid", args=argv)

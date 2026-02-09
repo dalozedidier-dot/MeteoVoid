@@ -12,7 +12,10 @@ from meteovoid.core import scan_series_for_voids
 @settings(max_examples=25)
 @given(
     st.lists(
-        st.datetimes(min_value=pd.Timestamp("2026-01-01").to_pydatetime(), max_value=pd.Timestamp("2026-01-02").to_pydatetime()),
+        st.datetimes(
+            min_value=pd.Timestamp("2026-01-01").to_pydatetime(),
+            max_value=pd.Timestamp("2026-01-02").to_pydatetime(),
+        ),
         min_size=0,
         max_size=25,
         unique=True,
