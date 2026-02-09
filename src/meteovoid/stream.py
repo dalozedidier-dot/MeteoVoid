@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Tuple
 
 from redis import Redis
 
-from .live import LiveConfig, analyze_window
+from .live import analyze_window
 from .utils import make_redis
 
 
@@ -31,22 +31,20 @@ def run_live_worker(
     redis_url: str,
     in_stream: str = "meteovoid:observations",
     out_stream: str = "meteovoid:reports",
-    window_points: int = 180,
 ) -> None:
     """
-    Reads observations from a Redis Stream, maintains per-(station,variable) rolling buffers,
-    computes an instability report, stores the latest report in Redis, and emits reports
-    to an output Redis Stream.
+    Live Redis Streams worker:
+    - consumes observations
+    - maintains rolling buffers per (station, variable)
+    - computes instability report
+    - writes latest report to Redis
     """
-    r: Redis = make_redis(redis_url)
 
-    cfg = LiveConfig(window_points=window_points)
+    r: Redis = make_redis(redis_url)
 
     buffers: Dict[Tuple[str, str], List[float]] = {}
 
-    # IMPORTANT:
-    # Start at "$" to consume *new* messages only. This is correct for a live worker,
-    # and avoids getting stuck on past stream history in CI runs.
+    # IMPORTANT: live mode → consume only NEW messages
     last_id = "$"
 
     while True:
@@ -66,7 +64,8 @@ def run_live_worker(
                 buf = buffers.setdefault(key, [])
                 buf.append(value)
 
-                report = analyze_window(buf, cfg=cfg)
+                # IMPORTANT: call analyze_window WITHOUT cfg
+                report = analyze_window(buf)
                 report["station_id"] = station_id
                 report["variable"] = variable
                 report["event_ts"] = str(data.get("ts", ""))
