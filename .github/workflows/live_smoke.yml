@@ -35,10 +35,6 @@ jobs:
           docker compose -f docker-compose.yml up -d redis
           docker compose -f docker-compose.yml ps
 
-      - name: Push synthetic live data (seed stream)
-        run: |
-          docker compose -f docker-compose.yml run --rm meteovoid-simulate
-
       - name: Start live services
         run: |
           docker compose -f docker-compose.yml up -d meteovoid-live meteovoid-api
@@ -60,6 +56,10 @@ jobs:
           docker compose -f docker-compose.yml logs --no-color
           exit 1
 
+      - name: Push synthetic live data (seed stream)
+        run: |
+          docker compose -f docker-compose.yml run --rm meteovoid-simulate
+
       - name: Wait for first live report
         run: |
           for i in $(seq 1 30); do
@@ -79,7 +79,6 @@ jobs:
         if: always()
         run: |
           mkdir -p _ci_out/live_smoke
-          # try to save latest report (may fail if API never came up)
           curl -fsS "http://localhost:8000/latest?station_id=DEMO_BE_0001&variable=wind_gust_ms" \
             > _ci_out/live_smoke/latest.json || true
           docker compose -f docker-compose.yml ps > _ci_out/live_smoke/ps.txt || true
