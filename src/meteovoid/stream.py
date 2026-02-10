@@ -38,9 +38,10 @@ def _latest_key(station_id: str, variable: str) -> str:
 def _default_start_id() -> str:
     """Default Redis Streams start-id.
 
-    - If METEOVOID_START_ID is set, use it.
-    - In CI, default to '0-0' so seeded messages are consumed.
-    - Locally, default to '$' (tail).
+    Order of precedence:
+    1) METEOVOID_START_ID env var if set
+    2) CI defaults to '0-0' so seeded messages are consumed
+    3) Local defaults to '$' (tail)
     """
     override = os.getenv("METEOVOID_START_ID")
     if override:
@@ -99,13 +100,19 @@ def run_live_worker(
     in_stream: str,
     out_stream: str,
     cfg: LiveConfig | None = None,
+    start_id: str | None = None,
 ) -> None:
+    """Consume observations from Redis Streams and emit live reports.
+
+    start_id is mainly for CI and tests (for example, force '0-0' to consume seeded messages).
+    If not provided, _default_start_id() is used.
+    """
     r = make_redis(redis_url)
     cfg = cfg or LiveConfig()
 
     windows: dict[tuple[str, str], RollingWindow] = {}
 
-    last_id = _default_start_id()
+    last_id = start_id if start_id is not None else _default_start_id()
 
     while True:
         resp_any = r.xread({in_stream: last_id}, block=1000, count=200)
