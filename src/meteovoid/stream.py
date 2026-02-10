@@ -30,7 +30,12 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
-def run_live_worker(redis_url: str, in_stream: str, out_stream: str, cfg: LiveConfig | None = None) -> None:
+def run_live_worker(
+    redis_url: str,
+    in_stream: str,
+    out_stream: str,
+    cfg: LiveConfig | None = None,
+) -> None:
     r = make_redis(redis_url)
     cfg = cfg or LiveConfig()
 

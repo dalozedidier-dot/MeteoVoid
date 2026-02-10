@@ -53,7 +53,13 @@ def push_synthetic_stream(
 
     # deterministic enough for CI; timestamps are current wallclock
     start = datetime.now(tz=datetime.now().astimezone().tzinfo)
-    series = synthetic_series(start=start, steps=steps, dt_s=max(0.001, sleep), station_id=station_id, variable=variable)
+    series = synthetic_series(
+        start=start,
+        steps=steps,
+        dt_s=max(0.001, sleep),
+        station_id=station_id,
+        variable=variable,
+    )
 
     for point in series:
         fields: dict[EncodableT, EncodableT] = {

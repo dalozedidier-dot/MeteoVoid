@@ -3,7 +3,7 @@ from __future__ import annotations
 import statistics
 import time
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Literal, TypedDict
 
 State = Literal["stable", "transition", "unstable"]
@@ -33,7 +33,6 @@ class RollingWindow:
 
     def push(self, ts: datetime, value: float) -> None:
         if ts.tzinfo is None:
-            # keep things explicit and consistent in CI
             raise ValueError("timestamp must be timezone-aware")
         self._buf.append((ts, value))
 
@@ -42,18 +41,19 @@ class RollingWindow:
             raise ValueError("now must be timezone-aware")
 
         cutoff = now - timedelta(seconds=self.window_s)
-        # drop old points
-        i = 0
+
+        idx: int | None = None
         for i, (ts, _v) in enumerate(self._buf):
             if ts >= cutoff:
+                idx = i
                 break
-        else:
-            # all points are older
+
+        if idx is None:
             self._buf.clear()
             return []
 
-        if i > 0:
-            del self._buf[:i]
+        if idx > 0:
+            del self._buf[:idx]
 
         return [v for _ts, v in self._buf]
 
