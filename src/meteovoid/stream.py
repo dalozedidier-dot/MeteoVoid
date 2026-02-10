@@ -31,6 +31,25 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
+def _latest_key(station_id: str, variable: str) -> str:
+    return f"meteovoid:latest:{station_id}:{variable}"
+
+
+def _default_start_id() -> str:
+    """Default Redis Streams start-id.
+
+    - If METEOVOID_START_ID is set, use it.
+    - In CI, default to '0-0' so seeded messages are consumed.
+    - Locally, default to '$' (tail).
+    """
+    override = os.getenv("METEOVOID_START_ID")
+    if override:
+        return override
+    if os.getenv("GITHUB_ACTIONS") or os.getenv("CI"):
+        return "0-0"
+    return "$"
+
+
 def process_observation(
     fields: Mapping[str, Any],
     msg_id: str = "",
@@ -40,8 +59,7 @@ def process_observation(
 ) -> dict[str, Any] | None:
     """Process a single observation message and return a live report.
 
-    This is a pure-ish unit that can be tested without Redis. It updates the rolling
-    window state (if provided) and returns a report dict ready to be JSON-serialized.
+    This unit is testable without Redis. It updates rolling windows in-place.
     """
     cfg = cfg or LiveConfig()
     windows = windows if windows is not None else {}
@@ -87,11 +105,7 @@ def run_live_worker(
 
     windows: dict[tuple[str, str], RollingWindow] = {}
 
-    # If METEOVOID_START_ID is set, it overrides the default behavior.
-    # Otherwise: in CI we read from the beginning (0-0) to consume seeded messages,
-    # and locally we tail the stream ($).
-    start_id = os.getenv("METEOVOID_START_ID")
-    last_id = start_id or ("0-0" if (os.getenv("GITHUB_ACTIONS") or os.getenv("CI")) else "$")
+    last_id = _default_start_id()
 
     while True:
         resp_any = r.xread({in_stream: last_id}, block=1000, count=200)
@@ -113,7 +127,7 @@ def run_live_worker(
 
                 payload = json.dumps(report, separators=(",", ":"), sort_keys=True)
 
-                r.set(f"meteovoid:latest:{station_id}:{variable}", payload)
+                r.set(_latest_key(station_id, variable), payload)
 
                 out_fields: dict[EncodableT, EncodableT] = {
                     "station_id": station_id,
