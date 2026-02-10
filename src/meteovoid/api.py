@@ -13,56 +13,50 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
 class RedisLike(Protocol):
     def get(self, key: str) -> str | bytes | bytearray | None: ...
-
-    def keys(self, pattern: str) -> list[str] | list[bytes] | list[bytearray]: ...
-
-
-app = FastAPI()
+    def keys(self, pattern: str) -> list[Any]: ...
 
 
 def _make_redis(url: str) -> RedisLike:
-    """Module-level hook (monkeypatched in tests)."""
-    return cast(RedisLike, make_redis(url))
+    # Hook monkeypatchable pour les tests.
+    return make_redis(url)
 
 
 def latest(station_id: str, variable: str, redis_url: str = REDIS_URL) -> dict[str, Any]:
-    """Return the latest live report for (station_id, variable)."""
     r = _make_redis(redis_url)
     key = f"meteovoid:latest:{station_id}:{variable}"
-    raw_any = r.get(key)
-    raw = cast(str | bytes | bytearray | None, raw_any)
+    raw = r.get(key)
     if raw is None:
         return {"status": "not_found"}
 
-    try:
-        payload: Any = json.loads(raw)
-    except json.JSONDecodeError:
-        return {"status": "invalid_payload"}
+    payload_any: Any = json.loads(raw)
+    if isinstance(payload_any, dict):
+        return cast(dict[str, Any], payload_any)
 
-    return payload if isinstance(payload, dict) else {"status": "invalid_payload"}
+    return {"status": "invalid_payload"}
 
 
-def stations(pattern: str = "*", redis_url: str = REDIS_URL) -> dict[str, Any]:
-    """List stations and variables present in Redis latest keys."""
+def stations(
+    pattern: str = "meteovoid:latest:*",
+    redis_url: str = REDIS_URL,
+) -> dict[str, dict[str, list[str]]]:
     r = _make_redis(redis_url)
-    keys_any = r.keys(f"meteovoid:latest:{pattern}:*")
-    keys = [k.decode("utf-8") if isinstance(k, (bytes, bytearray)) else str(k) for k in keys_any]
+    keys = [str(k) for k in r.keys(pattern)]
 
-    out: dict[str, list[str]] = {}
+    grouped: dict[str, set[str]] = {}
     for k in keys:
         parts = k.split(":")
         if len(parts) < 4:
             continue
+        if parts[0] != "meteovoid" or parts[1] != "latest":
+            continue
         station_id = parts[2]
-        variable = parts[3]
-        out.setdefault(station_id, [])
-        if variable not in out[station_id]:
-            out[station_id].append(variable)
+        variable = ":".join(parts[3:])
+        grouped.setdefault(station_id, set()).add(variable)
 
-    for sid in out:
-        out[sid].sort()
+    return {"stations": {sid: sorted(vars_) for sid, vars_ in grouped.items()}}
 
-    return {"stations": out}
+
+app = FastAPI()
 
 
 @app.get("/health")
@@ -70,11 +64,14 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/stations")
-def stations_http(pattern: str = Query("*")) -> dict[str, Any]:  # pragma: no cover
-    return stations(pattern=pattern, redis_url=REDIS_URL)
-
-
 @app.get("/latest")
-def latest_http(station_id: str = Query(...), variable: str = Query(...)) -> dict[str, Any]:  # pragma: no cover
+def latest_http(
+    station_id: str = Query(...),
+    variable: str = Query(...),
+) -> dict[str, Any]:
     return latest(station_id=station_id, variable=variable, redis_url=REDIS_URL)
+
+
+@app.get("/stations")
+def stations_http(pattern: str = Query("meteovoid:latest:*")) -> dict[str, dict[str, list[str]]]:
+    return stations(pattern=pattern, redis_url=REDIS_URL)
