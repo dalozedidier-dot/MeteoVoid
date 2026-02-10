@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -30,15 +31,49 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
-def _latest_key(station_id: str, variable: str) -> str:
-    return f"meteovoid:latest:{station_id}:{variable}"
+def process_observation(
+    fields: Mapping[str, Any],
+    msg_id: str = "",
+    cfg: LiveConfig | None = None,
+    windows: dict[tuple[str, str], RollingWindow] | None = None,
+    ts_ingest: float | None = None,
+) -> dict[str, Any] | None:
+    """Process a single observation message and return a live report.
 
+    This is a pure-ish unit that can be tested without Redis. It updates the rolling
+    window state (if provided) and returns a report dict ready to be JSON-serialized.
+    """
+    cfg = cfg or LiveConfig()
+    windows = windows if windows is not None else {}
 
-def _default_start_id() -> str:
-    # In CI, the workflow seeds BEFORE the worker starts. Using '$' would ignore that history.
-    if os.getenv("GITHUB_ACTIONS") or os.getenv("CI"):
-        return "0-0"
-    return "$"
+    station_id_raw = fields.get("station_id")
+    variable_raw = fields.get("variable")
+    if station_id_raw is None or variable_raw is None:
+        return None
+
+    station_id = str(station_id_raw).strip()
+    variable = str(variable_raw).strip()
+    value = _to_float(fields.get("value"))
+    ts = _parse_ts(str(fields.get("ts", "0")))
+
+    if not station_id or not variable or value is None:
+        return None
+
+    key = (station_id, variable)
+    win = windows.setdefault(key, RollingWindow(window_s=cfg.window_s))
+    win.push(ts, float(value))
+
+    values = win.values(ts)
+    report = dict(analyze_window(values, cfg))
+    report.update(
+        {
+            "station_id": station_id,
+            "variable": variable,
+            "stream_id": msg_id,
+            "ts_ingest": float(ts_ingest if ts_ingest is not None else time.time()),
+        }
+    )
+    return report
 
 
 def run_live_worker(
@@ -46,70 +81,39 @@ def run_live_worker(
     in_stream: str,
     out_stream: str,
     cfg: LiveConfig | None = None,
-    start_id: str | None = None,
-    max_messages: int | None = None,
-    max_idle_s: float | None = None,
 ) -> None:
-    """Run the Redis Streams worker.
-
-    Notes:
-    - In production this runs forever.
-    - `max_messages` and `max_idle_s` are test helpers to make the loop stoppable.
-    """
     r = make_redis(redis_url)
     cfg = cfg or LiveConfig()
 
     windows: dict[tuple[str, str], RollingWindow] = {}
 
-    last_id = start_id or os.getenv("METEOVOID_START_ID") or _default_start_id()
-
-    processed = 0
-    t0 = time.monotonic()
+    # If METEOVOID_START_ID is set, it overrides the default behavior.
+    # Otherwise: in CI we read from the beginning (0-0) to consume seeded messages,
+    # and locally we tail the stream ($).
+    start_id = os.getenv("METEOVOID_START_ID")
+    last_id = start_id or ("0-0" if (os.getenv("GITHUB_ACTIONS") or os.getenv("CI")) else "$")
 
     while True:
         resp_any = r.xread({in_stream: last_id}, block=1000, count=200)
         resp = cast(XReadResponse, resp_any)
 
         if not resp:
-            if max_idle_s is not None and (time.monotonic() - t0) >= max_idle_s:
-                return
             continue
 
         for _stream_name, messages in resp:
             for msg_id, fields in messages:
                 last_id = msg_id
 
-                station_raw = fields.get("station_id")
-                variable_raw = fields.get("variable")
-                if station_raw is None or variable_raw is None:
+                report = process_observation(fields, msg_id=msg_id, cfg=cfg, windows=windows)
+                if report is None:
                     continue
 
-                station_id = str(station_raw).strip()
-                variable = str(variable_raw).strip()
-                value = _to_float(fields.get("value"))
-                ts = _parse_ts(str(fields.get("ts", "0")))
-
-                if not station_id or not variable or value is None:
-                    continue
-
-                key = (station_id, variable)
-                win = windows.setdefault(key, RollingWindow(window_s=cfg.window_s))
-                win.push(ts, float(value))
-
-                values = win.values(ts)
-                report = dict(analyze_window(values, cfg))
-                report.update(
-                    {
-                        "station_id": station_id,
-                        "variable": variable,
-                        "stream_id": msg_id,
-                        "ts_ingest": time.time(),
-                    }
-                )
+                station_id = cast(str, report["station_id"])
+                variable = cast(str, report["variable"])
 
                 payload = json.dumps(report, separators=(",", ":"), sort_keys=True)
 
-                r.set(_latest_key(station_id, variable), payload)
+                r.set(f"meteovoid:latest:{station_id}:{variable}", payload)
 
                 out_fields: dict[EncodableT, EncodableT] = {
                     "station_id": station_id,
@@ -117,7 +121,3 @@ def run_live_worker(
                     "payload": payload,
                 }
                 r.xadd(out_stream, out_fields)
-
-                processed += 1
-                if max_messages is not None and processed >= max_messages:
-                    return
