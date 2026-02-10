@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import json
-import os
 from pathlib import Path
-from typing import Any
 
 import typer
 
@@ -13,85 +11,59 @@ from .stream import run_live_worker
 
 app = typer.Typer(
     add_completion=False,
-    help="meteovoid: offline void scan (CSV) + live smoke (Redis Streams).",
+    help="meteovoid: offline void scan (CSV) + live pipeline (Redis Streams).",
 )
 
 
 @app.command()
 def scan(
-    csv_path: Path = typer.Argument(
-        ...,
-        exists=True,
-        dir_okay=False,
-        readable=True,
-        help="Input CSV. Must contain timestamp and value columns.",
-    ),
-    time_col: str = typer.Option("timestamp", help="Timestamp column name."),
-    value_col: str = typer.Option("value", help="Value column name."),
-    max_gap_seconds: int = typer.Option(3600, help="Gap threshold (seconds) to count a void."),
-    out: Path = typer.Option(Path("meteo_void_report.json"), help="Output JSON report path."),
+    csv_path: Path = typer.Argument(..., exists=True, dir_okay=False, readable=True),
+    time_col: str = typer.Option("timestamp", "--time-col"),
+    value_col: str = typer.Option("value", "--value-col"),
+    max_gap_seconds: int = typer.Option(3600, "--max-gap-seconds"),
+    out: Path = typer.Option(Path("meteo_void_report.json"), "--out"),
 ) -> None:
-    """Scan a CSV time series and write a void report as JSON."""
-    report: dict[str, Any] = scan_series_for_voids(
+    """Detect gaps (voids) in a CSV time series and write a JSON report."""
+    report = scan_series_for_voids(
         csv_path,
         time_col=time_col,
         value_col=value_col,
         max_gap_seconds=max_gap_seconds,
     )
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(report, indent=2, sort_keys=True), encoding="utf-8")
+    out.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     typer.echo(str(out))
 
 
 @app.command()
-def live(
-    redis_url: str = typer.Option("redis://redis:6379/0", help="Redis URL."),
-    in_stream: str = typer.Option("meteovoid:observations", help="Input Redis Stream name."),
-    out_stream: str = typer.Option("meteovoid:reports", help="Output Redis Stream name."),
-    start_id: str = typer.Option(
-        "$",
-        help="Redis stream start id. Use 0-0 to consume existing messages.",
-    ),
-) -> None:
-    """Run the long-lived live worker reading Redis Streams."""
-    # Allow docker-compose or CI to force consumption from the beginning.
-    os.environ.setdefault("METEOVOID_START_ID", start_id)
-    run_live_worker(redis_url=redis_url, in_stream=in_stream, out_stream=out_stream)
-
-
-@app.command()
 def simulate(
-    redis_url: str = typer.Option("redis://redis:6379/0", help="Redis URL."),
-    stream: str = typer.Option("meteovoid:observations", help="Redis Stream name."),
-    station_id: str = typer.Option("DEMO_BE_0001", help="Station id."),
-    variable: str = typer.Option("wind_gust_ms", help="Variable name."),
-    steps: int = typer.Option(250, help="Number of points to generate."),
-    sleep: float = typer.Option(0.01, help="Sleep between points (seconds)."),
+    redis_url: str = "redis://redis:6379/0",
+    stream: str = "meteovoid:observations",
+    station_id: str = "DEMO_BE_0001",
+    variable: str = "wind_gust_ms",
+    steps: int = 250,
+    sleep: float = 0.01,
 ) -> None:
-    """Push synthetic observations into Redis Streams."""
-    push_synthetic_stream(
-        redis_url=redis_url,
-        stream=stream,
-        station_id=station_id,
-        variable=variable,
-        steps=steps,
-        sleep=sleep,
-    )
+    """Publish synthetic observations into a Redis Stream."""
+    push_synthetic_stream(redis_url, stream, station_id, variable, steps, sleep)
 
 
 @app.command()
-def serve(
-    host: str = typer.Option("0.0.0.0", help="Bind host."),
-    port: int = typer.Option(8000, help="Bind port."),
-    redis_url: str = typer.Option("redis://redis:6379/0", help="Redis URL."),
+def live(
+    redis_url: str = "redis://redis:6379/0",
+    in_stream: str = "meteovoid:observations",
+    out_stream: str = "meteovoid:reports",
 ) -> None:
-    """Start the HTTP API (FastAPI)."""
-    os.environ["REDIS_URL"] = redis_url
-    import uvicorn  # local import keeps CLI usable without live extras installed
+    """Consume observations from Redis Streams and emit live reports."""
+    run_live_worker(redis_url, in_stream, out_stream)
 
-    uvicorn.run("meteovoid.api:app", host=host, port=port, log_level="info")
+
+@app.command()
+def serve(host: str = "0.0.0.0", port: int = 8000) -> None:
+    """Serve the live HTTP API (FastAPI)."""
+    import uvicorn
+
+    uvicorn.run("meteovoid.api:app", host=host, port=port)
 
 
 def main() -> None:
-    """Console entrypoint."""
     app()

@@ -1,0 +1,4 @@
+# file: /mnt/data/meteovoid_repo_fixed/src/meteovoid/core.py
+# hypothesis_version: 6.151.5
+
+[3600, 'ISO8601', '_ts', 'coerce', 'count', 'input', 'max', 'max_gap_seconds', 'mean', 'min', 'nan_values', 'std', 'time_col', 'timestamp', 'value', 'value_col', 'value_stats', 'void_count', 'voids']

@@ -1,0 +1,4 @@
+# file: /mnt/data/meteovoid_repo_fixed/src/meteovoid/cli.py
+# hypothesis_version: 6.151.5
+
+[0.01, 250, 3600, 8000, '--max-gap-seconds', '--out', '--time-col', '--value-col', '0.0.0.0', 'DEMO_BE_0001', 'meteovoid.api:app', 'meteovoid:reports', 'redis://redis:6379/0', 'timestamp', 'utf-8', 'value', 'wind_gust_ms']

@@ -35,10 +35,6 @@ jobs:
           docker compose -f docker-compose.yml up -d redis
           docker compose -f docker-compose.yml ps
 
-      - name: Push synthetic live data (seed stream)
-        run: |
-          docker compose -f docker-compose.yml run --rm meteovoid-simulate
-
       - name: Start live services
         run: |
           docker compose -f docker-compose.yml up -d meteovoid-live meteovoid-api
@@ -59,6 +55,12 @@ jobs:
           docker compose -f docker-compose.yml ps
           docker compose -f docker-compose.yml logs --no-color
           exit 1
+
+      - name: Give worker a moment to start reading
+        run: sleep 2
+      - name: Push synthetic live data (seed stream)
+        run: |
+          docker compose -f docker-compose.yml run --rm meteovoid-simulate
 
       - name: Wait for first live report
         run: |

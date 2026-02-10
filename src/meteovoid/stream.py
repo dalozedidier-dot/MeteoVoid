@@ -34,41 +34,58 @@ def _latest_key(station_id: str, variable: str) -> str:
     return f"meteovoid:latest:{station_id}:{variable}"
 
 
+def _default_start_id() -> str:
+    # In CI, the workflow seeds BEFORE the worker starts. Using '$' would ignore that history.
+    if os.getenv("GITHUB_ACTIONS") or os.getenv("CI"):
+        return "0-0"
+    return "$"
+
+
 def run_live_worker(
     redis_url: str,
     in_stream: str,
     out_stream: str,
     cfg: LiveConfig | None = None,
     start_id: str | None = None,
+    max_messages: int | None = None,
+    max_idle_s: float | None = None,
 ) -> None:
+    """Run the Redis Streams worker.
+
+    Notes:
+    - In production this runs forever.
+    - `max_messages` and `max_idle_s` are test helpers to make the loop stoppable.
+    """
     r = make_redis(redis_url)
     cfg = cfg or LiveConfig()
 
     windows: dict[tuple[str, str], RollingWindow] = {}
 
-    # IMPORTANT: In CI we often seed BEFORE starting the worker.
-    # Default Redis semantics ($) ignores existing messages.
-    # Make it explicit via start_id or METEOVOID_START_ID.
-    last_id = start_id or os.getenv("METEOVOID_START_ID", "$")
+    last_id = start_id or os.getenv("METEOVOID_START_ID") or _default_start_id()
+
+    processed = 0
+    t0 = time.monotonic()
 
     while True:
         resp_any = r.xread({in_stream: last_id}, block=1000, count=200)
         resp = cast(XReadResponse, resp_any)
 
         if not resp:
+            if max_idle_s is not None and (time.monotonic() - t0) >= max_idle_s:
+                return
             continue
 
         for _stream_name, messages in resp:
             for msg_id, fields in messages:
                 last_id = msg_id
 
-                station_id_raw = fields.get("station_id")
+                station_raw = fields.get("station_id")
                 variable_raw = fields.get("variable")
-                if station_id_raw is None or variable_raw is None:
+                if station_raw is None or variable_raw is None:
                     continue
 
-                station_id: str = str(station_id_raw).strip()
-                variable: str = str(variable_raw).strip()
+                station_id = str(station_raw).strip()
+                variable = str(variable_raw).strip()
                 value = _to_float(fields.get("value"))
                 ts = _parse_ts(str(fields.get("ts", "0")))
 
@@ -100,3 +117,7 @@ def run_live_worker(
                     "payload": payload,
                 }
                 r.xadd(out_stream, out_fields)
+
+                processed += 1
+                if max_messages is not None and processed >= max_messages:
+                    return

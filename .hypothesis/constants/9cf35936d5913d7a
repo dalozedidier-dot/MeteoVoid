@@ -1,0 +1,4 @@
+# file: /mnt/data/meteovoid_repo_fixed/src/meteovoid/stream.py
+# hypothesis_version: 6.151.5
+
+[200, 1000, 1970, '$', ',', '0', '0-0', ':', 'CI', 'GITHUB_ACTIONS', 'METEOVOID_START_ID', 'payload', 'station_id', 'stream_id', 'ts', 'ts_ingest', 'value', 'variable']

@@ -1,0 +1,4 @@
+# file: /mnt/data/meteovoid_repo_fixed/src/meteovoid/api.py
+# hypothesis_version: 6.151.5
+
+['*', '/health', '/latest', '/stations', ':', 'REDIS_URL', 'invalid_payload', 'meteovoid:latest:', 'not_found', 'ok', 'redis://redis:6379/0', 'stations', 'status', 'utf-8']

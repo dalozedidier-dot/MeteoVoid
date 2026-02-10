@@ -1,0 +1,4 @@
+# file: /opt/pyvenv/bin/pytest
+# hypothesis_version: 6.151.5
+
+['__main__']
