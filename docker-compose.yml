@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   redis:
     image: redis:7-alpine
@@ -14,6 +12,9 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    environment:
+      # Live-smoke seeds BEFORE starting the worker. With "$" the worker would ignore seed messages.
+      METEOVOID_START_ID: "0-0"
     command:
       [
         "live",
