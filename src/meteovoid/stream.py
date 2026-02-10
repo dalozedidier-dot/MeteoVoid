@@ -40,8 +40,8 @@ def _default_start_id() -> str:
 
     Order of precedence:
     1) METEOVOID_START_ID env var if set
-    2) CI defaults to '0-0' so seeded messages are consumed
-    3) Local defaults to '$' (tail)
+    2) In CI, default to '0-0' so seeded messages are consumed
+    3) Locally, default to '$' (tail)
     """
     override = os.getenv("METEOVOID_START_ID")
     if override:
@@ -101,11 +101,17 @@ def run_live_worker(
     out_stream: str,
     cfg: LiveConfig | None = None,
     start_id: str | None = None,
+    max_messages: int | None = None,
+    max_idle_s: float | None = None,
 ) -> None:
     """Consume observations from Redis Streams and emit live reports.
 
-    start_id is mainly for CI and tests (for example, force '0-0' to consume seeded messages).
-    If not provided, _default_start_id() is used.
+    Parameters used by CI and tests:
+    - start_id: override the Redis start id, for example '0-0' to consume seeded messages
+    - max_messages: stop after processing N valid messages (prevents infinite loop in unit tests)
+    - max_idle_s: stop if no message is processed for this many seconds
+
+    In production, keep max_messages and max_idle_s to None for a long-running worker.
     """
     r = make_redis(redis_url)
     cfg = cfg or LiveConfig()
@@ -113,12 +119,16 @@ def run_live_worker(
     windows: dict[tuple[str, str], RollingWindow] = {}
 
     last_id = start_id if start_id is not None else _default_start_id()
+    processed = 0
+    last_progress = time.time()
 
     while True:
         resp_any = r.xread({in_stream: last_id}, block=1000, count=200)
         resp = cast(XReadResponse, resp_any)
 
         if not resp:
+            if max_idle_s is not None and (time.time() - last_progress) > float(max_idle_s):
+                return
             continue
 
         for _stream_name, messages in resp:
@@ -128,6 +138,9 @@ def run_live_worker(
                 report = process_observation(fields, msg_id=msg_id, cfg=cfg, windows=windows)
                 if report is None:
                     continue
+
+                last_progress = time.time()
+                processed += 1
 
                 station_id = cast(str, report["station_id"])
                 variable = cast(str, report["variable"])
@@ -142,3 +155,6 @@ def run_live_worker(
                     "payload": payload,
                 }
                 r.xadd(out_stream, out_fields)
+
+                if max_messages is not None and processed >= int(max_messages):
+                    return
