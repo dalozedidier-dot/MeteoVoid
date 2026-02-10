@@ -30,13 +30,8 @@ def _to_float(value: Any) -> float | None:
         return None
 
 
-def _start_id() -> str:
-    override = os.getenv("METEOVOID_START_ID")
-    if override:
-        return override
-    if os.getenv("GITHUB_ACTIONS") or os.getenv("CI"):
-        return "0-0"
-    return "$"
+def _latest_key(station_id: str, variable: str) -> str:
+    return f"meteovoid:latest:{station_id}:{variable}"
 
 
 def run_live_worker(
@@ -44,13 +39,17 @@ def run_live_worker(
     in_stream: str,
     out_stream: str,
     cfg: LiveConfig | None = None,
+    start_id: str | None = None,
 ) -> None:
     r = make_redis(redis_url)
     cfg = cfg or LiveConfig()
 
     windows: dict[tuple[str, str], RollingWindow] = {}
 
-    last_id = _start_id()
+    # IMPORTANT: In CI we often seed BEFORE starting the worker.
+    # Default Redis semantics ($) ignores existing messages.
+    # Make it explicit via start_id or METEOVOID_START_ID.
+    last_id = start_id or os.getenv("METEOVOID_START_ID", "$")
 
     while True:
         resp_any = r.xread({in_stream: last_id}, block=1000, count=200)
@@ -68,8 +67,8 @@ def run_live_worker(
                 if station_id_raw is None or variable_raw is None:
                     continue
 
-                station_id = station_id_raw.strip()
-                variable = variable_raw.strip()
+                station_id: str = str(station_id_raw).strip()
+                variable: str = str(variable_raw).strip()
                 value = _to_float(fields.get("value"))
                 ts = _parse_ts(str(fields.get("ts", "0")))
 
@@ -93,7 +92,7 @@ def run_live_worker(
 
                 payload = json.dumps(report, separators=(",", ":"), sort_keys=True)
 
-                r.set(f"meteovoid:latest:{station_id}:{variable}", payload)
+                r.set(_latest_key(station_id, variable), payload)
 
                 out_fields: dict[EncodableT, EncodableT] = {
                     "station_id": station_id,
