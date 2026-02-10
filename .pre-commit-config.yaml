@@ -1,4 +1,4 @@
-repos:
+exclude: |\n  (?x)^(\n    \\.hypothesis/\n  )\n\nrepos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.6.0
     hooks:
@@ -10,6 +10,8 @@ repos:
     rev: v0.6.9
     hooks:
       - id: ruff
+      - id: ruff-format
+        args: [--check]
   - repo: https://github.com/psf/black
     rev: 24.10.0
     hooks:

@@ -1,0 +1,10 @@
+Fix CI pre-commit failure caused by Hypothesis cache being linted/tracked.
+
+1) Unzip this patch at repo root (overwrites .gitignore and .pre-commit-config.yaml).
+
+2) If .hypothesis is already tracked:
+   git rm -r --cached .hypothesis
+   rm -rf .hypothesis
+   git add .gitignore .pre-commit-config.yaml
+   git commit -m "chore: ignore hypothesis cache"
+   git push
