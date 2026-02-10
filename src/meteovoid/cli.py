@@ -11,7 +11,7 @@ from .stream import run_live_worker
 
 app = typer.Typer(
     add_completion=False,
-    help="meteovoid: detect voids in CSV and run the live Redis Streams pipeline.",
+    help="meteovoid: scan CSV voids + run the live Redis Streams pipeline.",
 )
 
 

@@ -4,7 +4,7 @@ import json
 import os
 from typing import Any, Protocol, cast
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 
 from .utils import make_redis
 
@@ -22,6 +22,7 @@ def _make_redis(url: str) -> RedisLike:
 
 
 def latest(station_id: str, variable: str, redis_url: str = REDIS_URL_DEFAULT) -> dict[str, Any]:
+    """Fetch the last computed live report for a (station, variable)."""
     r = _make_redis(redis_url)
     key = f"meteovoid:latest:{station_id}:{variable}"
     raw = r.get(key)
@@ -35,7 +36,11 @@ def latest(station_id: str, variable: str, redis_url: str = REDIS_URL_DEFAULT) -
     return {"status": "invalid_payload"}
 
 
-def stations(pattern: str = "meteovoid:latest:*", redis_url: str = REDIS_URL_DEFAULT) -> dict[str, dict[str, list[str]]]:
+def stations(
+    pattern: str = "meteovoid:latest:*",
+    redis_url: str = REDIS_URL_DEFAULT,
+) -> dict[str, dict[str, list[str]]]:
+    """List stations + variables currently present in Redis."""
     r = _make_redis(redis_url)
     keys = [str(k) for k in r.keys(pattern)]
 
@@ -62,10 +67,13 @@ def health() -> dict[str, str]:
 
 
 @app.get("/latest")
-def latest_http(station_id: str, variable: str) -> dict[str, Any]:
+def latest_http(
+    station_id: str = Query(...),
+    variable: str = Query(...),
+) -> dict[str, Any]:
     return latest(station_id=station_id, variable=variable, redis_url=REDIS_URL_DEFAULT)
 
 
 @app.get("/stations")
-def stations_http(pattern: str = "meteovoid:latest:*") -> dict[str, dict[str, list[str]]]:
+def stations_http(pattern: str = Query("meteovoid:latest:*")) -> dict[str, dict[str, list[str]]]:
     return stations(pattern=pattern, redis_url=REDIS_URL_DEFAULT)
