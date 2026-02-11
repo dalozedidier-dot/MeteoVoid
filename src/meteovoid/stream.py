@@ -141,7 +141,7 @@ def _meteo_interpretation(
 def _impute_values(
     *,
     samples: list[tuple[datetime, float]],
-    dt_median_s: float,
+    dt_expected_s: float,
     gap_threshold_s: float,
     mode: str,
     max_points: int,
@@ -155,13 +155,16 @@ def _impute_values(
     out: list[float] = [float(samples[0][1])]
     inserted = 0
 
+    dt_expected_s = max(float(dt_expected_s), 0.001)
+
     for i in range(1, len(samples)):
         prev_t, _prev_v = samples[i - 1]
         t, v = samples[i]
         d = float((t - prev_t).total_seconds())
 
-        if d > gap_threshold_s and dt_median_s > 0:
-            k = int(d // dt_median_s) - 1
+        if d > gap_threshold_s:
+            # Insert points to roughly match the expected cadence.
+            k = int(d // dt_expected_s) - 1
             if k > 0:
                 k = min(k, max_points - inserted)
                 for _ in range(k):
@@ -263,15 +266,20 @@ def process_observation(
     for i in range(1, len(samples)):
         deltas.append(float((samples[i][0] - samples[i - 1][0]).total_seconds()))
 
-    dt_median_s = _median(deltas) if deltas else 0.0
-    dt_median_s = max(float(dt_median_s), 0.001)
+    # Important: do not let a single large gap inflate the expected cadence.
+    # Use the median of "regular" deltas (<= gap_threshold) when available.
+    deltas_pos = [d for d in deltas if d > 0.0]
+    deltas_regular = [d for d in deltas_pos if d <= gap_threshold]
 
-    gaps = [d for d in deltas if d > gap_threshold]
+    dt_expected_s = _median(deltas_regular) if deltas_regular else _median(deltas_pos)
+    dt_expected_s = max(float(dt_expected_s), 0.001)
+
+    gaps = [d for d in deltas_pos if d > gap_threshold]
     gap_count = len(gaps)
     gap_max = float(max(gaps)) if gaps else 0.0
     gap_total = float(sum(gaps)) if gaps else 0.0
 
-    missing_time_s = float(sum(max(0.0, d - dt_median_s) for d in gaps)) if gaps else 0.0
+    missing_time_s = float(sum(max(0.0, d - dt_expected_s) for d in gaps)) if gaps else 0.0
     missing_time_frac = float(min(1.0, missing_time_s / float(max(1, cfg.window_s))))
 
     imputed_values: list[float] = values
@@ -279,7 +287,7 @@ def process_observation(
     if impute_mode in {"ffill", "mean"} and samples and gap_count > 0:
         imputed_values, imputed_points = _impute_values(
             samples=samples,
-            dt_median_s=dt_median_s,
+            dt_expected_s=dt_expected_s,
             gap_threshold_s=gap_threshold,
             mode=impute_mode,
             max_points=max_impute_points,
@@ -326,7 +334,7 @@ def process_observation(
                 "max": v_max,
                 "mean": v_mean,
                 "p95": v_p95,
-                "dt_median_s": float(dt_median_s),
+                "dt_median_s": float(dt_expected_s),
                 "gap_threshold_s": float(gap_threshold),
                 "gap_count": int(gap_count),
                 "gap_max_s": gap_max,
