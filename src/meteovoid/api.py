@@ -64,7 +64,6 @@ def stations(pattern: str = "*", redis_url: str = REDIS_URL) -> dict[str, dict[s
 
 
 def _ts_ingest(payload: dict[str, Any]) -> float:
-    # mypy: payload.get(...) is Any | None, so narrow None before float(...)
     v = payload.get("ts_ingest")
     if v is not None:
         try:
@@ -135,7 +134,7 @@ def latest_http(
         return latest(station_id=station_id, variable=variable, redis_url=REDIS_URL)
 
     if station_id and not variable:
-        # Backward compatible: return the newest variable for that station.
+        # Backward compatible: return the newest variable report for that station.
         r = _make_redis(REDIS_URL)
         keys_any = r.keys(f"meteovoid:latest:{station_id}:*")
         keys = [
@@ -143,6 +142,7 @@ def latest_http(
             for k in keys_any
             if str(k).startswith(f"meteovoid:latest:{station_id}:")
         ]
+
         best: dict[str, Any] | None = None
         best_ts = -1.0
         for k in keys:
@@ -159,6 +159,7 @@ def latest_http(
             if ts > best_ts:
                 best_ts = ts
                 best = payload_any
+
         return best if best is not None else {"status": "not_found"}
 
     return latest_any(redis_url=REDIS_URL)
@@ -215,6 +216,7 @@ def dashboard() -> HTMLResponse:  # pragma: no cover
     </table>
   </body>
 </html>
-""".replace("__ROWS__", rows_html)
+"""
+    html = html.replace("__ROWS__", rows_html)
 
     return HTMLResponse(content=html)

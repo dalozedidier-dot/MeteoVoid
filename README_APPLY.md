@@ -1,13 +1,15 @@
-# MeteoVoid hotfix mypy (api.py)
+# MeteoVoid hotfix: black formatting in dashboard (api.py)
+
+Your CI is failing because pre-commit says:
+  would reformat src/meteovoid/api.py
 
 Fix:
-- mypy errors in src/meteovoid/api.py lines around _ts_ingest:
-  float(payload.get(...)) where payload.get returns Any | None.
-
-Change:
-- Narrow None before float(...) to satisfy mypy.
+- Avoid chaining `.replace(...)` directly on the giant triple-quoted HTML.
+- Do it in two steps:
+    html = """..."""
+    html = html.replace("__ROWS__", rows_html)
 
 Apply:
-- Unzip at repo root (keeps paths)
+- Unzip at repo root
 - Commit + push
-- CI should pass mypy.
+- CI should pass pre-commit (black/ruff-format).
