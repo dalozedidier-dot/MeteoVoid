@@ -50,7 +50,7 @@ jobs:
           path: dist
 
       - name: Publish to PyPI (token)
-        if: ${{ secrets.PYPI_API_TOKEN != '' }}
+        if: ${{ secrets.PYPI_API_TOKEN }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
@@ -58,7 +58,7 @@ jobs:
           skip-existing: false
 
       - name: Publish to PyPI (Trusted Publisher / OIDC)
-        if: ${{ secrets.PYPI_API_TOKEN == '' }}
+        if: ${{ !secrets.PYPI_API_TOKEN }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist

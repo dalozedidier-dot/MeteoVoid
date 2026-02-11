@@ -1,21 +1,17 @@
-# MeteoVoid workflows fix v2
+# MeteoVoid workflows fix v3
 
-## Live Smoke
-Correction de l’erreur YAML introduite par un heredoc Python non indenté dans `run: |`.
-Cette version ne contient aucun heredoc. Elle supporte aussi votre API `GET /latest` qui exige `station_id` et `variable`:
-- tentative `/latest` sans paramètres
-- si 422, découverte d’un couple (station_id, variable) via `/stations`
-- appel `/latest?station_id=...&variable=...`
-- validation via `tools/validate_latest_report.py`
+Pourquoi ça cassait:
+- Votre log CI montre `check-yaml` en échec: `.github/workflows/live_smoke.yml` ligne 91/92.
+- Cause: un caractère CR (\r) ou une coupure de ligne non indentée s’est glissé dans le fichier, ce qui fait sortir YAML du bloc `run: |`.
 
-## Release
-Correction des échecs en `workflow_dispatch`:
-- `github-release` et `publish-pypi` ne s’exécutent que sur tags `v*`
-- en dispatch manuel, seul `build` tourne (artefacts dist)
-- `publish-pypi` est `continue-on-error` pour ne pas bloquer la release GitHub si PyPI est mal configuré
+Ce patch:
+- Remet un `live_smoke.yml` YAML valide (aucune ligne "cassée", aucune séquence \r injectée).
+- Gère aussi le 422 sur `/latest` (API exige `station_id` + `variable`) via découverte `/stations`.
+- Rend `release.yml` inoffensif en `workflow_dispatch` (publish + github-release ne tournent que sur tag v*).
 
-## Application
-1) Dézipper à la racine du repo, conserver les chemins.
+Application:
+1) Dézipper à la racine du repo (en gardant les chemins).
 2) Commit + push.
-3) Relancer Live Smoke, vérifier l’artefact `live_smoke_report`.
-4) Pour une vraie release: bump version, tag `vX.Y.Z`, push du tag.
+3) CI doit repasser (check-yaml).
+4) Live Smoke doit repasser et produire `latest.json`.
+5) Release: en manuel -> build seulement. En tag vX.Y.Z -> build + publish + github release.

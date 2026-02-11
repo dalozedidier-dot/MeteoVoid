@@ -62,16 +62,18 @@ jobs:
           set -euo pipefail
           docker compose -f docker-compose.yml run --rm meteovoid-simulate
 
-      - name: Wait /latest enriched
+      - name: Wait /latest enriched (supports required query params)
         run: |
           set -euo pipefail
 
           tmp="$(mktemp)"
           pair="$(mktemp)"
+
           station_id=""
           variable=""
 
           for i in $(seq 1 90); do
+            # Try /latest without params
             code="$(curl -sS -o "$tmp" -w "%{http_code}" http://localhost:8000/latest || true)"
 
             if [ "$code" = "200" ]; then
@@ -82,13 +84,14 @@ jobs:
               fi
             fi
 
+            # If API requires query params (FastAPI Query(...)), discover first pair via /stations
             if [ "$code" = "422" ]; then
               if [ -z "$station_id" ] || [ -z "$variable" ]; then
                 st_code="$(curl -sS -o "$tmp" -w "%{http_code}" http://localhost:8000/stations || true)"
                 if [ "$st_code" = "200" ]; then
-                  python -c "import json,sys; d=json.load(open(sys.argv[1], 'r', encoding='utf-8')); st=d.get('stations', {}); sid=None; var=None;                                sid=sorted(st.keys())[0] if isinstance(st, dict) and st else None;                                vv=st.get(sid, []) if sid is not None and isinstance(st, dict) else [];                                var=sorted([x for x in vv if isinstance(x,str) and x])[0] if isinstance(vv, list) and vv else None;                                (print(sid), print(var)) if sid and var else None" "$tmp" > "$pair" 2>/dev/null || true
-                  station_id="$(sed -n '1p' "$pair" | tr -d '' || true)"
-                  variable="$(sed -n '2p' "$pair" | tr -d '' || true)"
+                  python -c "import json,sys; d=json.load(open(sys.argv[1], 'r', encoding='utf-8')); st=d.get('stations', {}); sid=sorted(st.keys())[0] if isinstance(st, dict) and st else ''; vv=st.get(sid, []) if isinstance(st, dict) else []; var=sorted([x for x in vv if isinstance(x, str) and x])[0] if isinstance(vv, list) and vv else ''; print(sid); print(var)" "$tmp" > "$pair" 2>/dev/null || true
+                  station_id="$(sed -n '1p' "$pair")"
+                  variable="$(sed -n '2p' "$pair")"
                 fi
               fi
 
