@@ -51,6 +51,73 @@ def _default_start_id() -> str:
     return "$"
 
 
+def _p95(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    xs = sorted(values)
+    k = int(round(0.95 * (len(xs) - 1)))
+    k = max(0, min(len(xs) - 1, k))
+    return float(xs[k])
+
+
+def _median(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    xs = sorted(values)
+    n = len(xs)
+    mid = n // 2
+    if n % 2 == 1:
+        return float(xs[mid])
+    return float((xs[mid - 1] + xs[mid]) / 2.0)
+
+
+def _meteo_interpretation(
+    state: str,
+    score: float,
+    n_points: int,
+    missing_time_frac: float,
+    gap_count: int,
+) -> dict[str, Any]:
+    flags: list[str] = []
+    phrases: list[str] = []
+
+    if n_points < 10:
+        flags.append("low_data")
+        phrases.append("Fenêtre peu alimentée, interprétation prudente.")
+
+    if gap_count > 0:
+        flags.append("data_gaps")
+        phrases.append("Trous de données détectés, possible perte de transmission ou capteur intermittent.")
+
+    if missing_time_frac >= 0.10:
+        flags.append("missing_significant")
+        phrases.append("Part importante de la fenêtre sans données, fiabilité dégradée.")
+
+    if state == "unstable":
+        flags.append("gusts_erratic")
+        phrases.append("Variabilité forte, rafales erratiques ou rupture de régime probable.")
+    elif state == "transition":
+        flags.append("watch")
+        phrases.append("Variabilité en hausse, surveillance recommandée.")
+    else:
+        phrases.append("Signal globalement régulier sur la fenêtre.")
+
+    # A tiny, explicit mapping so it stays predictable.
+    severity = "low"
+    if state == "unstable" or missing_time_frac >= 0.10:
+        severity = "high"
+    elif state == "transition" or gap_count > 0:
+        severity = "medium"
+
+    return {
+        "interpretation": " ".join(phrases).strip(),
+        "flags": flags,
+        "severity": severity,
+        "score_hint": "plus le score est haut, plus la variabilité est forte",
+        "state_hint": "stable, transition, unstable",
+    }
+
+
 def process_observation(
     fields: Mapping[str, Any],
     msg_id: str = "",
@@ -58,10 +125,7 @@ def process_observation(
     windows: dict[tuple[str, str], RollingWindow] | None = None,
     ts_ingest: float | None = None,
 ) -> dict[str, Any] | None:
-    """Process a single observation message and return a live report.
-
-    This unit is testable without Redis. It updates rolling windows in-place.
-    """
+    """Process a single observation message and return an enriched report."""
     cfg = cfg or LiveConfig()
     windows = windows if windows is not None else {}
 
@@ -82,14 +146,69 @@ def process_observation(
     win = windows.setdefault(key, RollingWindow(window_s=cfg.window_s))
     win.push(ts, float(value))
 
-    values = win.values(ts)
-    report = dict(analyze_window(values, cfg))
+    samples = win.samples(ts)
+    values = [v for _t, v in samples]
+
+    base = dict(analyze_window(values, cfg))
+
+    # basic stats
+    n = len(values)
+    v_min = float(min(values)) if values else 0.0
+    v_max = float(max(values)) if values else 0.0
+    v_mean = float(sum(values) / n) if n else 0.0
+    v_p95 = _p95(values)
+
+    # holes / gaps
+    deltas: list[float] = []
+    for i in range(1, len(samples)):
+        deltas.append((samples[i][0] - samples[i - 1][0]).total_seconds())
+
+    dt_median = _median(deltas) if deltas else 0.0
+    gap_threshold = float(cfg.max_gap_s)
+    gaps = [d for d in deltas if d > gap_threshold]
+    gap_count = len(gaps)
+    gap_max = float(max(gaps)) if gaps else 0.0
+    gap_total = float(sum(gaps)) if gaps else 0.0
+
+    # estimate missing time (beyond a reference interval)
+    dt_ref = max(dt_median, 1.0)
+    missing_time_s = float(sum(max(0.0, d - dt_ref) for d in gaps)) if gaps else 0.0
+    missing_time_frac = float(min(1.0, missing_time_s / float(max(1, cfg.window_s))))
+
+    score = float(base.get("score", 0.0))
+    state = str(base.get("state", "stable"))
+
+    meteo = _meteo_interpretation(
+        state=state,
+        score=score,
+        n_points=n,
+        missing_time_frac=missing_time_frac,
+        gap_count=gap_count,
+    )
+
+    report: dict[str, Any] = {}
+    report.update(base)
     report.update(
         {
             "station_id": station_id,
             "variable": variable,
             "stream_id": msg_id,
             "ts_ingest": float(ts_ingest if ts_ingest is not None else time.time()),
+            "stats": {
+                "n_points": int(n),
+                "min": v_min,
+                "max": v_max,
+                "mean": v_mean,
+                "p95": v_p95,
+                "dt_median_s": float(dt_median),
+                "gap_threshold_s": gap_threshold,
+                "gap_count": int(gap_count),
+                "gap_max_s": gap_max,
+                "gap_total_s": gap_total,
+                "missing_time_s": missing_time_s,
+                "missing_time_frac": missing_time_frac,
+            },
+            "meteo": meteo,
         }
     )
     return report
@@ -104,15 +223,6 @@ def run_live_worker(
     max_messages: int | None = None,
     max_idle_s: float | None = None,
 ) -> None:
-    """Consume observations from Redis Streams and emit live reports.
-
-    Parameters used by CI and tests:
-    - start_id: override the Redis start id, for example '0-0' to consume seeded messages
-    - max_messages: stop after processing N valid messages (prevents infinite loop in unit tests)
-    - max_idle_s: stop if no message is processed for this many seconds
-
-    In production, keep max_messages and max_idle_s to None for a long-running worker.
-    """
     r = make_redis(redis_url)
     cfg = cfg or LiveConfig()
 
