@@ -1,12 +1,14 @@
-# MeteoVoid Live Smoke YAML fix v1
+# MeteoVoid hotfix v2
 
-But:
-- Corriger l’erreur de syntaxe YAML (ligne ~72) causée par un bloc Python non indenté dans `run: |`.
+Corrige 2 problèmes:
+1) Workflow Live Smoke invalide (YAML): bloc python non indenté dans `run: |`.
+2) Pre-commit ruff en échec sur tools/validate_latest_report.py (UP038).
 
 Contenu:
-- .github/workflows/live_smoke.yml (corrigé)
+- .github/workflows/live_smoke.yml
+- tools/validate_latest_report.py
 
 Application:
 1) Dézipper à la racine du repo (en conservant les chemins).
 2) Commit + push.
-3) Relancer le workflow Live Smoke.
+3) Vérifier que le workflow Live Smoke réapparaît et passe.
