@@ -9,7 +9,9 @@ from typing import Any, cast
 
 from redis.typing import EncodableT
 
-from .live import LiveConfig, RollingWindow, analyze_window
+from .alerts import maybe_send_alert
+from .config import StationConfig, env_config_path, load_station_config, resolve_variable_overrides
+from .live import LiveConfig, RollingWindow, State, analyze_window
 from .utils import make_redis
 
 StreamFields = dict[str, str]
@@ -71,44 +73,69 @@ def _median(values: list[float]) -> float:
     return float((xs[mid - 1] + xs[mid]) / 2.0)
 
 
+def _state_from_score(score: float, stable_th: float, unstable_th: float) -> State:
+    if score < stable_th:
+        return "stable"
+    if score > unstable_th:
+        return "unstable"
+    return "transition"
+
+
 def _meteo_interpretation(
+    *,
     state: str,
     score: float,
     n_points: int,
     missing_time_frac: float,
     gap_count: int,
+    watch_threshold: float,
+    alert_threshold: float,
+    imputed_frac: float,
+    max_imputed_frac: float,
 ) -> dict[str, Any]:
     flags: list[str] = []
-    phrases: list[str] = []
+    severity = "low"
 
-    if n_points < 10:
-        flags.append("low_data")
-        phrases.append("Fenêtre peu alimentée, interprétation prudente.")
-
-    if gap_count > 0:
-        flags.append("data_gaps")
-        phrases.append(
-            "Trous de données détectés, possible perte de transmission ou capteur intermittent."
-        )
-
-    if missing_time_frac >= 0.10:
-        flags.append("missing_significant")
-        phrases.append("Part importante de la fenêtre sans données, fiabilité dégradée.")
-
-    if state == "unstable":
-        flags.append("gusts_erratic")
-        phrases.append("Variabilité forte, rafales erratiques ou rupture de régime probable.")
-    elif state == "transition":
+    if score >= alert_threshold:
+        flags.append("alert")
+        severity = "high"
+    elif score >= watch_threshold:
         flags.append("watch")
+        severity = "medium"
+    else:
+        # fallback on state
+        if state == "unstable":
+            flags.append("alert")
+            severity = "high"
+        elif state == "transition":
+            flags.append("watch")
+            severity = "medium"
+
+    if missing_time_frac > 0.05 or gap_count > 0:
+        flags.append("data_hole")
+        if severity == "low":
+            severity = "medium"
+
+    if imputed_frac > 0.0:
+        flags.append("imputed")
+        if imputed_frac > max_imputed_frac:
+            flags.append("imputation_high")
+            severity = "high"
+
+    phrases: list[str] = []
+    if n_points < 20:
+        phrases.append("Peu de points dans la fenêtre, confiance limitée.")
+    if "alert" in flags:
+        phrases.append("Instabilité forte, alerte.")
+    elif "watch" in flags:
         phrases.append("Variabilité en hausse, surveillance recommandée.")
     else:
-        phrases.append("Signal globalement régulier sur la fenêtre.")
+        phrases.append("Signal stable.")
 
-    severity = "low"
-    if state == "unstable" or missing_time_frac >= 0.10:
-        severity = "high"
-    elif state == "transition" or gap_count > 0:
-        severity = "medium"
+    if "data_hole" in flags:
+        phrases.append("Présence de trous de données dans la fenêtre.")
+    if "imputation_high" in flags:
+        phrases.append("Imputation trop importante, prudence sur le score.")
 
     return {
         "interpretation": " ".join(phrases).strip(),
@@ -119,12 +146,56 @@ def _meteo_interpretation(
     }
 
 
+def _impute_values(
+    *,
+    samples: list[tuple[datetime, float]],
+    dt_ref_s: float,
+    gap_threshold_s: float,
+    mode: str,
+    max_points: int,
+) -> tuple[list[float], int]:
+    if not samples:
+        return ([], 0)
+
+    if mode not in {"ffill", "mean"}:
+        return ([v for _t, v in samples], 0)
+
+    out: list[float] = [float(samples[0][1])]
+    inserted = 0
+
+    for i in range(1, len(samples)):
+        prev_t, _prev_v = samples[i - 1]
+        t, v = samples[i]
+        d = float((t - prev_t).total_seconds())
+
+        if d > gap_threshold_s and dt_ref_s > 0:
+            # approximate number of missing points between prev and current
+            k = int(d // dt_ref_s) - 1
+            if k > 0:
+                k = min(k, max_points - inserted)
+                for _ in range(k):
+                    if mode == "ffill":
+                        fill = out[-1]
+                    else:
+                        tail = out[-5:]
+                        fill = float(sum(tail) / max(1, len(tail)))
+                    out.append(float(fill))
+                inserted += k
+
+        out.append(float(v))
+        if inserted >= max_points:
+            break
+
+    return (out, inserted)
+
+
 def process_observation(
     fields: Mapping[str, Any],
     msg_id: str = "",
     cfg: LiveConfig | None = None,
     windows: dict[tuple[str, str], RollingWindow] | None = None,
     ts_ingest: float | None = None,
+    station_config: StationConfig | None = None,
 ) -> dict[str, Any] | None:
     """Process a single observation message and return an enriched report."""
     cfg = cfg or LiveConfig()
@@ -143,6 +214,20 @@ def process_observation(
     if not station_id or not variable or value is None:
         return None
 
+    overrides = resolve_variable_overrides(station_config, station_id=station_id, variable=variable)
+
+    stable_th = float(overrides.get("stable_threshold", cfg.stable_threshold))
+    unstable_th = float(overrides.get("unstable_threshold", cfg.unstable_threshold))
+    gap_threshold = float(overrides.get("max_gap_s", cfg.max_gap_s))
+
+    watch_threshold = float(overrides.get("watch_threshold", (stable_th + unstable_th) / 2.0))
+    alert_threshold = float(overrides.get("alert_threshold", unstable_th))
+
+    impute_mode = str(overrides.get("impute_mode", cfg.impute_mode))
+    use_imputed_for_score = bool(overrides.get("use_imputed_for_score", cfg.use_imputed_for_score))
+    max_imputed_frac = float(overrides.get("max_imputed_frac", cfg.max_imputed_frac))
+    max_impute_points = int(overrides.get("max_impute_points", cfg.max_impute_points))
+
     key = (station_id, variable)
     win = windows.setdefault(key, RollingWindow(window_s=cfg.window_s))
     win.push(ts, float(value))
@@ -151,6 +236,7 @@ def process_observation(
     values = [v for _t, v in samples]
 
     base = dict(analyze_window(values, cfg))
+    score = float(cast(float, base.get("score", 0.0)))
 
     n = len(values)
     v_min = float(min(values)) if values else 0.0
@@ -160,22 +246,46 @@ def process_observation(
 
     deltas: list[float] = []
     for i in range(1, len(samples)):
-        deltas.append((samples[i][0] - samples[i - 1][0]).total_seconds())
+        deltas.append(float((samples[i][0] - samples[i - 1][0]).total_seconds()))
 
-    dt_median = _median(deltas) if deltas else 0.0
-    gap_threshold = float(cfg.max_gap_s)
+    # Estimate dt_ref from non-gap deltas when possible.
+    deltas_non_gap = [d for d in deltas if d <= gap_threshold]
+    dt_ref = _median(deltas_non_gap) if deltas_non_gap else _median(deltas)
+    dt_ref = max(float(dt_ref), 0.001)
+
     gaps = [d for d in deltas if d > gap_threshold]
     gap_count = len(gaps)
     gap_max = float(max(gaps)) if gaps else 0.0
     gap_total = float(sum(gaps)) if gaps else 0.0
 
-    dt_ref = max(dt_median, 1.0)
     missing_time_s = float(sum(max(0.0, d - dt_ref) for d in gaps)) if gaps else 0.0
     missing_time_frac = float(min(1.0, missing_time_s / float(max(1, cfg.window_s))))
 
-    # mypy: TypedDict -> dict() tends to widen values to object; cast back explicitly.
-    score = cast(float, base.get("score", 0.0))
-    state = cast(str, base.get("state", "stable"))
+    imputed_values: list[float] = values
+    imputed_points = 0
+    if impute_mode in {"ffill", "mean"} and samples and gap_count > 0:
+        imputed_values, imputed_points = _impute_values(
+            samples=samples,
+            dt_ref_s=dt_ref,
+            gap_threshold_s=gap_threshold,
+            mode=impute_mode,
+            max_points=max_impute_points,
+        )
+
+    total_points = max(1, len(values) + imputed_points)
+    imputed_frac = float(imputed_points / float(total_points)) if imputed_points > 0 else 0.0
+
+    score_raw = score
+    score_imputed = score
+
+    if use_imputed_for_score and imputed_points > 0:
+        score_imputed = float(cast(float, analyze_window(imputed_values, cfg).get("score", score)))
+        score = score_imputed
+
+    state = _state_from_score(score, stable_th, unstable_th)
+
+    base["score"] = float(score)
+    base["state"] = state
 
     meteo = _meteo_interpretation(
         state=state,
@@ -183,6 +293,10 @@ def process_observation(
         n_points=n,
         missing_time_frac=missing_time_frac,
         gap_count=gap_count,
+        watch_threshold=watch_threshold,
+        alert_threshold=alert_threshold,
+        imputed_frac=imputed_frac,
+        max_imputed_frac=max_imputed_frac,
     )
 
     report: dict[str, Any] = {}
@@ -193,19 +307,31 @@ def process_observation(
             "variable": variable,
             "stream_id": msg_id,
             "ts_ingest": float(ts_ingest if ts_ingest is not None else time.time()),
+            "thresholds": {
+                "stable_threshold": stable_th,
+                "unstable_threshold": unstable_th,
+                "watch_threshold": watch_threshold,
+                "alert_threshold": alert_threshold,
+            },
             "stats": {
                 "n_points": int(n),
                 "min": v_min,
                 "max": v_max,
                 "mean": v_mean,
                 "p95": v_p95,
-                "dt_median_s": float(dt_median),
-                "gap_threshold_s": gap_threshold,
+                "dt_ref_s": float(dt_ref),
+                "gap_threshold_s": float(gap_threshold),
                 "gap_count": int(gap_count),
                 "gap_max_s": gap_max,
                 "gap_total_s": gap_total,
                 "missing_time_s": missing_time_s,
                 "missing_time_frac": missing_time_frac,
+                "impute_mode": impute_mode,
+                "imputed_points": int(imputed_points),
+                "imputed_frac": imputed_frac,
+                "score_raw": float(score_raw),
+                "score_imputed": float(score_imputed),
+                "use_imputed_for_score": bool(use_imputed_for_score),
             },
             "meteo": meteo,
         }
@@ -224,6 +350,8 @@ def run_live_worker(
 ) -> None:
     r = make_redis(redis_url)
     cfg = cfg or LiveConfig()
+
+    station_cfg = load_station_config(env_config_path())
 
     windows: dict[tuple[str, str], RollingWindow] = {}
 
@@ -244,7 +372,9 @@ def run_live_worker(
             for msg_id, fields in messages:
                 last_id = msg_id
 
-                report = process_observation(fields, msg_id=msg_id, cfg=cfg, windows=windows)
+                report = process_observation(
+                    fields, msg_id=msg_id, cfg=cfg, windows=windows, station_config=station_cfg
+                )
                 if report is None:
                     continue
 
@@ -264,6 +394,8 @@ def run_live_worker(
                     "payload": payload,
                 }
                 r.xadd(out_stream, out_fields)
+
+                _ = maybe_send_alert(report)
 
                 if max_messages is not None and processed >= int(max_messages):
                     return

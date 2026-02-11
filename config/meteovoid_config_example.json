@@ -1,0 +1,37 @@
+{
+  "stations": {
+    "*": {
+      "defaults": {
+        "stable_threshold": 0.15,
+        "unstable_threshold": 0.30,
+        "max_gap_s": 300,
+        "impute_mode": "none",
+        "use_imputed_for_score": false,
+        "max_imputed_frac": 0.20,
+        "max_impute_points": 500
+      },
+      "variables": {
+        "*": { "weight": 1.0 }
+      }
+    },
+    "DEMO_BE_0001": {
+      "defaults": {
+        "max_gap_s": 120
+      },
+      "variables": {
+        "wind_gust_ms": {
+          "stable_threshold": 0.12,
+          "unstable_threshold": 0.28,
+          "watch_threshold": 0.20,
+          "alert_threshold": 0.35,
+          "weight": 0.60
+        },
+        "temperature_c": {
+          "stable_threshold": 0.02,
+          "unstable_threshold": 0.08,
+          "weight": 0.40
+        }
+      }
+    }
+  }
+}
