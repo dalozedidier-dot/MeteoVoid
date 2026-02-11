@@ -1,16 +1,7 @@
-# MeteoVoid hotfix: ruff-format + black (api.py)
+Hotfix: restore RollingWindow.values(now)
 
-Your CI log shows:
-- ruff-format: would reformat src/meteovoid/api.py
-- black: would reformat src/meteovoid/api.py (diff around dashboard rows.append)
+Fixes failing unit test tests/test_live.py::test_analyze_window_transitions
+Error was: AttributeError: 'RollingWindow' object has no attribute 'values'
 
-Fix:
-- Use the exact formatting black expects for rows.append:
-    rows.append("<tr>" f"...")
-
-Apply:
-1) Unzip at repo root (keeps paths).
-2) Commit + push.
-3) CI pre-commit should pass.
-
-This patch includes the mypy-safe _ts_ingest() too.
+This patch adds values() as a backward-compatible wrapper around samples().
+It keeps analyze_window() semantics (score/state) and stays ruff/black/mypy clean.
