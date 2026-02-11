@@ -183,12 +183,7 @@ def dashboard() -> HTMLResponse:  # pragma: no cover
             for v in vars_:
                 vv = str(v)
                 links.append(f'<a href="/latest?station_id={sid}&variable={vv}">{vv}</a>')
-            rows.append(
-                "<tr>"
-                f"<td><b>{sid}</b></td>"
-                f"<td>{', '.join(links)}</td>"
-                "</tr>"
-            )
+            rows.append("<tr>" f"<td><b>{sid}</b></td>" f"<td>{', '.join(links)}</td>" "</tr>")
 
     rows_html = "\n".join(rows) if rows else "<tr><td colspan='2'>(no data)</td></tr>"
 

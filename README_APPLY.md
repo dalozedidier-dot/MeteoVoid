@@ -1,15 +1,16 @@
-# MeteoVoid hotfix: black formatting in dashboard (api.py)
+# MeteoVoid hotfix: ruff-format + black (api.py)
 
-Your CI is failing because pre-commit says:
-  would reformat src/meteovoid/api.py
+Your CI log shows:
+- ruff-format: would reformat src/meteovoid/api.py
+- black: would reformat src/meteovoid/api.py (diff around dashboard rows.append)
 
 Fix:
-- Avoid chaining `.replace(...)` directly on the giant triple-quoted HTML.
-- Do it in two steps:
-    html = """..."""
-    html = html.replace("__ROWS__", rows_html)
+- Use the exact formatting black expects for rows.append:
+    rows.append("<tr>" f"...")
 
 Apply:
-- Unzip at repo root
-- Commit + push
-- CI should pass pre-commit (black/ruff-format).
+1) Unzip at repo root (keeps paths).
+2) Commit + push.
+3) CI pre-commit should pass.
+
+This patch includes the mypy-safe _ts_ingest() too.
