@@ -35,6 +35,7 @@ jobs:
   publish-pypi:
     needs: build
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
     environment: pypi
     permissions:
       id-token: write
@@ -45,7 +46,18 @@ jobs:
           name: dist
           path: dist
 
+      # Option A: API token (recommended for immediate success without PyPI Trusted Publisher setup)
+      - name: Publish to PyPI (API token)
+        if: ${{ secrets.PYPI_API_TOKEN != '' }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true
+
+      # Option B: Trusted Publisher OIDC (requires PyPI publisher configured for this repo + workflow + env)
       - name: Publish to PyPI (Trusted Publisher OIDC)
+        if: ${{ secrets.PYPI_API_TOKEN == '' }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
@@ -54,6 +66,7 @@ jobs:
   github-release:
     needs: build
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
     steps:
@@ -64,7 +77,6 @@ jobs:
           path: dist
 
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*
