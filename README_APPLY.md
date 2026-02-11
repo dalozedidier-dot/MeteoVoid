@@ -1,17 +1,14 @@
-# MeteoVoid hotfix: restore State + compatible live.py
+Patch: fix /latest (no params) returning {status:not_found} even when Redis contains latest keys.
 
-Your Live Smoke compose logs show:
-    ImportError: cannot import name 'State' from 'meteovoid.live'
-
-Cause:
-- live.py was replaced by a variant that removed the `State` alias.
+Root cause:
+- api.py was filtering keys using str(k).startswith('meteovoid:latest:') BEFORE decoding bytes keys.
+  redis-py typically returns bytes unless decode_responses=True, so the filter dropped all keys.
 
 Fix:
-- Reintroduce `State = Literal["stable", "transition", "unstable"]`
-- Keep LiveConfig + RollingWindow + analyze_window() compatible with stream.py imports
-- Keep RollingWindow.values(now) for the unit tests.
+- Decode keys first, then apply startswith filter.
+- Keep black/ruff-format stable formatting.
+- Update live_smoke.yml to clean _ci_out/live_smoke and try /stations even when /latest 200 but invalid.
 
-Apply:
-1) Unzip at repo root.
-2) Commit + push.
-3) Live Smoke should reach /health again (api container will start).
+Files:
+- src/meteovoid/api.py
+- .github/workflows/live_smoke.yml

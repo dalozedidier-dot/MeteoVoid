@@ -27,6 +27,7 @@ jobs:
       - name: Prepare output dir
         run: |
           set -euo pipefail
+          rm -rf _ci_out/live_smoke
           mkdir -p _ci_out/live_smoke
 
       - name: Build images
@@ -84,8 +85,8 @@ jobs:
               fi
             fi
 
-            # If API requires query params (FastAPI Query(...)), discover first pair via /stations
-            if [ "$code" = "422" ]; then
+            # If /latest is invalid or API requires query params, discover first pair via /stations
+            if [ "$code" = "422" ] || [ "$code" = "200" ]; then
               if [ -z "$station_id" ] || [ -z "$variable" ]; then
                 st_code="$(curl -sS -o "$tmp" -w "%{http_code}" http://localhost:8000/stations || true)"
                 if [ "$st_code" = "200" ]; then

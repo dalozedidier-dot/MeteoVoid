@@ -21,6 +21,22 @@ def _make_redis(url: str) -> RedisLike:
     return cast(RedisLike, make_redis(url))
 
 
+def _decode_key(k: Any) -> str:
+    if isinstance(k, bytes | bytearray):
+        return k.decode("utf-8", errors="replace")
+    return str(k)
+
+
+def _iter_latest_keys(r: RedisLike, pattern: str) -> list[str]:
+    keys_any = r.keys(pattern)
+    keys: list[str] = []
+    for k in keys_any:
+        dk = _decode_key(k)
+        if dk.startswith("meteovoid:latest:"):
+            keys.append(dk)
+    return keys
+
+
 def latest(station_id: str, variable: str, redis_url: str = REDIS_URL) -> dict[str, Any]:
     r = _make_redis(redis_url)
     key = f"meteovoid:latest:{station_id}:{variable}"
@@ -38,13 +54,9 @@ def latest(station_id: str, variable: str, redis_url: str = REDIS_URL) -> dict[s
 
 def stations(pattern: str = "*", redis_url: str = REDIS_URL) -> dict[str, dict[str, list[str]]]:
     r = _make_redis(redis_url)
-    keys_any = r.keys(pattern)
 
-    keys = [
-        (k.decode("utf-8", errors="replace") if isinstance(k, bytes | bytearray) else str(k))
-        for k in keys_any
-        if str(k).startswith("meteovoid:latest:")
-    ]
+    # Keep backward compatibility: allow callers to pass "*" but we only care about latest keys.
+    keys = _iter_latest_keys(r, pattern)
 
     out: dict[str, list[str]] = {}
     for k in keys:
@@ -83,13 +95,7 @@ def _ts_ingest(payload: dict[str, Any]) -> float:
 
 def latest_any(redis_url: str = REDIS_URL) -> dict[str, Any]:
     r = _make_redis(redis_url)
-    keys_any = r.keys("meteovoid:latest:*")
-
-    keys = [
-        (k.decode("utf-8", errors="replace") if isinstance(k, bytes | bytearray) else str(k))
-        for k in keys_any
-        if str(k).startswith("meteovoid:latest:")
-    ]
+    keys = _iter_latest_keys(r, "meteovoid:latest:*")
 
     best: dict[str, Any] | None = None
     best_ts = -1.0
@@ -122,7 +128,8 @@ def health() -> dict[str, str]:
 
 @app.get("/stations")
 def stations_http(pattern: str = Query("*")) -> dict[str, dict[str, list[str]]]:  # pragma: no cover
-    return stations(pattern=pattern, redis_url=REDIS_URL)
+    # Normalize: user-facing /stations should list stations; ignore arbitrary patterns from callers.
+    return stations(pattern="meteovoid:latest:*", redis_url=REDIS_URL)
 
 
 @app.get("/latest")
@@ -134,14 +141,8 @@ def latest_http(
         return latest(station_id=station_id, variable=variable, redis_url=REDIS_URL)
 
     if station_id and not variable:
-        # Backward compatible: return the newest variable report for that station.
         r = _make_redis(REDIS_URL)
-        keys_any = r.keys(f"meteovoid:latest:{station_id}:*")
-        keys = [
-            (k.decode("utf-8", errors="replace") if isinstance(k, bytes | bytearray) else str(k))
-            for k in keys_any
-            if str(k).startswith(f"meteovoid:latest:{station_id}:")
-        ]
+        keys = _iter_latest_keys(r, f"meteovoid:latest:{station_id}:*")
 
         best: dict[str, Any] | None = None
         best_ts = -1.0
@@ -172,7 +173,7 @@ def root() -> HTMLResponse:  # pragma: no cover
 
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard() -> HTMLResponse:  # pragma: no cover
-    st = stations(pattern="*", redis_url=REDIS_URL).get("stations", {})
+    st = stations(pattern="meteovoid:latest:*", redis_url=REDIS_URL).get("stations", {})
     rows: list[str] = []
     if isinstance(st, dict):
         for sid in sorted(st.keys()):
