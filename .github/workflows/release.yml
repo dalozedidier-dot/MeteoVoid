@@ -1,28 +1,11 @@
-name: Release (PyPI + GitHub)
+# .github/workflows/release.yml
+name: Release
 
 on:
   push:
     tags:
       - "v*"
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Tag to release, for example v0.1.0"
-        required: true
-        type: string
-      publish_pypi:
-        description: "Publish to PyPI"
-        required: false
-        type: boolean
-        default: false
-      pypi_auth:
-        description: "PyPI authentication method"
-        required: false
-        type: choice
-        options:
-          - token
-          - oidc
-        default: token
 
 permissions:
   contents: write
@@ -35,87 +18,55 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
 
-      - name: Build
+      - name: Build dist
         run: |
-          python -m pip install -U pip build
+          set -euo pipefail
+          python -m pip install -U pip
+          python -m pip install build
           python -m build
 
-      - name: Upload dist artifact
+      - name: Upload dist artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dist
-          path: dist/
+          path: dist/*
+          if-no-files-found: error
 
-  pypi-publish-token:
-    needs: build
-    runs-on: ubuntu-latest
-    if: >
-      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/'))
-      || (github.event_name == 'workflow_dispatch' && inputs.publish_pypi == true && inputs.pypi_auth == 'token')
-    steps:
-      - name: Download dist artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
-      - name: Publish to PyPI (token)
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          user: __token__
-          password: ${{ secrets.PYPI_API_TOKEN }}
-          packages-dir: dist
-          skip-existing: true
-          attestations: false
-
-  pypi-publish-oidc:
+  publish-pypi:
     needs: build
     runs-on: ubuntu-latest
     environment: pypi
-    if: >
-      (github.event_name == 'workflow_dispatch' && inputs.publish_pypi == true && inputs.pypi_auth == 'oidc')
     steps:
-      - name: Download dist artifact
+      - name: Download dist artifacts
         uses: actions/download-artifact@v4
         with:
           name: dist
-          path: dist/
+          path: dist
 
-      - name: Publish to PyPI (OIDC)
+      - name: Publish to PyPI (Trusted Publisher)
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
-          skip-existing: true
-          attestations: false
+          skip-existing: false
 
   github-release:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Download dist artifact
+      - name: Download dist artifacts
         uses: actions/download-artifact@v4
         with:
           name: dist
-          path: dist/
+          path: dist
 
-      - name: Create GitHub Release (tag push)
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*
-          generate_release_notes: true
-
-      - name: Create GitHub Release (manual)
-        if: github.event_name == 'workflow_dispatch'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ inputs.tag }}
-          target_commitish: ${{ github.sha }}
-          files: dist/*
-          generate_release_notes: true
+          files: |
+            dist/*.whl
+            dist/*.tar.gz

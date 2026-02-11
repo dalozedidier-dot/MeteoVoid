@@ -1,12 +1,10 @@
+# .github/workflows/live_smoke.yml
 name: Live Smoke (Docker Compose)
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "17 */6 * * *"
-
-permissions:
-  contents: read
+  push:
+    branches: ["main"]
 
 concurrency:
   group: live-smoke-${{ github.ref }}
@@ -21,77 +19,105 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show versions
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Prepare output dir
         run: |
-          docker version
-          docker compose version
+          set -euo pipefail
+          mkdir -p _ci_out/live_smoke
 
       - name: Build images
         run: |
+          set -euo pipefail
           docker compose -f docker-compose.yml build
 
-      - name: Start Redis only
+      - name: Up Redis
         run: |
+          set -euo pipefail
           docker compose -f docker-compose.yml up -d redis
-          docker compose -f docker-compose.yml ps
 
-      - name: Start live services
+      - name: Up live + api
         run: |
+          set -euo pipefail
           docker compose -f docker-compose.yml up -d meteovoid-live meteovoid-api
-          docker compose -f docker-compose.yml ps
 
-      - name: Wait for API to be ready
+      - name: Wait /health
         run: |
-          set -e
-          for i in $(seq 1 30); do
+          set -euo pipefail
+          for i in $(seq 1 60); do
             if curl -fsS http://localhost:8000/health >/dev/null; then
-              echo "API is up"
+              echo "health OK"
               exit 0
             fi
-            echo "Waiting for API... ($i)"
             sleep 2
           done
-          echo "API did not become ready in time"
-          docker compose -f docker-compose.yml ps
-          docker compose -f docker-compose.yml logs --no-color
+          echo "health timeout"
           exit 1
 
-      - name: Push synthetic live data (seed stream)
+      - name: Seed stream (simulate)
         run: |
+          set -euo pipefail
           docker compose -f docker-compose.yml run --rm meteovoid-simulate
 
-      - name: Wait for first live report
+      - name: Wait /latest enriched
         run: |
-          for i in $(seq 1 30); do
-            echo "Checking for live report ($i)"
-            curl -fsS "http://localhost:8000/latest?station_id=DEMO_BE_0001&variable=wind_gust_ms" \
-              | python -c "import json,sys; d=json.load(sys.stdin); sys.exit(0 if ('score' in d and 'state' in d) else 1)" \
-              && echo "Report OK" && exit 0 || true
+          set -euo pipefail
+          tmp="$(mktemp)"
+          for i in $(seq 1 90); do
+            if curl -fsS http://localhost:8000/latest > "$tmp"; then
+              python - <<'PY' "$tmp" && mv "$tmp" _ci_out/live_smoke/latest.json && exit 0
+import json, sys
+p = sys.argv[1]
+try:
+    d = json.loads(open(p, "r", encoding="utf-8").read())
+except Exception:
+    sys.exit(1)
+if not isinstance(d, dict):
+    sys.exit(1)
+ok = True
+for k in ("score", "state", "station_id", "variable", "stream_id", "ts", "ts_ingest", "stats", "meteo"):
+    ok = ok and (k in d)
+if ok and isinstance(d.get("stats"), dict) and isinstance(d.get("meteo"), dict):
+    if "n_points" in d["stats"] and "interpretation" in d["meteo"]:
+        sys.exit(0)
+sys.exit(1)
+PY
+            fi
             sleep 2
           done
-
-          echo "No live report produced in time"
-          docker compose -f docker-compose.yml ps
-          docker compose -f docker-compose.yml logs --no-color
+          echo "/latest timeout or not enriched"
           exit 1
 
-      - name: Save report + logs (for artifact)
+      - name: Validate latest.json (strict)
+        run: |
+          set -euo pipefail
+          python tools/validate_latest_report.py _ci_out/live_smoke/latest.json
+
+      - name: Capture ps
         if: always()
         run: |
-          mkdir -p _ci_out/live_smoke
-          curl -fsS "http://localhost:8000/latest?station_id=DEMO_BE_0001&variable=wind_gust_ms" \
-            > _ci_out/live_smoke/latest.json || true
+          set -euo pipefail
           docker compose -f docker-compose.yml ps > _ci_out/live_smoke/ps.txt || true
+
+      - name: Capture logs
+        if: always()
+        run: |
+          set -euo pipefail
           docker compose -f docker-compose.yml logs --no-color > _ci_out/live_smoke/compose.log || true
 
-      - name: Upload live-smoke artifact
+      - name: Upload artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: live_smoke_report
           path: _ci_out/live_smoke/
+          if-no-files-found: error
 
-      - name: Tear down
+      - name: Down
         if: always()
         run: |
+          set -euo pipefail
           docker compose -f docker-compose.yml down -v
