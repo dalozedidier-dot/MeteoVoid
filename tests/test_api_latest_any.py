@@ -19,7 +19,6 @@ class FakeRedis:
             self._keys.append(key)
 
     def keys(self, pattern: str) -> list[str]:
-        # Very small glob: only supports '*' in pattern
         if pattern == "*":
             return list(self._keys)
         parts = pattern.split("*")
@@ -45,15 +44,11 @@ def test_latest_any_picks_most_recent(monkeypatch) -> None:
 
     fr.set(
         "meteovoid:latest:S1:wind",
-        json.dumps(
-            {"station_id": "S1", "variable": "wind", "ts_ingest": 10, "score": 0.1}
-        ),
+        json.dumps({"station_id": "S1", "variable": "wind", "ts_ingest": 10, "score": 0.1}),
     )
     fr.set(
         "meteovoid:latest:S2:temp",
-        json.dumps(
-            {"station_id": "S2", "variable": "temp", "ts_ingest": 20, "score": 0.2}
-        ),
+        json.dumps({"station_id": "S2", "variable": "temp", "ts_ingest": 20, "score": 0.2}),
     )
 
     def fake_make(_url: str):  # noqa: ANN001

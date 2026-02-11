@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import os
 import urllib.request
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 
 def _severity_rank(sev: str) -> int:
@@ -12,9 +13,9 @@ def _severity_rank(sev: str) -> int:
 
 
 def maybe_send_alert(report: Mapping[str, Any]) -> bool:
-    """Send an alert via webhook when severity is high or flag 'alert' appears.
+    """Send an alert via webhook.
 
-    Controlled by env vars:
+    Env:
     - METEOVOID_ALERT_WEBHOOK_URL: if empty -> no-op
     - METEOVOID_ALERT_MIN_SEVERITY: default 'high'
     - METEOVOID_ALERT_ALWAYS_ON_FLAG: default 'alert'
@@ -53,5 +54,5 @@ def maybe_send_alert(report: Mapping[str, Any]) -> bool:
             _ = resp.read()
         return True
     except Exception:
-        # Fail-silent: alerts must never crash the worker
+        # Alerts must never crash the worker.
         return False
