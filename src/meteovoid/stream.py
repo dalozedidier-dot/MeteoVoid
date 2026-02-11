@@ -38,13 +38,6 @@ def _latest_key(station_id: str, variable: str) -> str:
 
 
 def _default_start_id() -> str:
-    """Default Redis Streams start-id.
-
-    Order of precedence:
-    1) METEOVOID_START_ID env var if set
-    2) In CI, default to '0-0' so seeded messages are consumed
-    3) Locally, default to '$' (tail)
-    """
     override = os.getenv("METEOVOID_START_ID")
     if override:
         return override
@@ -103,7 +96,6 @@ def _meteo_interpretation(
         flags.append("watch")
         severity = "medium"
     else:
-        # fallback on state
         if state == "unstable":
             flags.append("alert")
             severity = "high"
@@ -149,7 +141,7 @@ def _meteo_interpretation(
 def _impute_values(
     *,
     samples: list[tuple[datetime, float]],
-    dt_ref_s: float,
+    dt_median_s: float,
     gap_threshold_s: float,
     mode: str,
     max_points: int,
@@ -168,9 +160,8 @@ def _impute_values(
         t, v = samples[i]
         d = float((t - prev_t).total_seconds())
 
-        if d > gap_threshold_s and dt_ref_s > 0:
-            # approximate number of missing points between prev and current
-            k = int(d // dt_ref_s) - 1
+        if d > gap_threshold_s and dt_median_s > 0:
+            k = int(d // dt_median_s) - 1
             if k > 0:
                 k = min(k, max_points - inserted)
                 for _ in range(k):
@@ -189,6 +180,31 @@ def _impute_values(
     return (out, inserted)
 
 
+def _get_float(overrides: dict[str, Any], key: str, default: float) -> float:
+    v = overrides.get(key)
+    if v is None:
+        return float(default)
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return float(default)
+
+
+def _get_int(overrides: dict[str, Any], key: str, default: int) -> int:
+    v = overrides.get(key)
+    if v is None:
+        return int(default)
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return int(default)
+
+
+def _get_str(overrides: dict[str, Any], key: str, default: str) -> str:
+    v = overrides.get(key)
+    return str(v) if v is not None else default
+
+
 def process_observation(
     fields: Mapping[str, Any],
     msg_id: str = "",
@@ -197,7 +213,6 @@ def process_observation(
     ts_ingest: float | None = None,
     station_config: StationConfig | None = None,
 ) -> dict[str, Any] | None:
-    """Process a single observation message and return an enriched report."""
     cfg = cfg or LiveConfig()
     windows = windows if windows is not None else {}
 
@@ -216,17 +231,17 @@ def process_observation(
 
     overrides = resolve_variable_overrides(station_config, station_id=station_id, variable=variable)
 
-    stable_th = float(overrides.get("stable_threshold", cfg.stable_threshold))
-    unstable_th = float(overrides.get("unstable_threshold", cfg.unstable_threshold))
-    gap_threshold = float(overrides.get("max_gap_s", cfg.max_gap_s))
+    stable_th = _get_float(overrides, "stable_threshold", cfg.stable_threshold)
+    unstable_th = _get_float(overrides, "unstable_threshold", cfg.unstable_threshold)
+    gap_threshold = _get_float(overrides, "max_gap_s", cfg.max_gap_s)
 
-    watch_threshold = float(overrides.get("watch_threshold", (stable_th + unstable_th) / 2.0))
-    alert_threshold = float(overrides.get("alert_threshold", unstable_th))
+    watch_threshold = _get_float(overrides, "watch_threshold", (stable_th + unstable_th) / 2.0)
+    alert_threshold = _get_float(overrides, "alert_threshold", unstable_th)
 
-    impute_mode = str(overrides.get("impute_mode", cfg.impute_mode))
+    impute_mode = _get_str(overrides, "impute_mode", cfg.impute_mode)
     use_imputed_for_score = bool(overrides.get("use_imputed_for_score", cfg.use_imputed_for_score))
-    max_imputed_frac = float(overrides.get("max_imputed_frac", cfg.max_imputed_frac))
-    max_impute_points = int(overrides.get("max_impute_points", cfg.max_impute_points))
+    max_imputed_frac = _get_float(overrides, "max_imputed_frac", cfg.max_imputed_frac)
+    max_impute_points = _get_int(overrides, "max_impute_points", cfg.max_impute_points)
 
     key = (station_id, variable)
     win = windows.setdefault(key, RollingWindow(window_s=cfg.window_s))
@@ -248,17 +263,15 @@ def process_observation(
     for i in range(1, len(samples)):
         deltas.append(float((samples[i][0] - samples[i - 1][0]).total_seconds()))
 
-    # Estimate dt_ref from non-gap deltas when possible.
-    deltas_non_gap = [d for d in deltas if d <= gap_threshold]
-    dt_ref = _median(deltas_non_gap) if deltas_non_gap else _median(deltas)
-    dt_ref = max(float(dt_ref), 0.001)
+    dt_median_s = _median(deltas) if deltas else 0.0
+    dt_median_s = max(float(dt_median_s), 0.001)
 
     gaps = [d for d in deltas if d > gap_threshold]
     gap_count = len(gaps)
     gap_max = float(max(gaps)) if gaps else 0.0
     gap_total = float(sum(gaps)) if gaps else 0.0
 
-    missing_time_s = float(sum(max(0.0, d - dt_ref) for d in gaps)) if gaps else 0.0
+    missing_time_s = float(sum(max(0.0, d - dt_median_s) for d in gaps)) if gaps else 0.0
     missing_time_frac = float(min(1.0, missing_time_s / float(max(1, cfg.window_s))))
 
     imputed_values: list[float] = values
@@ -266,7 +279,7 @@ def process_observation(
     if impute_mode in {"ffill", "mean"} and samples and gap_count > 0:
         imputed_values, imputed_points = _impute_values(
             samples=samples,
-            dt_ref_s=dt_ref,
+            dt_median_s=dt_median_s,
             gap_threshold_s=gap_threshold,
             mode=impute_mode,
             max_points=max_impute_points,
@@ -307,20 +320,13 @@ def process_observation(
             "variable": variable,
             "stream_id": msg_id,
             "ts_ingest": float(ts_ingest if ts_ingest is not None else time.time()),
-            "thresholds": {
-                "stable_threshold": stable_th,
-                "unstable_threshold": unstable_th,
-                "watch_threshold": watch_threshold,
-                "alert_threshold": alert_threshold,
-            },
             "stats": {
                 "n_points": int(n),
                 "min": v_min,
                 "max": v_max,
                 "mean": v_mean,
                 "p95": v_p95,
-                "dt_median_s": float(dt_ref),
-                "dt_ref_s": float(dt_ref),
+                "dt_median_s": float(dt_median_s),
                 "gap_threshold_s": float(gap_threshold),
                 "gap_count": int(gap_count),
                 "gap_max_s": gap_max,

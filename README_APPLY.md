@@ -1,14 +1,17 @@
-Patch: fix /latest (no params) returning {status:not_found} even when Redis contains latest keys.
+# MeteoVoid fix v3: align LiveConfig + fix mypy in stream.py + black format
 
-Root cause:
-- api.py was filtering keys using str(k).startswith('meteovoid:latest:') BEFORE decoding bytes keys.
-  redis-py typically returns bytes unless decode_responses=True, so the filter dropped all keys.
+Your CI failed on:
+- black: would reformat src/meteovoid/live.py
+- mypy: LiveConfig missing attributes (max_gap_s, impute_mode, etc.)
+- mypy: float(overrides.get(...)) with Any|None
 
-Fix:
-- Decode keys first, then apply startswith filter.
-- Keep black/ruff-format stable formatting.
-- Update live_smoke.yml to clean _ci_out/live_smoke and try /stations even when /latest 200 but invalid.
+This patch:
+- Restores a full LiveConfig with the attributes stream.py expects.
+- Keeps State alias (imported by stream.py and cli.py).
+- Keeps RollingWindow.values(now) (used by tests).
+- Updates stream.py to use typed helpers (_get_float/_get_int) so mypy is happy.
+- Ensures stats includes dt_median_s (contract expects it).
 
 Files:
-- src/meteovoid/api.py
-- .github/workflows/live_smoke.yml
+- src/meteovoid/live.py
+- src/meteovoid/stream.py
