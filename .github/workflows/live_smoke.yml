@@ -62,33 +62,27 @@ jobs:
           set -euo pipefail
           docker compose -f docker-compose.yml run --rm meteovoid-simulate
 
-      - name: Wait /latest enriched
+      - name: Wait /latest enriched (strict schema)
         run: |
           set -euo pipefail
           tmp="$(mktemp)"
           for i in $(seq 1 90); do
             if curl -fsS http://localhost:8000/latest > "$tmp"; then
-              python - <<'PY' "$tmp" && mv "$tmp" _ci_out/live_smoke/latest.json && exit 0
-import json, sys
-p = sys.argv[1]
-try:
-    d = json.loads(open(p, "r", encoding="utf-8").read())
-except Exception:
-    sys.exit(1)
-if not isinstance(d, dict):
-    sys.exit(1)
-ok = True
-for k in ("score", "state", "station_id", "variable", "stream_id", "ts", "ts_ingest", "stats", "meteo"):
-    ok = ok and (k in d)
-if ok and isinstance(d.get("stats"), dict) and isinstance(d.get("meteo"), dict):
-    if "n_points" in d["stats"] and "interpretation" in d["meteo"]:
-        sys.exit(0)
-sys.exit(1)
-PY
+              if python tools/validate_latest_report.py "$tmp" >/dev/null 2>&1; then
+                mv "$tmp" _ci_out/live_smoke/latest.json
+                echo "latest OK"
+                exit 0
+              fi
             fi
             sleep 2
           done
-          echo "/latest timeout or not enriched"
+          echo "/latest timeout or invalid"
+          echo "Last payload (if any) and validation errors:"
+          if [ -s "$tmp" ]; then
+            python tools/validate_latest_report.py "$tmp" || true
+          else
+            echo "(empty response)"
+          fi
           exit 1
 
       - name: Validate latest.json (strict)
