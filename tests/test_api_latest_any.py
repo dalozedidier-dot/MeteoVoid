@@ -23,7 +23,7 @@ class FakeRedis:
         if pattern == "*":
             return list(self._keys)
         parts = pattern.split("*")
-        out = []
+        out: list[str] = []
         for k in self._keys:
             ok = True
             pos = 0
@@ -43,8 +43,18 @@ class FakeRedis:
 def test_latest_any_picks_most_recent(monkeypatch) -> None:
     fr = FakeRedis()
 
-    fr.set("meteovoid:latest:S1:wind", json.dumps({"station_id": "S1", "variable": "wind", "ts_ingest": 10, "score": 0.1}))
-    fr.set("meteovoid:latest:S2:temp", json.dumps({"station_id": "S2", "variable": "temp", "ts_ingest": 20, "score": 0.2}))
+    fr.set(
+        "meteovoid:latest:S1:wind",
+        json.dumps(
+            {"station_id": "S1", "variable": "wind", "ts_ingest": 10, "score": 0.1}
+        ),
+    )
+    fr.set(
+        "meteovoid:latest:S2:temp",
+        json.dumps(
+            {"station_id": "S2", "variable": "temp", "ts_ingest": 20, "score": 0.2}
+        ),
+    )
 
     def fake_make(_url: str):  # noqa: ANN001
         return fr

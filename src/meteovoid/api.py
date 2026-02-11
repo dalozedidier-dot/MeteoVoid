@@ -39,15 +39,22 @@ def latest(station_id: str, variable: str, redis_url: str = REDIS_URL) -> dict[s
     return payload if isinstance(payload, dict) else {"status": "invalid_payload"}
 
 
-def stations(pattern: str = "*", redis_url: str = REDIS_URL) -> dict[str, dict[str, list[str]]]:
+def stations(
+    pattern: str = "*",
+    redis_url: str = REDIS_URL,
+) -> dict[str, dict[str, list[str]]]:
     r = _make_redis(redis_url)
     keys_any = r.keys(pattern)
 
-    keys = [
-        k.decode("utf-8") if isinstance(k, bytes | bytearray) else str(k)
-        for k in keys_any
-        if str(k).startswith("meteovoid:latest:")
-    ]
+    keys: list[str] = []
+    for k in keys_any:
+        kk = (
+            k.decode("utf-8", errors="replace")
+            if isinstance(k, (bytes, bytearray))
+            else str(k)
+        )
+        if kk.startswith("meteovoid:latest:"):
+            keys.append(kk)
 
     out: dict[str, list[str]] = {}
     for k in keys:
@@ -68,15 +75,21 @@ def stations(pattern: str = "*", redis_url: str = REDIS_URL) -> dict[str, dict[s
 
 def _ts_ingest(payload: dict[str, Any]) -> float:
     v = payload.get("ts_ingest")
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        # Backward compatibility: try ts as float (epoch)
-        vv = payload.get("ts")
+    if v is not None:
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            pass
+
+    # Backward compatibility: try ts as float (epoch)
+    vv = payload.get("ts")
+    if vv is not None:
         try:
             return float(vv)
         except (TypeError, ValueError):
-            return 0.0
+            pass
+
+    return 0.0
 
 
 def latest_any(redis_url: str = REDIS_URL) -> dict[str, Any]:
@@ -84,11 +97,15 @@ def latest_any(redis_url: str = REDIS_URL) -> dict[str, Any]:
     r = _make_redis(redis_url)
     keys_any = r.keys("meteovoid:latest:*")
 
-    keys = [
-        k.decode("utf-8") if isinstance(k, bytes | bytearray) else str(k)
-        for k in keys_any
-        if str(k).startswith("meteovoid:latest:")
-    ]
+    keys: list[str] = []
+    for k in keys_any:
+        kk = (
+            k.decode("utf-8", errors="replace")
+            if isinstance(k, (bytes, bytearray))
+            else str(k)
+        )
+        if kk.startswith("meteovoid:latest:"):
+            keys.append(kk)
 
     best: dict[str, Any] | None = None
     best_ts = -1.0
@@ -115,11 +132,16 @@ def latest_station(station_id: str, redis_url: str = REDIS_URL) -> dict[str, Any
     """Return all variables for a station + a simple weighted global score."""
     r = _make_redis(redis_url)
     keys_any = r.keys(f"meteovoid:latest:{station_id}:*")
-    keys = [
-        k.decode("utf-8") if isinstance(k, bytes | bytearray) else str(k)
-        for k in keys_any
-        if str(k).startswith(f"meteovoid:latest:{station_id}:")
-    ]
+
+    keys: list[str] = []
+    for k in keys_any:
+        kk = (
+            k.decode("utf-8", errors="replace")
+            if isinstance(k, (bytes, bytearray))
+            else str(k)
+        )
+        if kk.startswith(f"meteovoid:latest:{station_id}:"):
+            keys.append(kk)
 
     variables: dict[str, dict[str, Any]] = {}
     for k in keys:
@@ -134,6 +156,7 @@ def latest_station(station_id: str, redis_url: str = REDIS_URL) -> dict[str, Any
 
     cfg = load_station_config(env_config_path())
     weights: dict[str, float] = {}
+
     for var in variables:
         ov = resolve_variable_overrides(cfg, station_id=station_id, variable=var)
         w = ov.get("weight", 1.0)
@@ -160,7 +183,6 @@ def latest_station(station_id: str, redis_url: str = REDIS_URL) -> dict[str, Any
     stable_th = float(ov_global.get("stable_threshold", 0.15))
     unstable_th = float(ov_global.get("unstable_threshold", 0.30))
 
-    state_global = "stable"
     if score_global < stable_th:
         state_global = "stable"
     elif score_global > unstable_th:
@@ -190,7 +212,9 @@ def health() -> dict[str, str]:
 
 
 @app.get("/stations")
-def stations_http(pattern: str = Query("*")) -> dict[str, dict[str, list[str]]]:  # pragma: no cover
+def stations_http(  # pragma: no cover
+    pattern: str = Query("*"),
+) -> dict[str, dict[str, list[str]]]:
     return stations(pattern=pattern, redis_url=REDIS_URL)
 
 
@@ -215,18 +239,19 @@ def root() -> HTMLResponse:  # pragma: no cover
 @app.get("/dashboard", response_class=HTMLResponse)
 def dashboard() -> HTMLResponse:  # pragma: no cover
     st = stations(pattern="*", redis_url=REDIS_URL).get("stations", {})
-    rows = []
+    rows: list[str] = []
+
     if isinstance(st, dict):
         for sid in sorted(st.keys()):
             vars_ = st.get(sid, [])
             if not isinstance(vars_, list):
                 continue
-            links = []
+
+            links: list[str] = []
             for v in vars_:
                 vv = str(v)
-                links.append(
-                    f'<a href="/latest?station_id={sid}&variable={vv}">{vv}</a>'
-                )
+                links.append(f'<a href="/latest?station_id={sid}&variable={vv}">{vv}</a>')
+
             rows.append(
                 "<tr>"
                 f"<td><b>{sid}</b></td>"
@@ -235,10 +260,12 @@ def dashboard() -> HTMLResponse:  # pragma: no cover
                 "</tr>"
             )
 
-    html = """<!doctype html>
+    rows_html = "\n".join(rows) if rows else "<tr><td colspan='3'>(no data)</td></tr>"
+
+    template = """<!doctype html>
 <html>
   <head>
-    <meta charset="utf-8"/>
+    <meta charset=\"utf-8\"/>
     <title>MeteoVoid Dashboard</title>
     <style>
       body { font-family: ui-sans-serif, system-ui; margin: 24px; }
@@ -254,10 +281,11 @@ def dashboard() -> HTMLResponse:  # pragma: no cover
     <table>
       <thead><tr><th>Station</th><th>Variables</th><th>Global</th></tr></thead>
       <tbody>
-        {rows}
+        __ROWS__
       </tbody>
     </table>
   </body>
-</html>""".format(rows="\n".join(rows) if rows else "<tr><td colspan='3'>(no data)</td></tr>")
+</html>"""
 
+    html = template.replace("__ROWS__", rows_html)
     return HTMLResponse(content=html)

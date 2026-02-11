@@ -14,8 +14,7 @@ class Fail:
 
 
 def _is_number(x: Any) -> bool:
-    # ruff UP038: prefer PEP 604 union in isinstance
-    return isinstance(x, int | float) and not isinstance(x, bool)
+    return isinstance(x, (int, float)) and not isinstance(x, bool)
 
 
 def _req(obj: dict[str, Any], key: str) -> Any | Fail:

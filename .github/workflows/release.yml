@@ -55,14 +55,14 @@ jobs:
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
           packages-dir: dist
-          skip-existing: false
+          skip-existing: true
 
       - name: Publish to PyPI (Trusted Publisher / OIDC)
         if: ${{ !secrets.PYPI_API_TOKEN }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
-          skip-existing: false
+          skip-existing: true
 
   github-release:
     needs: build

@@ -319,6 +319,7 @@ def process_observation(
                 "max": v_max,
                 "mean": v_mean,
                 "p95": v_p95,
+                "dt_median_s": float(dt_ref),
                 "dt_ref_s": float(dt_ref),
                 "gap_threshold_s": float(gap_threshold),
                 "gap_count": int(gap_count),
