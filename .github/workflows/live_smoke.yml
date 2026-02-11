@@ -62,24 +62,79 @@ jobs:
           set -euo pipefail
           docker compose -f docker-compose.yml run --rm meteovoid-simulate
 
-      - name: Wait /latest enriched (strict schema)
+      - name: Wait /latest enriched (supports required query params)
         run: |
           set -euo pipefail
+
           tmp="$(mktemp)"
+          pair="$(mktemp)"
+
+          station_id=""
+          variable=""
+
           for i in $(seq 1 90); do
-            if curl -fsS http://localhost:8000/latest > "$tmp"; then
+            # 1) Try /latest without params (works if API accepts defaults)
+            code="$(curl -sS -o "$tmp" -w "%{http_code}" http://localhost:8000/latest || true)"
+            if [ "$code" = "200" ]; then
               if python tools/validate_latest_report.py "$tmp" >/dev/null 2>&1; then
                 mv "$tmp" _ci_out/live_smoke/latest.json
-                echo "latest OK"
+                echo "latest OK (no params)"
                 exit 0
               fi
             fi
+
+            # 2) If API requires query params, discover first (station_id, variable) via /stations
+            if [ "$code" = "422" ]; then
+              if [ -z "$station_id" ] || [ -z "$variable" ]; then
+                st_code="$(curl -sS -o "$tmp" -w "%{http_code}" http://localhost:8000/stations || true)"
+                if [ "$st_code" = "200" ]; then
+                  if python - <<'PY' "$tmp" > "$pair" 2>/dev/null; then
+import json, sys
+p = sys.argv[1]
+d = json.loads(open(p, "r", encoding="utf-8").read())
+stations = d.get("stations", {})
+if not isinstance(stations, dict) or not stations:
+    raise SystemExit(1)
+sid = sorted(stations.keys())[0]
+vars_ = stations.get(sid, [])
+if not isinstance(vars_, list) or not vars_:
+    raise SystemExit(1)
+var = sorted([v for v in vars_ if isinstance(v, str) and v])[0]
+print(sid)
+print(var)
+PY
+                    station_id="$(sed -n '1p' "$pair" || true)"
+                    variable="$(sed -n '2p' "$pair" || true)"
+                  fi
+                fi
+              fi
+
+              if [ -n "$station_id" ] && [ -n "$variable" ]; then
+                url="http://localhost:8000/latest?station_id=${station_id}&variable=${variable}"
+                code2="$(curl -sS -o "$tmp" -w "%{http_code}" "$url" || true)"
+                if [ "$code2" = "200" ]; then
+                  if python tools/validate_latest_report.py "$tmp" >/dev/null 2>&1; then
+                    mv "$tmp" _ci_out/live_smoke/latest.json
+                    echo "latest OK (station_id=$station_id variable=$variable)"
+                    exit 0
+                  fi
+                fi
+              fi
+            fi
+
             sleep 2
           done
+
           echo "/latest timeout or invalid"
+          echo "Last HTTP code (no params): $code"
+          if [ -n "$station_id" ] && [ -n "$variable" ]; then
+            echo "Tried with station_id=$station_id variable=$variable"
+          fi
           echo "Last payload (if any) and validation errors:"
           if [ -s "$tmp" ]; then
             python tools/validate_latest_report.py "$tmp" || true
+            echo "--- raw payload ---"
+            cat "$tmp" || true
           else
             echo "(empty response)"
           fi

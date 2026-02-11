@@ -40,7 +40,8 @@ jobs:
   publish-pypi:
     needs: build
     runs-on: ubuntu-latest
-    environment: pypi
+    # If you configured a PyPI Trusted Publisher, set environment: pypi (optional).
+    # environment: pypi
     steps:
       - name: Download dist artifacts
         uses: actions/download-artifact@v4
@@ -48,7 +49,16 @@ jobs:
           name: dist
           path: dist
 
-      - name: Publish to PyPI (Trusted Publisher)
+      - name: Publish to PyPI (token)
+        if: ${{ secrets.PYPI_API_TOKEN != '' }}
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          packages-dir: dist
+          skip-existing: false
+
+      - name: Publish to PyPI (Trusted Publisher / OIDC)
+        if: ${{ secrets.PYPI_API_TOKEN == '' }}
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
