@@ -1,35 +1,40 @@
 from __future__ import annotations
 
+import time
 from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from statistics import pstdev
-from typing import Any
+from typing import Any, Literal
+
+State = Literal["stable", "transition", "unstable"]
 
 
 @dataclass(frozen=True)
 class LiveConfig:
-    """Runtime configuration for live scoring.
+    """Configuration for live scoring.
 
-    window_s is a time window in seconds.
-    The score is the population standard deviation of values in that window.
+    - window_s: rolling window duration (seconds). Used by RollingWindow.
+    - stable_threshold / unstable_threshold: thresholds on the score for state labeling.
+
+    Optional:
+    - watch_threshold: if None, derived as midpoint between stable and unstable thresholds.
+    - alert_threshold: if None, equals unstable_threshold.
     """
 
     window_s: int = 300
     stable_threshold: float = 0.15
     unstable_threshold: float = 0.30
-
-    # Optional overrides (if None, derived from stable/unstable).
     watch_threshold: float | None = None
     alert_threshold: float | None = None
 
     def thresholds(self) -> dict[str, float]:
         watch = (
-            self.watch_threshold
+            float(self.watch_threshold)
             if self.watch_threshold is not None
-            else (self.stable_threshold + 0.5 * (self.unstable_threshold - self.stable_threshold))
+            else float(self.stable_threshold + 0.5 * (self.unstable_threshold - self.stable_threshold))
         )
-        alert = self.alert_threshold if self.alert_threshold is not None else self.unstable_threshold
+        alert = float(self.alert_threshold) if self.alert_threshold is not None else float(self.unstable_threshold)
         return {
             "stable_threshold": float(self.stable_threshold),
             "watch_threshold": float(watch),
@@ -39,22 +44,23 @@ class LiveConfig:
 
 
 class RollingWindow:
-    """Keep recent (timestamp, value) pairs within a sliding time window."""
+    """Keep (timestamp, value) samples inside a sliding time window."""
 
     def __init__(self, window_s: int) -> None:
+        if window_s <= 0:
+            raise ValueError("window_s must be > 0")
         self.window_s = int(window_s)
         self._buf: deque[tuple[datetime, float]] = deque()
 
     def push(self, ts: datetime, value: float) -> None:
         if ts.tzinfo is None:
-            # Always store timezone-aware timestamps to avoid subtle bugs.
             ts = ts.replace(tzinfo=UTC)
         self._buf.append((ts, float(value)))
 
     def samples(self, now: datetime) -> list[tuple[datetime, float]]:
-        """Return the samples within the last window_s seconds."""
         if now.tzinfo is None:
             now = now.replace(tzinfo=UTC)
+
         cutoff = now - timedelta(seconds=self.window_s)
         while self._buf and self._buf[0][0] < cutoff:
             self._buf.popleft()
@@ -71,41 +77,24 @@ def _score(values: list[float]) -> float:
     return float(pstdev(values))
 
 
-def analyze_window(values: list[float], cfg: LiveConfig) -> dict[str, Any]:
+def analyze_window(values: list[float], cfg: LiveConfig | None = None) -> dict[str, Any]:
+    """Return a minimal scoring report for the given values."""
+    if cfg is None:
+        cfg = LiveConfig()
+
     score = _score(values)
     th = cfg.thresholds()
 
     if score < th["stable_threshold"]:
-        state = "stable"
+        state: State = "stable"
     elif score < th["unstable_threshold"]:
         state = "transition"
     else:
         state = "unstable"
 
-    flags: list[str] = []
-    if score >= th["alert_threshold"]:
-        flags.append("alert")
-    elif score >= th["watch_threshold"]:
-        flags.append("watch")
-
-    interpretation = "Conditions stables."
-    severity = "low"
-    if state == "transition":
-        interpretation = "Variabilité en hausse, surveillance recommandée."
-        severity = "medium"
-    elif state == "unstable":
-        interpretation = "Variabilité forte, alerte recommandée."
-        severity = "high"
-
     return {
-        "score": score,
+        "ts": float(time.time()),
+        "score": float(score),
         "state": state,
         "thresholds": th,
-        "meteo": {
-            "interpretation": interpretation,
-            "flags": flags,
-            "severity": severity,
-            "score_hint": "plus le score est haut, plus la variabilité est forte",
-            "state_hint": "stable, transition, unstable",
-        },
     }

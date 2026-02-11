@@ -1,7 +1,17 @@
-Hotfix: restore RollingWindow.values(now)
+# MeteoVoid hotfix: restore State + compatible live.py
 
-Fixes failing unit test tests/test_live.py::test_analyze_window_transitions
-Error was: AttributeError: 'RollingWindow' object has no attribute 'values'
+Your Live Smoke compose logs show:
+    ImportError: cannot import name 'State' from 'meteovoid.live'
 
-This patch adds values() as a backward-compatible wrapper around samples().
-It keeps analyze_window() semantics (score/state) and stays ruff/black/mypy clean.
+Cause:
+- live.py was replaced by a variant that removed the `State` alias.
+
+Fix:
+- Reintroduce `State = Literal["stable", "transition", "unstable"]`
+- Keep LiveConfig + RollingWindow + analyze_window() compatible with stream.py imports
+- Keep RollingWindow.values(now) for the unit tests.
+
+Apply:
+1) Unzip at repo root.
+2) Commit + push.
+3) Live Smoke should reach /health again (api container will start).
