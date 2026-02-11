@@ -87,7 +87,9 @@ def _meteo_interpretation(
 
     if gap_count > 0:
         flags.append("data_gaps")
-        phrases.append("Trous de données détectés, possible perte de transmission ou capteur intermittent.")
+        phrases.append(
+            "Trous de données détectés, possible perte de transmission ou capteur intermittent."
+        )
 
     if missing_time_frac >= 0.10:
         flags.append("missing_significant")
@@ -102,7 +104,6 @@ def _meteo_interpretation(
     else:
         phrases.append("Signal globalement régulier sur la fenêtre.")
 
-    # A tiny, explicit mapping so it stays predictable.
     severity = "low"
     if state == "unstable" or missing_time_frac >= 0.10:
         severity = "high"
@@ -151,14 +152,12 @@ def process_observation(
 
     base = dict(analyze_window(values, cfg))
 
-    # basic stats
     n = len(values)
     v_min = float(min(values)) if values else 0.0
     v_max = float(max(values)) if values else 0.0
     v_mean = float(sum(values) / n) if n else 0.0
     v_p95 = _p95(values)
 
-    # holes / gaps
     deltas: list[float] = []
     for i in range(1, len(samples)):
         deltas.append((samples[i][0] - samples[i - 1][0]).total_seconds())
@@ -170,17 +169,17 @@ def process_observation(
     gap_max = float(max(gaps)) if gaps else 0.0
     gap_total = float(sum(gaps)) if gaps else 0.0
 
-    # estimate missing time (beyond a reference interval)
     dt_ref = max(dt_median, 1.0)
     missing_time_s = float(sum(max(0.0, d - dt_ref) for d in gaps)) if gaps else 0.0
     missing_time_frac = float(min(1.0, missing_time_s / float(max(1, cfg.window_s))))
 
-    score = float(base.get("score", 0.0))
-    state = str(base.get("state", "stable"))
+    # mypy: TypedDict -> dict() tends to widen values to object; cast back explicitly.
+    score = cast(float, base.get("score", 0.0))
+    state = cast(str, base.get("state", "stable"))
 
     meteo = _meteo_interpretation(
         state=state,
-        score=score,
+        score=float(score),
         n_points=n,
         missing_time_frac=missing_time_frac,
         gap_count=gap_count,
