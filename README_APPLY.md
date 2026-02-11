@@ -1,6 +1,13 @@
-Hotfix ruff/black
+# MeteoVoid hotfix mypy (api.py)
 
-Fixes:
-- ruff UP035 in alerts.py (Mapping from collections.abc)
-- ruff UP038 in api.py and tools/validate_latest_report.py (use X | Y in isinstance)
-- ruff-format/black formatting for api.py and tests/test_api_latest_any.py
+Fix:
+- mypy errors in src/meteovoid/api.py lines around _ts_ingest:
+  float(payload.get(...)) where payload.get returns Any | None.
+
+Change:
+- Narrow None before float(...) to satisfy mypy.
+
+Apply:
+- Unzip at repo root (keeps paths)
+- Commit + push
+- CI should pass mypy.

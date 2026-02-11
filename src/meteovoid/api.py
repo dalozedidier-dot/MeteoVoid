@@ -64,15 +64,22 @@ def stations(pattern: str = "*", redis_url: str = REDIS_URL) -> dict[str, dict[s
 
 
 def _ts_ingest(payload: dict[str, Any]) -> float:
+    # mypy: payload.get(...) is Any | None, so narrow None before float(...)
     v = payload.get("ts_ingest")
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        vv = payload.get("ts")
+    if v is not None:
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            pass
+
+    vv = payload.get("ts")
+    if vv is not None:
         try:
             return float(vv)
         except (TypeError, ValueError):
-            return 0.0
+            pass
+
+    return 0.0
 
 
 def latest_any(redis_url: str = REDIS_URL) -> dict[str, Any]:
@@ -126,9 +133,9 @@ def latest_http(
 ) -> dict[str, Any]:  # pragma: no cover
     if station_id and variable:
         return latest(station_id=station_id, variable=variable, redis_url=REDIS_URL)
+
     if station_id and not variable:
         # Backward compatible: return the newest variable for that station.
-        # (Keeps /latest?station_id=... usable even if station-global isn't implemented.)
         r = _make_redis(REDIS_URL)
         keys_any = r.keys(f"meteovoid:latest:{station_id}:*")
         keys = [
