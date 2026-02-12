@@ -1,18 +1,27 @@
-MeteoVoid hotfix v3: Fix Live Smoke exit 137 at "Wait /health"
+MeteoVoid hotfix v4: Live Smoke still failing with "No such command 'python'"
 
-Root cause (from compose.log):
-- meteovoid-api ran: "meteovoid python -m uvicorn ..."
-- Error: No such command 'python'
-This happens because the Docker image defines ENTRYPOINT=["meteovoid"].
+Evidence (logs_57258280677.zip):
+- docker compose ps shows:
+    meteovoid-api  COMMAND "meteovoid python -m ..."
+    meteovoid-live COMMAND "meteovoid python -m ..."
+- container logs show:
+    No such command 'python'
+
+Root cause:
+- Image ENTRYPOINT=["meteovoid"] is still active.
+- Your CI override changed "command" but not in a way that prevents ENTRYPOINT from prepending "meteovoid".
 
 Fix:
-- Override meteovoid-api entrypoint to: python -m uvicorn
-- Keep the workflow unchanged (it already uses -f docker-compose.yml -f docker-compose.ci.override.yml)
+- Override entrypoint to ["sh","-lc"] (guaranteed to replace ENTRYPOINT)
+- Provide command as a shell string:
+    python -m uvicorn meteovoid.api:app ...
+    meteovoid live ...
 
 Apply:
-1) Replace docker-compose.ci.override.yml at repo root with the file from this zip.
-2) Commit + push.
-3) Re-run "Live Smoke (Docker Compose)".
+- Replace docker-compose.ci.override.yml with this one.
+- Commit + push, rerun Live Smoke.
+
 Expected:
-- Wait /health passes
-- live_smoke_report includes latest.json + bulletin.* + compose.log + ps.txt
+- ps shows meteovoid-api command starts with "sh -lc python -m uvicorn ..."
+- /health becomes ok
+- live_smoke_report contains latest.json + bulletin.*

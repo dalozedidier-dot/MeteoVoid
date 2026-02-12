@@ -1,20 +1,11 @@
 services:
   meteovoid-api:
-    # The image sets ENTRYPOINT=["meteovoid"], which makes any command run as:
-    #   meteovoid <command...>
-    # That broke the API container with: "No such command 'python'".
-    #
-    # In CI we override the entrypoint to run uvicorn directly.
-    entrypoint:
-      - python
-      - -m
-      - uvicorn
-    command:
-      - meteovoid.api:app
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8000"
+    # The built image uses ENTRYPOINT=["meteovoid"].
+    # If command is ["python", "-m", "..."], Docker runs: meteovoid python -m ...
+    # So in CI we override the entrypoint to a shell and run uvicorn directly.
+    entrypoint: ["sh", "-lc"]
+    command: >
+      python -m uvicorn meteovoid.api:app --host 0.0.0.0 --port 8000
     healthcheck:
       test:
         [
@@ -26,3 +17,11 @@ services:
       interval: 3s
       timeout: 3s
       retries: 40
+
+  meteovoid-live:
+    # Same ENTRYPOINT issue as meteovoid-api (compose ps showed: "meteovoid python -m ...").
+    # Override entrypoint and run the CLI explicitly.
+    entrypoint: ["sh", "-lc"]
+    command: >
+      meteovoid live --redis-url redis://redis:6379/0
+      --in-stream meteovoid:observations --out-stream meteovoid:reports
