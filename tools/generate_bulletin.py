@@ -221,7 +221,9 @@ def _collect_reports_from_api(api_url: str) -> list[dict[str, Any]]:
     return out
 
 
-def _collect_reports_from_config(api_url: str, cfg_path: str, region: str | None) -> list[dict[str, Any]]:
+def _collect_reports_from_config(
+    api_url: str, cfg_path: str, region: str | None
+) -> list[dict[str, Any]]:
     # Lazy import to avoid requiring PyYAML unless this fallback is used.
     from meteovoid.stations_config import load_stations_config  # type: ignore[import-not-found]
 
@@ -433,7 +435,9 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="Optional stations YAML config path (fallback if /stations is missing)",
     )
-    p.add_argument("--region", default="", help="Optional region filter used with --stations-config")
+    p.add_argument(
+        "--region", default="", help="Optional region filter used with --stations-config"
+    )
     args = p.parse_args(argv)
 
     out_dir = Path(args.out_dir)
