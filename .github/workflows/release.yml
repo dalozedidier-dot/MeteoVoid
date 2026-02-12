@@ -48,9 +48,7 @@ jobs:
           path: dist
 
       - name: Publish to PyPI (token)
-        id: token_publish
         if: env.PYPI_API_TOKEN != ''
-        continue-on-error: true
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
@@ -59,11 +57,26 @@ jobs:
           skip-existing: true
 
       - name: Publish to PyPI (Trusted Publisher OIDC)
-        if: steps.token_publish.outcome != 'success'
+        id: oidc_publish
+        if: env.PYPI_API_TOKEN == ''
+        continue-on-error: true
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
           skip-existing: true
+
+      - name: Note about PyPI publish
+        if: env.PYPI_API_TOKEN == ''
+        run: |
+          echo "No PYPI_API_TOKEN secret configured."
+          echo "OIDC publish outcome: ${{ steps.oidc_publish.outcome }}"
+          echo ""
+          echo "If you want OIDC (Trusted Publisher), configure it on PyPI with:"
+          echo "  repository: dalozedidier-dot/MeteoVoid"
+          echo "  workflow: .github/workflows/release.yml"
+          echo "  environment: pypi"
+          echo ""
+          echo "Or set GitHub secret PYPI_API_TOKEN to publish via token."
 
   github-release:
     needs: build
