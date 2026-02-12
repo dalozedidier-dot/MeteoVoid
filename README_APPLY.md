@@ -1,11 +1,2 @@
-Patch MeteoVoid Bulletin v1
-
-Adds a real bulletin to live_smoke_report:
-- tools/generate_bulletin.py
-- workflow step generating bulletin.md + bulletin.json + history exports
-- docs/BULLETIN.md
-
-Files:
-- .github/workflows/live_smoke.yml
-- tools/generate_bulletin.py
-- docs/BULLETIN.md
+Patch v2: fix ruff I001 and ruff-format on tools/generate_bulletin.py
+Apply by unzipping at repo root (keeps previous bulletin workflow changes).

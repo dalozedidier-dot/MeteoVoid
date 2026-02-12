@@ -2,17 +2,16 @@ from __future__ import annotations
 
 import argparse
 import csv
+from dataclasses import dataclass
 import json
+from pathlib import Path
 import re
 import subprocess
 import time
-from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
-
 
 _ID_RE = re.compile(r"^\d+-\d+$")
 
@@ -46,70 +45,56 @@ def _severity_rank(sev: str) -> int:
     return {"low": 0, "medium": 1, "high": 2}.get(sev, 0)
 
 
-def _confidence(missing_time_frac: float, imputed_frac: float) -> str:
-    if missing_time_frac > 0.15 or imputed_frac > 0.25:
+def _confidence(*, missing_time_frac: float, imputed_frac: float) -> str:
+    if missing_time_frac > 0.15 or imputed_frac > 0.20:
         return "low"
-    if missing_time_frac > 0.05 or imputed_frac > 0.0:
+    if missing_time_frac > 0.05 or imputed_frac > 0.05:
         return "medium"
     return "high"
 
 
 def _recommendation(severity: str, confidence: str, flags: list[str]) -> str:
-    sev = str(severity).lower()
-    conf = str(confidence).lower()
-
-    if sev == "high":
-        if conf == "low":
-            return "Alerte (confiance faible): vérifier capteur et trous de données."
-        return "Alerte: action immédiate ou investigation."
-    if sev == "medium":
-        if "data_hole" in flags:
-            return "Surveillance: variabilité + trous de données."
-        return "Surveillance: suivre l'évolution et confirmer."
-    if conf == "low":
-        return "Confiance faible: prioriser la qualité des données."
-    return "Rien à signaler."
+    if severity == "high" or "alert" in flags:
+        if confidence == "low":
+            return "ALERTE (confiance faible, vérifier capteur et données)"
+        return "ALERTE (action rapide recommandée)"
+    if severity == "medium" or "watch" in flags:
+        if confidence == "low":
+            return "SURVEILLANCE (confiance faible, trous ou imputation)"
+        return "SURVEILLANCE (suivre l'évolution)"
+    if "data_hole" in flags:
+        return "STABLE (mais trous de données)"
+    return "STABLE"
 
 
-@dataclass(frozen=True)
-class VarRow:
-    station_id: str
-    variable: str
-    score: float
-    state: str
-    severity: str
-    confidence: str
-    flags: list[str]
-    n_points: int
-    gap_count: int
-    missing_time_frac: float
-    imputed_frac: float
-    ts_ingest: float
-    trend_score_delta: float | None = None
-    trend_points: int | None = None
+def _write_json(path: Path, obj: Any) -> None:
+    path.write_text(json.dumps(obj, indent=2, sort_keys=True), encoding="utf-8")
 
 
-def _decode_redis_xrange_raw(raw: str) -> list[tuple[str, dict[str, str]]]:
-    lines = [ln for ln in raw.splitlines() if ln.strip() != ""]
-    out: list[tuple[str, dict[str, str]]] = []
-    i = 0
-    while i < len(lines):
-        msg_id = lines[i].strip()
-        if not _ID_RE.match(msg_id):
-            i += 1
-            continue
-        i += 1
-        fields: dict[str, str] = {}
-        while i + 1 < len(lines) and not _ID_RE.match(lines[i].strip()):
-            k = lines[i].strip()
-            v = lines[i + 1].strip()
-            fields[k] = v
-            i += 2
-        out.append((msg_id, fields))
-    return out
+def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    with path.open("w", encoding="utf-8", newline="\n") as f:
+        for r in rows:
+            f.write(json.dumps(r, sort_keys=True))
+            f.write("\n")
 
 
-def _try_read_reports_stream(compose_file: str, reports_stream: str) -> list[dict[str, Any]]:
+def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
+    if not rows:
+        path.write_text("", encoding="utf-8")
+        return
+    keys = sorted({k for r in rows for k in r.keys()})
+    with path.open("w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=keys)
+        w.writeheader()
+        for r in rows:
+            w.writerow({k: r.get(k) for k in keys})
+
+
+def _try_read_reports_stream(compose_file: str, stream: str) -> list[dict[str, Any]]:
+    """Best effort: read Redis stream via docker compose + redis-cli.
+
+    We keep this robust: if docker isn't available in CI, we just return [].
+    """
     cmd = [
         "docker",
         "compose",
@@ -119,61 +104,90 @@ def _try_read_reports_stream(compose_file: str, reports_stream: str) -> list[dic
         "-T",
         "redis",
         "redis-cli",
-        "--raw",
         "XRANGE",
-        reports_stream,
+        stream,
         "-",
         "+",
     ]
     try:
-        p = subprocess.run(cmd, check=False, capture_output=True, text=True)  # noqa: S603
-    except FileNotFoundError:
+        cp = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=8)  # noqa: S603,S607
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    if cp.returncode != 0:
         return []
 
-    if p.returncode != 0:
-        return []
+    out: list[dict[str, Any]] = []
+    lines = [ln.strip() for ln in cp.stdout.splitlines() if ln.strip()]
+    i = 0
+    while i < len(lines):
+        msg_id = lines[i]
+        if not _ID_RE.match(msg_id):
+            i += 1
+            continue
+        i += 1
+        if i >= len(lines):
+            break
+        if lines[i] != "1)":
+            continue
+        i += 1
 
-    entries = _decode_redis_xrange_raw(p.stdout)
-    history: list[dict[str, Any]] = []
-    for msg_id, fields in entries:
+        fields: dict[str, str] = {}
+        while i < len(lines):
+            if lines[i].startswith("(") and lines[i].endswith(")"):
+                break
+            if lines[i] == "2)":
+                i += 1
+                break
+            i += 1
+
+        while i < len(lines):
+            if lines[i].startswith("(") and lines[i].endswith(")"):
+                break
+            key = lines[i]
+            i += 1
+            if i >= len(lines):
+                break
+            val = lines[i]
+            i += 1
+            fields[key] = val
+
         payload = fields.get("payload")
-        if not payload:
+        if payload:
+            try:
+                obj = json.loads(payload)
+                if isinstance(obj, dict):
+                    out.append(obj)
+            except json.JSONDecodeError:
+                pass
+
+    return out
+
+
+def _trend_from_history(history: list[dict[str, Any]]) -> dict[tuple[str, str], tuple[float, int]]:
+    """Return (score_delta, n_points_used) per (station, variable)."""
+    by_key: dict[tuple[str, str], list[float]] = {}
+    for r in history:
+        sid = str(r.get("station_id", "")).strip()
+        var = str(r.get("variable", "")).strip()
+        if not sid or not var:
             continue
-        try:
-            report_any = json.loads(payload)
-        except json.JSONDecodeError:
-            continue
-        if not isinstance(report_any, dict):
-            continue
+        by_key.setdefault((sid, var), []).append(_safe_float(r.get("score", 0.0)))
 
-        station_id = str(fields.get("station_id") or report_any.get("station_id") or "").strip()
-        variable = str(fields.get("variable") or report_any.get("variable") or "").strip()
-
-        history.append(
-            {
-                "stream_id": msg_id,
-                "station_id": station_id,
-                "variable": variable,
-                "ts_ingest": _safe_float(report_any.get("ts_ingest", 0.0)),
-                "score": _safe_float(report_any.get("score", 0.0)),
-                "state": str(report_any.get("state", "")),
-                "severity": str((report_any.get("meteo") or {}).get("severity", "")),
-                "flags": (report_any.get("meteo") or {}).get("flags", []),
-                "stats": report_any.get("stats", {}),
-            }
-        )
-
-    return history
+    out: dict[tuple[str, str], tuple[float, int]] = {}
+    for key, scores in by_key.items():
+        if len(scores) >= 2:
+            out[key] = (float(scores[-1] - scores[-2]), 2)
+    return out
 
 
-def _load_latest_snapshot(latest_path: Path) -> dict[str, Any] | None:
-    try:
-        obj = json.loads(latest_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+def _load_latest_snapshot(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
         return None
-    if isinstance(obj, dict) and obj.get("score") is not None and obj.get("state") is not None:
-        return obj
-    return None
+    try:
+        obj = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    return obj if isinstance(obj, dict) else None
 
 
 def _collect_reports(api_url: str) -> list[dict[str, Any]]:
@@ -193,9 +207,7 @@ def _collect_reports(api_url: str) -> list[dict[str, Any]]:
         for variable in vars_any:
             if not isinstance(variable, str) or not variable:
                 continue
-            url = (
-                f"{api_url.rstrip('/')}/latest?station_id={quote(station_id)}&variable={quote(variable)}"
-            )
+            url = f"{api_url.rstrip('/')}/latest?station_id={quote(station_id)}&variable={quote(variable)}"
             try:
                 rep = _http_json(url)
             except (URLError, TimeoutError, ValueError):
@@ -207,7 +219,27 @@ def _collect_reports(api_url: str) -> list[dict[str, Any]]:
     return out
 
 
-def _to_var_row(report: dict[str, Any], trend: dict[tuple[str, str], tuple[float, int]] | None) -> VarRow:
+@dataclass(frozen=True)
+class VarRow:
+    station_id: str
+    variable: str
+    score: float
+    state: str
+    severity: str
+    confidence: str
+    flags: list[str]
+    n_points: int
+    gap_count: int
+    missing_time_frac: float
+    imputed_frac: float
+    ts_ingest: float
+    trend_score_delta: float | None
+    trend_points: int
+
+
+def _to_var_row(
+    report: dict[str, Any], trend: dict[tuple[str, str], tuple[float, int]] | None
+) -> VarRow:
     station_id = str(report.get("station_id", "")).strip()
     variable = str(report.get("variable", "")).strip()
 
@@ -238,11 +270,11 @@ def _to_var_row(report: dict[str, Any], trend: dict[tuple[str, str], tuple[float
     conf = _confidence(missing_time_frac=missing_time_frac, imputed_frac=imputed_frac)
 
     delta: float | None = None
-    ntrend: int | None = None
+    n_tr = 0
     if trend is not None:
         key = (station_id, variable)
         if key in trend:
-            delta, ntrend = trend[key]
+            delta, n_tr = trend[key]
 
     return VarRow(
         station_id=station_id,
@@ -258,35 +290,19 @@ def _to_var_row(report: dict[str, Any], trend: dict[tuple[str, str], tuple[float
         imputed_frac=imputed_frac,
         ts_ingest=ts_ingest,
         trend_score_delta=delta,
-        trend_points=ntrend,
+        trend_points=n_tr,
     )
-
-
-def _trend_from_history(history: list[dict[str, Any]]) -> dict[tuple[str, str], tuple[float, int]]:
-    by_key: dict[tuple[str, str], list[dict[str, Any]]] = {}
-    for row in history:
-        sid = str(row.get("station_id", "")).strip()
-        var = str(row.get("variable", "")).strip()
-        if not sid or not var:
-            continue
-        by_key.setdefault((sid, var), []).append(row)
-
-    out: dict[tuple[str, str], tuple[float, int]] = {}
-    for key, rows in by_key.items():
-        rows_sorted = sorted(rows, key=lambda r: str(r.get("stream_id", "")))
-        if len(rows_sorted) < 2:
-            continue
-        first = _safe_float(rows_sorted[0].get("score", 0.0))
-        last = _safe_float(rows_sorted[-1].get("score", 0.0))
-        out[key] = (last - first, len(rows_sorted))
-    return out
 
 
 def _station_aggregate(rows: list[VarRow]) -> dict[str, Any]:
     if not rows:
-        return {"score_global": 0.0, "severity_global": "low", "confidence_global": "low", "worst": []}
+        return {
+            "score_global": 0.0,
+            "severity_global": "low",
+            "confidence_global": "low",
+            "worst": [],
+        }
 
-    # Simple average. Weighting can be added later via station config.
     score_global = float(sum(r.score for r in rows) / float(len(rows)))
 
     sev_global = "low"
@@ -304,7 +320,9 @@ def _station_aggregate(rows: list[VarRow]) -> dict[str, Any]:
         "score_global": score_global,
         "severity_global": sev_global,
         "confidence_global": conf_global,
-        "worst": [{"variable": w.variable, "severity": w.severity, "score": w.score} for w in worst],
+        "worst": [
+            {"variable": w.variable, "severity": w.severity, "score": w.score} for w in worst
+        ],
     }
 
 
@@ -322,14 +340,18 @@ def _write_markdown(path: Path, headline: str, summary: dict[str, Any], rows: li
     lines.append("")
     lines.append(f"- Stations: {summary['stations']}")
     lines.append(f"- Variables: {summary['variables']}")
-    lines.append(f"- Alerts: {summary['alerts']} | Watches: {summary['watches']} | Data holes: {summary['data_holes']}")
+    lines.append(
+        f"- Alerts: {summary['alerts']} | Watches: {summary['watches']} | Data holes: {summary['data_holes']}"
+    )
     lines.append(f"- Generated at: {summary['generated_at_iso']}")
     if summary.get("history_messages", 0) > 0:
         lines.append(f"- History messages: {summary['history_messages']}")
     lines.append("")
     lines.append("## Tableau synthèse")
     lines.append("")
-    lines.append("| station | variable | score | state | severity | confidence | flags | n_points | gaps | missing | imputed | trend |")
+    lines.append(
+        "| station | variable | score | state | severity | confidence | flags | n_points | gaps | missing | imputed | trend |"
+    )
     lines.append("|---|---|---:|---|---|---|---|---:|---:|---:|---:|---:|")
     for r in sorted(rows, key=lambda x: (_severity_rank(x.severity), x.score), reverse=True):
         flags = ",".join(r.flags)
@@ -342,7 +364,6 @@ def _write_markdown(path: Path, headline: str, summary: dict[str, Any], rows: li
             f"| {r.station_id} | {r.variable} | {r.score:.3f} | {r.state} | {r.severity} | {r.confidence} | {flags} | {r.n_points} | {r.gap_count} | {missing} | {imputed} | {trend} |"
         )
 
-    # Per-station details
     lines.append("")
     lines.append("## Détails par station")
     lines.append("")
@@ -362,68 +383,19 @@ def _write_markdown(path: Path, headline: str, summary: dict[str, Any], rows: li
         for r in sorted(srows, key=lambda x: (_severity_rank(x.severity), x.score), reverse=True):
             rec = _recommendation(r.severity, r.confidence, r.flags)
             lines.append(
-                f"- {r.variable}: score={r.score:.3f} state={r.state} severity={r.severity} confidence={r.confidence} flags={','.join(r.flags)}"
+                f"- {r.variable}: score={r.score:.3f}, state={r.state}, severity={r.severity}, confidence={r.confidence}, flags={','.join(r.flags)}"
             )
-            lines.append(f"  - {rec}")
+            lines.append(f"  - Recommendation: {rec}")
         lines.append("")
 
     path.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
 
 
-def _write_json(path: Path, obj: dict[str, Any]) -> None:
-    path.write_text(json.dumps(obj, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-
-def _write_history(out_dir: Path, history: list[dict[str, Any]]) -> None:
-    if not history:
-        return
-
-    jsonl = out_dir / "history.jsonl"
-    with jsonl.open("w", encoding="utf-8") as f:
-        for row in history:
-            f.write(json.dumps(row, separators=(",", ":"), sort_keys=True) + "\n")
-
-    csv_path = out_dir / "history.csv"
-    cols = [
-        "stream_id",
-        "ts_ingest",
-        "station_id",
-        "variable",
-        "score",
-        "state",
-        "severity",
-        "missing_time_frac",
-        "imputed_frac",
-        "gap_count",
-        "n_points",
-    ]
-    with csv_path.open("w", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=cols)
-        w.writeheader()
-        for row in history:
-            stats = row.get("stats") or {}
-            if not isinstance(stats, dict):
-                stats = {}
-            w.writerow(
-                {
-                    "stream_id": row.get("stream_id", ""),
-                    "ts_ingest": _safe_float(row.get("ts_ingest", 0.0)),
-                    "station_id": row.get("station_id", ""),
-                    "variable": row.get("variable", ""),
-                    "score": _safe_float(row.get("score", 0.0)),
-                    "state": row.get("state", ""),
-                    "severity": row.get("severity", ""),
-                    "missing_time_frac": _safe_float(stats.get("missing_time_frac", 0.0)),
-                    "imputed_frac": _safe_float(stats.get("imputed_frac", 0.0)),
-                    "gap_count": _safe_int(stats.get("gap_count", 0)),
-                    "n_points": _safe_int(stats.get("n_points", 0)),
-                }
-            )
-
-
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
-    p.add_argument("--api-url", required=True, help="Base URL of the MeteoVoid API, e.g. http://localhost:8000")
+    p.add_argument(
+        "--api-url", required=True, help="Base URL of the MeteoVoid API, e.g. http://localhost:8000"
+    )
     p.add_argument("--out-dir", required=True, help="Output directory (e.g. _ci_out/live_smoke)")
     p.add_argument("--compose-file", default="docker-compose.yml", help="Docker compose file path")
     p.add_argument("--reports-stream", default="meteovoid:reports", help="Redis stream for reports")
@@ -440,7 +412,6 @@ def main(argv: list[str] | None = None) -> int:
     generated_at = time.time()
     generated_at_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(generated_at))
 
-    # 1) Try to collect full set via API.
     reports: list[dict[str, Any]] = []
     api_ok = False
     try:
@@ -450,24 +421,26 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError, URLError, TimeoutError, json.JSONDecodeError):
         api_ok = False
 
-    # 2) Fallback to existing latest.json if needed.
     if not reports:
         snap = _load_latest_snapshot(out_dir / args.latest_path)
         if snap is not None:
             reports = [snap]
 
-    # 3) History (best effort).
     history = _try_read_reports_stream(args.compose_file, args.reports_stream)
-    _write_history(out_dir, history)
+    _write_jsonl(out_dir / "history.jsonl", history)
+    _write_csv(out_dir / "history.csv", history)
     trend = _trend_from_history(history) if history else None
 
     rows = [_to_var_row(r, trend) for r in reports if isinstance(r, dict)]
     rows = [r for r in rows if r.station_id and r.variable]
 
-    # Summary counts
     stations = len({r.station_id for r in rows})
     variables = len(rows)
-    alerts = sum(1 for r in rows if _severity_rank(r.severity) >= _severity_rank("high") or "alert" in r.flags)
+    alerts = sum(
+        1
+        for r in rows
+        if _severity_rank(r.severity) >= _severity_rank("high") or "alert" in r.flags
+    )
     watches = sum(1 for r in rows if r.severity == "medium" or "watch" in r.flags)
     data_holes = sum(1 for r in rows if "data_hole" in r.flags or r.missing_time_frac > 0.0)
 
@@ -485,7 +458,6 @@ def main(argv: list[str] | None = None) -> int:
 
     headline = _headline(summary)
 
-    # Station aggregates
     by_station: dict[str, list[VarRow]] = {}
     for r in rows:
         by_station.setdefault(r.station_id, []).append(r)
