@@ -1,0 +1,22 @@
+services:
+  meteovoid-api:
+    command:
+      - python
+      - -m
+      - uvicorn
+      - meteovoid.api:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import json,urllib.request; r=urllib.request.urlopen('http://localhost:8000/health',timeout=2); json.loads(r.read().decode('utf-8')); print('ok')",
+        ]
+      interval: 3s
+      timeout: 3s
+      retries: 40
