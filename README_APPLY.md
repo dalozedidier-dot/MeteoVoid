@@ -1,12 +1,13 @@
-Patch: add unit tests to restore coverage >= 85%
+Patch: Coverage hotfix (raise total coverage above 85%)
 
-Problem (from logs):
-- src/meteovoid/ingest_europe.py: 0% covered
-- src/meteovoid/stations_config.py: 0% covered
+Your CI logs show:
+- TOTAL coverage 84.12% (fail-under=85)
 
-This patch adds:
-- tests/test_stations_config.py
-- tests/test_ingest_europe.py
+Main gap was still in src/meteovoid/ingest_europe.py (58% covered).
+This patch adds a small, network-free unit test file to cover:
+- _http_json success + non-object rejection
+- main(... --once) happy path (with monkeypatched ingest_once)
+- main(... --once) error path (ingest_once raises URLError)
 
-These tests are network-free and do not require a real Redis instance.
-They also pass Ruff + Black (no unused imports).
+Files added:
+- tests/test_ingest_europe_more.py
