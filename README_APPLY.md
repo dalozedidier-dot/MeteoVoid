@@ -1,18 +1,11 @@
-MeteoVoid - release.yml fix (v2)
+Patch MeteoVoid Bulletin v1
 
-Problem (from your logs):
-- publish-pypi failed with `invalid-publisher` because PyPI Trusted Publisher is not configured.
-- Also, running the workflow on `workflow_dispatch` (main branch) should not attempt to publish.
+Adds a real bulletin to live_smoke_report:
+- tools/generate_bulletin.py
+- workflow step generating bulletin.md + bulletin.json + history exports
+- docs/BULLETIN.md
 
-Fix:
-- publish-pypi and github-release now run ONLY on tags (refs/tags/v*).
-- publish step supports two modes:
-  A) API token via secrets.PYPI_API_TOKEN (works immediately).
-  B) Trusted Publisher OIDC (works only after configuring a publisher on PyPI).
-
-Action:
-- If you want immediate publishing: add repository secret PYPI_API_TOKEN (PyPI token) and tag vX.Y.Z.
-- If you prefer OIDC: configure the Trusted Publisher on PyPI to match:
-  repo: dalozedidier-dot/MeteoVoid
-  workflow: .github/workflows/release.yml
-  environment: pypi
+Files:
+- .github/workflows/live_smoke.yml
+- tools/generate_bulletin.py
+- docs/BULLETIN.md

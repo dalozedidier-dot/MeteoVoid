@@ -27,7 +27,6 @@ jobs:
       - name: Prepare output dir
         run: |
           set -euo pipefail
-          rm -rf _ci_out/live_smoke
           mkdir -p _ci_out/live_smoke
 
       - name: Build images
@@ -85,8 +84,8 @@ jobs:
               fi
             fi
 
-            # If /latest is invalid or API requires query params, discover first pair via /stations
-            if [ "$code" = "422" ] || [ "$code" = "200" ]; then
+            # If API requires query params (FastAPI Query(...)), discover first pair via /stations
+            if [ "$code" = "422" ]; then
               if [ -z "$station_id" ] || [ -z "$variable" ]; then
                 st_code="$(curl -sS -o "$tmp" -w "%{http_code}" http://localhost:8000/stations || true)"
                 if [ "$st_code" = "200" ]; then
@@ -131,6 +130,16 @@ jobs:
         run: |
           set -euo pipefail
           python tools/validate_latest_report.py _ci_out/live_smoke/latest.json
+
+      - name: Generate bulletin (md + json + history)
+        if: always()
+        run: |
+          set -euo pipefail
+          python tools/generate_bulletin.py \
+            --api-url http://localhost:8000 \
+            --out-dir _ci_out/live_smoke \
+            --compose-file docker-compose.yml \
+            --reports-stream meteovoid:reports
 
       - name: Capture ps
         if: always()
