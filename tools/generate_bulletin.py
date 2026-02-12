@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import argparse
 import csv
-from dataclasses import dataclass
 import json
-from pathlib import Path
 import re
 import subprocess
 import time
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.parse import quote
@@ -91,10 +91,8 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
 
 
 def _try_read_reports_stream(compose_file: str, stream: str) -> list[dict[str, Any]]:
-    """Best effort: read Redis stream via docker compose + redis-cli.
+    """Best effort: read Redis stream via docker compose + redis-cli."""
 
-    We keep this robust: if docker isn't available in CI, we just return [].
-    """
     cmd = [
         "docker",
         "compose",
@@ -110,7 +108,13 @@ def _try_read_reports_stream(compose_file: str, stream: str) -> list[dict[str, A
         "+",
     ]
     try:
-        cp = subprocess.run(cmd, check=False, capture_output=True, text=True, timeout=8)  # noqa: S603,S607
+        cp = subprocess.run(  # noqa: S603,S607
+            cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
     except (OSError, subprocess.TimeoutExpired):
         return []
     if cp.returncode != 0:
@@ -118,6 +122,7 @@ def _try_read_reports_stream(compose_file: str, stream: str) -> list[dict[str, A
 
     out: list[dict[str, Any]] = []
     lines = [ln.strip() for ln in cp.stdout.splitlines() if ln.strip()]
+
     i = 0
     while i < len(lines):
         msg_id = lines[i]
@@ -155,16 +160,17 @@ def _try_read_reports_stream(compose_file: str, stream: str) -> list[dict[str, A
         if payload:
             try:
                 obj = json.loads(payload)
-                if isinstance(obj, dict):
-                    out.append(obj)
             except json.JSONDecodeError:
-                pass
+                obj = None
+            if isinstance(obj, dict):
+                out.append(obj)
 
     return out
 
 
 def _trend_from_history(history: list[dict[str, Any]]) -> dict[tuple[str, str], tuple[float, int]]:
     """Return (score_delta, n_points_used) per (station, variable)."""
+
     by_key: dict[tuple[str, str], list[float]] = {}
     for r in history:
         sid = str(r.get("station_id", "")).strip()
@@ -207,7 +213,9 @@ def _collect_reports(api_url: str) -> list[dict[str, Any]]:
         for variable in vars_any:
             if not isinstance(variable, str) or not variable:
                 continue
-            url = f"{api_url.rstrip('/')}/latest?station_id={quote(station_id)}&variable={quote(variable)}"
+            url = (
+                f"{api_url.rstrip('/')}/latest?station_id={quote(station_id)}&variable={quote(variable)}"
+            )
             try:
                 rep = _http_json(url)
             except (URLError, TimeoutError, ValueError):
@@ -238,7 +246,8 @@ class VarRow:
 
 
 def _to_var_row(
-    report: dict[str, Any], trend: dict[tuple[str, str], tuple[float, int]] | None
+    report: dict[str, Any],
+    trend: dict[tuple[str, str], tuple[float, int]] | None,
 ) -> VarRow:
     station_id = str(report.get("station_id", "")).strip()
     variable = str(report.get("variable", "")).strip()
@@ -320,9 +329,7 @@ def _station_aggregate(rows: list[VarRow]) -> dict[str, Any]:
         "score_global": score_global,
         "severity_global": sev_global,
         "confidence_global": conf_global,
-        "worst": [
-            {"variable": w.variable, "severity": w.severity, "score": w.score} for w in worst
-        ],
+        "worst": [{"variable": w.variable, "severity": w.severity, "score": w.score} for w in worst],
     }
 
 
@@ -367,6 +374,7 @@ def _write_markdown(path: Path, headline: str, summary: dict[str, Any], rows: li
     lines.append("")
     lines.append("## Détails par station")
     lines.append("")
+
     by_station: dict[str, list[VarRow]] = {}
     for r in rows:
         by_station.setdefault(r.station_id, []).append(r)
@@ -394,7 +402,9 @@ def _write_markdown(path: Path, headline: str, summary: dict[str, Any], rows: li
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument(
-        "--api-url", required=True, help="Base URL of the MeteoVoid API, e.g. http://localhost:8000"
+        "--api-url",
+        required=True,
+        help="Base URL of the MeteoVoid API, e.g. http://localhost:8000",
     )
     p.add_argument("--out-dir", required=True, help="Output directory (e.g. _ci_out/live_smoke)")
     p.add_argument("--compose-file", default="docker-compose.yml", help="Docker compose file path")
@@ -437,9 +447,7 @@ def main(argv: list[str] | None = None) -> int:
     stations = len({r.station_id for r in rows})
     variables = len(rows)
     alerts = sum(
-        1
-        for r in rows
-        if _severity_rank(r.severity) >= _severity_rank("high") or "alert" in r.flags
+        1 for r in rows if _severity_rank(r.severity) >= _severity_rank("high") or "alert" in r.flags
     )
     watches = sum(1 for r in rows if r.severity == "medium" or "watch" in r.flags)
     data_holes = sum(1 for r in rows if "data_hole" in r.flags or r.missing_time_frac > 0.0)
