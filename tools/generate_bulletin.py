@@ -13,6 +13,8 @@ from urllib.error import URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
+from meteovoid.stations_config import load_stations_config
+
 _ID_RE = re.compile(r"^\d+-\d+$")
 
 
@@ -91,8 +93,6 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
 
 
 def _try_read_reports_stream(compose_file: str, stream: str) -> list[dict[str, Any]]:
-    """Best effort: read Redis stream via docker compose + redis-cli."""
-
     cmd = [
         "docker",
         "compose",
@@ -169,8 +169,6 @@ def _try_read_reports_stream(compose_file: str, stream: str) -> list[dict[str, A
 
 
 def _trend_from_history(history: list[dict[str, Any]]) -> dict[tuple[str, str], tuple[float, int]]:
-    """Return (score_delta, n_points_used) per (station, variable)."""
-
     by_key: dict[tuple[str, str], list[float]] = {}
     for r in history:
         sid = str(r.get("station_id", "")).strip()
@@ -196,7 +194,7 @@ def _load_latest_snapshot(path: Path) -> dict[str, Any] | None:
     return obj if isinstance(obj, dict) else None
 
 
-def _collect_reports(api_url: str) -> list[dict[str, Any]]:
+def _collect_reports_from_api(api_url: str) -> list[dict[str, Any]]:
     stations_url = f"{api_url.rstrip('/')}/stations"
     stations_obj = _http_json(stations_url)
     stations = stations_obj.get("stations", {})
@@ -222,6 +220,27 @@ def _collect_reports(api_url: str) -> list[dict[str, Any]]:
                 continue
             out.append(rep)
 
+    return out
+
+
+def _collect_reports_from_config(api_url: str, cfg_path: str, region: str | None) -> list[dict[str, Any]]:
+    cfg = load_stations_config(cfg_path)
+    stations = cfg.stations
+    if region:
+        r = region.strip().lower()
+        stations = [s for s in stations if s.region.lower() == r]
+
+    out: list[dict[str, Any]] = []
+    for st in stations:
+        for variable in st.variables:
+            url = f"{api_url.rstrip('/')}/latest?station_id={quote(st.station_id)}&variable={quote(variable)}"
+            try:
+                rep = _http_json(url)
+            except (URLError, TimeoutError, ValueError):
+                continue
+            if rep.get("score") is None or rep.get("state") is None:
+                continue
+            out.append(rep)
     return out
 
 
@@ -353,6 +372,8 @@ def _write_markdown(path: Path, headline: str, summary: dict[str, Any], rows: li
     lines.append(f"- Generated at: {summary['generated_at_iso']}")
     if summary.get("history_messages", 0) > 0:
         lines.append(f"- History messages: {summary['history_messages']}")
+    if summary.get("region"):
+        lines.append(f"- Region: {summary['region']}")
     lines.append("")
     lines.append("## Tableau synthèse")
     lines.append("")
@@ -401,19 +422,17 @@ def _write_markdown(path: Path, headline: str, summary: dict[str, Any], rows: li
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
-    p.add_argument(
-        "--api-url",
-        required=True,
-        help="Base URL of the MeteoVoid API, e.g. http://localhost:8000",
-    )
-    p.add_argument("--out-dir", required=True, help="Output directory (e.g. _ci_out/live_smoke)")
+    p.add_argument("--api-url", required=True, help="Base URL of the MeteoVoid API")
+    p.add_argument("--out-dir", required=True, help="Output directory (ex: _ci_out/live_smoke)")
     p.add_argument("--compose-file", default="docker-compose.yml", help="Docker compose file path")
     p.add_argument("--reports-stream", default="meteovoid:reports", help="Redis stream for reports")
+    p.add_argument("--latest-path", default="latest.json", help="Fallback snapshot path in out-dir")
     p.add_argument(
-        "--latest-path",
-        default="latest.json",
-        help="Fallback snapshot when API is unavailable (relative to out-dir)",
+        "--stations-config",
+        default="",
+        help="Optional stations YAML config path (fallback if /stations is missing)",
     )
+    p.add_argument("--region", default="", help="Optional region filter used with --stations-config")
     args = p.parse_args(argv)
 
     out_dir = Path(args.out_dir)
@@ -424,12 +443,20 @@ def main(argv: list[str] | None = None) -> int:
 
     reports: list[dict[str, Any]] = []
     api_ok = False
+    stations_ok = True
+
     try:
-        reports = _collect_reports(args.api_url)
+        reports = _collect_reports_from_api(args.api_url)
         if reports:
             api_ok = True
     except (OSError, ValueError, URLError, TimeoutError, json.JSONDecodeError):
-        api_ok = False
+        stations_ok = False
+
+    if not stations_ok and args.stations_config:
+        region = args.region.strip() or None
+        reports = _collect_reports_from_config(args.api_url, args.stations_config, region)
+        if reports:
+            api_ok = True
 
     if not reports:
         snap = _load_latest_snapshot(out_dir / args.latest_path)
@@ -454,6 +481,10 @@ def main(argv: list[str] | None = None) -> int:
     watches = sum(1 for r in rows if r.severity == "medium" or "watch" in r.flags)
     data_holes = sum(1 for r in rows if "data_hole" in r.flags or r.missing_time_frac > 0.0)
 
+    region_out: str | None = None
+    if args.region.strip():
+        region_out = args.region.strip().lower()
+
     summary = {
         "generated_at": generated_at,
         "generated_at_iso": generated_at_iso,
@@ -464,6 +495,7 @@ def main(argv: list[str] | None = None) -> int:
         "data_holes": data_holes,
         "api_ok": api_ok,
         "history_messages": len(history),
+        "region": region_out,
     }
 
     headline = _headline(summary)

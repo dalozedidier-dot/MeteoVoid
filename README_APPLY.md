@@ -1,16 +1,19 @@
-Patch Live Smoke report (v1)
+Patch v1: ingestion multi-stations Europe (Open-Meteo)
 
-But
-- L'artefact live_smoke_report ne contenait pas latest.json ni bulletin.* (seulement compose.log/ps.txt).
+Contenu
+- config/stations_europe.yaml
+- src/meteovoid/stations_config.py
+- src/meteovoid/ingest_europe.py
+- docs/INGEST_EUROPE.md
+- docker-compose.yml: ajoute le service meteovoid-ingest-europe
+- tools/generate_bulletin.py: fallback --stations-config si /stations n'existe pas
 
-Ce patch force:
-- Sauvegarde de http://localhost:8000/latest vers _ci_out/live_smoke/latest.json
-- Génération d'un bulletin dans _ci_out/live_smoke/ via tools/generate_bulletin.py:
-  - bulletin.json
-  - bulletin.md
-  - history.jsonl
-  - history.csv
-- Upload de tout _ci_out/live_smoke/
+Important
+- L'ingester n'est pas utilisé en CI Live Smoke (pour éviter la dépendance réseau).
+- Le workflow Live Smoke reste déterministe via meteovoid-simulate.
 
-Fichiers modifiés
-- .github/workflows/live_smoke.yml
+Utilisation rapide
+- docker compose up -d redis meteovoid-live meteovoid-api meteovoid-ingest-europe
+- ouvrir http://localhost:8000/latest
+- générer bulletin:
+  python tools/generate_bulletin.py --api-url http://localhost:8000 --out-dir _ci_out/live_smoke --stations-config config/stations_europe.yaml --region belgium

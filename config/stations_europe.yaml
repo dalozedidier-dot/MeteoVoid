@@ -1,0 +1,104 @@
+# MeteoVoid stations config (Europe starter set)
+# Source: Open-Meteo (no key), current conditions
+#
+# Variables: Open-Meteo "current" names
+# - wind_speed_10m (m/s)
+# - wind_gusts_10m (m/s)
+# - temperature_2m (°C)
+# - surface_pressure (hPa)
+
+stations:
+  - id: BE_UCCLE
+    name: Uccle (Bruxelles)
+    region: belgium
+    lat: 50.7989
+    lon: 4.3583
+    source: openmeteo
+    variables: [wind_gusts_10m, wind_speed_10m, temperature_2m, surface_pressure]
+
+  - id: FR_PARIS
+    name: Paris Montsouris
+    region: france
+    lat: 48.8216
+    lon: 2.3376
+    source: openmeteo
+    variables: [wind_gusts_10m, wind_speed_10m, temperature_2m, surface_pressure]
+
+  - id: NL_AMSTERDAM
+    name: Amsterdam
+    region: netherlands
+    lat: 52.3728
+    lon: 4.8936
+    source: openmeteo
+    variables: [wind_gusts_10m, wind_speed_10m, temperature_2m, surface_pressure]
+
+  - id: DE_BERLIN
+    name: Berlin
+    region: germany
+    lat: 52.5200
+    lon: 13.4050
+    source: openmeteo
+    variables: [wind_gusts_10m, wind_speed_10m, temperature_2m, surface_pressure]
+
+  - id: UK_LONDON
+    name: London
+    region: uk
+    lat: 51.5072
+    lon: -0.1276
+    source: openmeteo
+    variables: [wind_gusts_10m, wind_speed_10m, temperature_2m, surface_pressure]
+
+  - id: ES_MADRID
+    name: Madrid
+    region: spain
+    lat: 40.4168
+    lon: -3.7038
+    source: openmeteo
+    variables: [wind_gusts_10m, wind_speed_10m, temperature_2m, surface_pressure]
+
+  - id: IT_ROME
+    name: Rome
+    region: italy
+    lat: 41.9028
+    lon: 12.4964
+    source: openmeteo
+    variables: [wind_gusts_10m, wind_speed_10m, temperature_2m, surface_pressure]
+
+  - id: AT_VIENNA
+    name: Vienna
+    region: austria
+    lat: 48.2082
+    lon: 16.3738
+    source: openmeteo
+    variables: [wind_gusts_10m, wind_speed_10m, temperature_2m, surface_pressure]
+
+  - id: PL_WARSAW
+    name: Warsaw
+    region: poland
+    lat: 52.2297
+    lon: 21.0122
+    source: openmeteo
+    variables: [wind_gusts_10m, wind_speed_10m, temperature_2m, surface_pressure]
+
+  - id: SE_STOCKHOLM
+    name: Stockholm
+    region: sweden
+    lat: 59.3293
+    lon: 18.0686
+    source: openmeteo
+    variables: [wind_gusts_10m, wind_speed_10m, temperature_2m, surface_pressure]
+
+# Optional thresholds for downstream scoring/flags (future use)
+thresholds:
+  wind_gusts_10m:
+    watch: 0.40
+    alert: 0.70
+  wind_speed_10m:
+    watch: 0.35
+    alert: 0.65
+  temperature_2m:
+    watch: 0.50
+    alert: 0.80
+  surface_pressure:
+    watch: 0.45
+    alert: 0.75

@@ -1,8 +1,8 @@
-version: "3.9"
-
 services:
   redis:
     image: redis:7-alpine
+    ports:
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 2s
@@ -14,58 +14,75 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379/0
     command:
-      [
-        "live",
-        "--redis-url",
-        "redis://redis:6379/0",
-        "--in-stream",
-        "meteovoid:observations",
-        "--out-stream",
-        "meteovoid:reports"
-      ]
-    restart: unless-stopped
+      - python
+      - -m
+      - meteovoid.live
+      - --in-stream
+      - meteovoid:observations
+      - --out-stream
+      - meteovoid:reports
 
   meteovoid-api:
     build: .
     depends_on:
       redis:
         condition: service_healthy
-    command: ["serve", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
+    command:
+      - uvicorn
+      - meteovoid.api:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
     healthcheck:
       test:
         [
           "CMD",
           "python",
           "-c",
-          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health').read()",
+          "import json,urllib.request;print(json.loads(urllib.request.urlopen('http://localhost:8000/health',timeout=2).read().decode())['status'])",
         ]
-      interval: 2s
-      timeout: 2s
+      interval: 3s
+      timeout: 3s
       retries: 30
-    restart: unless-stopped
 
   meteovoid-simulate:
     build: .
     depends_on:
       redis:
         condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379/0
     command:
-      [
-        "simulate",
-        "--redis-url",
-        "redis://redis:6379/0",
-        "--stream",
-        "meteovoid:observations",
-        "--station-id",
-        "DEMO_BE_0001",
-        "--variable",
-        "wind_gust_ms",
-        "--steps",
-        "250",
-        "--sleep",
-        "0.01"
-      ]
-    restart: "no"
+      - python
+      - -m
+      - meteovoid.simulate
+      - --out-stream
+      - meteovoid:observations
+
+  meteovoid-ingest-europe:
+    build: .
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    command:
+      - python
+      - -m
+      - meteovoid.ingest_europe
+      - --config
+      - config/stations_europe.yaml
+      - --redis-url
+      - redis://redis:6379/0
+      - --out-stream
+      - meteovoid:observations
+      - --poll-seconds
+      - "600"
