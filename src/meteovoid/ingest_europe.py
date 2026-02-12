@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from dataclasses import asdict
 from typing import Any
 from urllib.error import URLError
 from urllib.parse import urlencode
@@ -43,12 +42,14 @@ def _extract_current(obj: dict[str, Any]) -> tuple[int | None, dict[str, float]]
     cur = obj.get("current")
     if not isinstance(cur, dict):
         return None, {}
+
     ts_any = cur.get("time")
-    ts: int | None
-    try:
-        ts = int(ts_any)
-    except (TypeError, ValueError):
-        ts = None
+    ts: int | None = None
+    if ts_any is not None:
+        try:
+            ts = int(ts_any)
+        except (TypeError, ValueError):
+            ts = None
 
     values: dict[str, float] = {}
     for k, v in cur.items():
@@ -72,14 +73,16 @@ def _publish_observation(
     source: str,
     per_stream: bool,
 ) -> None:
-    fields = {
+    # redis-py typing uses a broad union for field/value types.
+    # We store string/int values but keep the mapping typed as Any to satisfy mypy.
+    fields: dict[Any, Any] = {
         "station_id": station_id,
         "variable": variable,
-        "value": f"{value}",
+        "value": value,
         "source": source,
     }
     if ts is not None:
-        fields["ts"] = str(ts)
+        fields["ts"] = ts
 
     r.xadd(out_stream, fields, maxlen=50000, approximate=True)
 
@@ -130,16 +133,22 @@ def ingest_once(
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
     p.add_argument(
-        "--config", required=True, help="Stations YAML path, ex: config/stations_europe.yaml"
+        "--config",
+        required=True,
+        help="Stations YAML path, ex: config/stations_europe.yaml",
     )
     p.add_argument("--redis-url", default="redis://localhost:6379/0", help="Redis URL")
     p.add_argument(
-        "--out-stream", default="meteovoid:observations", help="Redis stream for observations"
+        "--out-stream",
+        default="meteovoid:observations",
+        help="Redis stream for observations",
     )
     p.add_argument("--poll-seconds", type=int, default=600, help="Polling interval in seconds")
     p.add_argument("--once", action="store_true", help="Fetch once and exit")
     p.add_argument(
-        "--per-stream", action="store_true", help="Also write per station/variable stream"
+        "--per-stream",
+        action="store_true",
+        help="Also write per station/variable stream",
     )
     args = p.parse_args(argv)
 
