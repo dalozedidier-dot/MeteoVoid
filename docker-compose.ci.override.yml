@@ -1,9 +1,15 @@
 services:
   meteovoid-api:
-    command:
+    # The image sets ENTRYPOINT=["meteovoid"], which makes any command run as:
+    #   meteovoid <command...>
+    # That broke the API container with: "No such command 'python'".
+    #
+    # In CI we override the entrypoint to run uvicorn directly.
+    entrypoint:
       - python
       - -m
       - uvicorn
+    command:
       - meteovoid.api:app
       - --host
       - 0.0.0.0
