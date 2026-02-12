@@ -213,9 +213,7 @@ def _collect_reports(api_url: str) -> list[dict[str, Any]]:
         for variable in vars_any:
             if not isinstance(variable, str) or not variable:
                 continue
-            url = (
-                f"{api_url.rstrip('/')}/latest?station_id={quote(station_id)}&variable={quote(variable)}"
-            )
+            url = f"{api_url.rstrip('/')}/latest?station_id={quote(station_id)}&variable={quote(variable)}"
             try:
                 rep = _http_json(url)
             except (URLError, TimeoutError, ValueError):

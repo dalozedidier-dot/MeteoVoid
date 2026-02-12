@@ -1,2 +1,2 @@
-Fix v4: apply the exact Black formatting required by pre-commit for tools/generate_bulletin.py.
-This replaces tools/generate_bulletin.py entirely.
+Fix v5: ruff-format + black alignment (collapse url assignment in _collect_reports).
+This replaces tools/generate_bulletin.py.
