@@ -13,7 +13,6 @@ from urllib.error import URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
-from meteovoid.stations_config import load_stations_config
 
 _ID_RE = re.compile(r"^\d+-\d+$")
 
@@ -223,7 +222,16 @@ def _collect_reports_from_api(api_url: str) -> list[dict[str, Any]]:
     return out
 
 
-def _collect_reports_from_config(api_url: str, cfg_path: str, region: str | None) -> list[dict[str, Any]]:
+def _collect_reports_from_config(
+    api_url: str, cfg_path: str, region: str | None
+) -> list[dict[str, Any]]:
+    try:
+        from meteovoid.stations_config import load_stations_config
+    except Exception as e:
+        raise RuntimeError(
+            "--stations-config requires PyYAML installed (dependency missing in this environment)"
+        ) from e
+
     cfg = load_stations_config(cfg_path)
     stations = cfg.stations
     if region:
@@ -432,7 +440,9 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="Optional stations YAML config path (fallback if /stations is missing)",
     )
-    p.add_argument("--region", default="", help="Optional region filter used with --stations-config")
+    p.add_argument(
+        "--region", default="", help="Optional region filter used with --stations-config"
+    )
     args = p.parse_args(argv)
 
     out_dir = Path(args.out_dir)

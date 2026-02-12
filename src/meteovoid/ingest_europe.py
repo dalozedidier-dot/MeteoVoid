@@ -4,7 +4,7 @@ import argparse
 import json
 import time
 from dataclasses import asdict
-from typing import Any
+from typing import Any, cast
 from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -45,10 +45,13 @@ def _extract_current(obj: dict[str, Any]) -> tuple[int | None, dict[str, float]]
         return None, {}
     ts_any = cur.get("time")
     ts: int | None
-    try:
-        ts = int(ts_any)
-    except (TypeError, ValueError):
+    if ts_any is None:
         ts = None
+    else:
+        try:
+            ts = int(ts_any)
+        except (TypeError, ValueError):
+            ts = None
 
     values: dict[str, float] = {}
     for k, v in cur.items():
@@ -72,20 +75,21 @@ def _publish_observation(
     source: str,
     per_stream: bool,
 ) -> None:
-    fields = {
+    fields: dict[str, str | int | float] = {
         "station_id": station_id,
         "variable": variable,
         "value": f"{value}",
         "source": source,
     }
     if ts is not None:
-        fields["ts"] = str(ts)
+        fields["ts"] = int(ts)
 
-    r.xadd(out_stream, fields, maxlen=50000, approximate=True)
+    payload = cast("dict[Any, Any]", fields)
+    r.xadd(out_stream, payload, maxlen=50000, approximate=True)
 
     if per_stream:
         per = f"{out_stream}:{station_id}:{variable}"
-        r.xadd(per, fields, maxlen=50000, approximate=True)
+        r.xadd(per, payload, maxlen=50000, approximate=True)
 
 
 def ingest_once(
@@ -134,7 +138,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out-stream", default="meteovoid:observations", help="Redis stream for observations")
     p.add_argument("--poll-seconds", type=int, default=600, help="Polling interval in seconds")
     p.add_argument("--once", action="store_true", help="Fetch once and exit")
-    p.add_argument("--per-stream", action="store_true", help="Also write per station/variable stream")
+    p.add_argument(
+        "--per-stream", action="store_true", help="Also write per station/variable stream"
+    )
     args = p.parse_args(argv)
 
     cfg = load_stations_config(args.config)
@@ -147,7 +153,9 @@ def main(argv: list[str] | None = None) -> int:
         results: list[dict[str, Any]] = []
         for st in stations:
             try:
-                res = ingest_once(r=r, station=st, out_stream=args.out_stream, per_stream=args.per_stream)
+                res = ingest_once(
+                    r=r, station=st, out_stream=args.out_stream, per_stream=args.per_stream
+                )
             except (URLError, TimeoutError, ValueError, OSError) as e:
                 res = {"station_id": st.station_id, "ok": False, "error": str(e)}
             results.append(res)

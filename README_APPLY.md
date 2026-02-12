@@ -1,19 +1,19 @@
-Patch v1: ingestion multi-stations Europe (Open-Meteo)
+MeteoVoid patch (CI + Live Smoke + ingest + bulletin)
 
-Contenu
-- config/stations_europe.yaml
-- src/meteovoid/stations_config.py
+Files included (overwrite in repo):
+- .github/workflows/live_smoke.yml
 - src/meteovoid/ingest_europe.py
-- docs/INGEST_EUROPE.md
-- docker-compose.yml: ajoute le service meteovoid-ingest-europe
-- tools/generate_bulletin.py: fallback --stations-config si /stations n'existe pas
+- src/meteovoid/stations_config.py
+- tools/generate_bulletin.py
 
-Important
-- L'ingester n'est pas utilisé en CI Live Smoke (pour éviter la dépendance réseau).
-- Le workflow Live Smoke reste déterministe via meteovoid-simulate.
+What it fixes:
+- pre-commit: black reformat issues (ingest_europe.py + generate_bulletin.py)
+- mypy: Optional[int] + redis.xadd typing in ingest_europe.py
+- mypy: yaml stubs warning (stations_config.py)
+- live smoke: robust /health wait + generates bulletin.md + bulletin.json + history.csv in live_smoke_report artifact
 
-Utilisation rapide
-- docker compose up -d redis meteovoid-live meteovoid-api meteovoid-ingest-europe
-- ouvrir http://localhost:8000/latest
-- générer bulletin:
-  python tools/generate_bulletin.py --api-url http://localhost:8000 --out-dir _ci_out/live_smoke --stations-config config/stations_europe.yaml --region belgium
+Apply:
+1) Unzip at repo root (keep paths).
+2) git add -A
+3) git commit -m "fix: live smoke health + bulletin, ingest typing/format"
+4) git push
