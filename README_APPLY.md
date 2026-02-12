@@ -1,13 +1,16 @@
-Patch Release v4
+Patch Live Smoke report (v1)
 
-Objectif
-- Empêcher le workflow Release de passer en échec quand PyPI Trusted Publisher n'est pas encore configuré.
+But
+- L'artefact live_smoke_report ne contenait pas latest.json ni bulletin.* (seulement compose.log/ps.txt).
 
-Changement
-- Si PYPI_API_TOKEN est défini (secret GitHub), publication PyPI via token (échec = vrai problème -> job rouge).
-- Si PYPI_API_TOKEN est vide, tentative OIDC (Trusted Publisher) en continue-on-error.
-  - En cas de "invalid-publisher", le job reste vert et affiche un message expliquant la config PyPI.
+Ce patch force:
+- Sauvegarde de http://localhost:8000/latest vers _ci_out/live_smoke/latest.json
+- Génération d'un bulletin dans _ci_out/live_smoke/ via tools/generate_bulletin.py:
+  - bulletin.json
+  - bulletin.md
+  - history.jsonl
+  - history.csv
+- Upload de tout _ci_out/live_smoke/
 
-Résultat
-- Le workflow Release peut rester vert (et créer la GitHub Release + attacher les dist),
-  même si PyPI n'est pas prêt.
+Fichiers modifiés
+- .github/workflows/live_smoke.yml

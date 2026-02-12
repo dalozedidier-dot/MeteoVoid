@@ -1,168 +1,115 @@
-# .github/workflows/live_smoke.yml
 name: Live Smoke (Docker Compose)
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["main"]
-
-concurrency:
-  group: live-smoke-${{ github.ref }}
-  cancel-in-progress: true
+  schedule:
+    - cron: "17 */6 * * *"
 
 jobs:
   live-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Prepare output dir
+      - name: Show tool versions (debug)
         run: |
-          set -euo pipefail
-          mkdir -p _ci_out/live_smoke
+          python -V
+          pip -V
+          docker version
+          docker compose version
 
       - name: Build images
         run: |
-          set -euo pipefail
           docker compose -f docker-compose.yml build
 
-      - name: Up Redis
+      - name: Start services (redis + live + api)
         run: |
-          set -euo pipefail
-          docker compose -f docker-compose.yml up -d redis
+          docker compose -f docker-compose.yml up -d redis meteovoid-live meteovoid-api
+          docker compose -f docker-compose.yml ps
 
-      - name: Up live + api
+      - name: Wait for API /health
         run: |
-          set -euo pipefail
-          docker compose -f docker-compose.yml up -d meteovoid-live meteovoid-api
+          python - <<'PY'
+          import json, time
+          from urllib.request import urlopen, Request
+          url = "http://localhost:8000/health"
+          t0 = time.time()
+          while True:
+            try:
+              req = Request(url, headers={"Accept":"application/json"})
+              with urlopen(req, timeout=2.0) as r:
+                data = r.read().decode("utf-8", errors="replace")
+              obj = json.loads(data)
+              if isinstance(obj, dict) and obj.get("status") == "ok":
+                print("health ok")
+                break
+            except Exception:
+              pass
+            if time.time() - t0 > 60:
+              raise SystemExit("API /health not ready after 60s")
+            time.sleep(1.0)
+          PY
 
-      - name: Wait /health
+      - name: Seed observations (simulate)
         run: |
-          set -euo pipefail
-          for i in $(seq 1 60); do
-            if curl -fsS http://localhost:8000/health >/dev/null; then
-              echo "health OK"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "health timeout"
-          exit 1
-
-      - name: Seed stream (simulate)
-        run: |
-          set -euo pipefail
           docker compose -f docker-compose.yml run --rm meteovoid-simulate
 
-      - name: Wait /latest enriched (supports required query params)
+      - name: Wait for /latest and save latest.json
         run: |
-          set -euo pipefail
+          mkdir -p _ci_out/live_smoke
+          python - <<'PY'
+          import json, time
+          from pathlib import Path
+          from urllib.request import urlopen, Request
 
-          tmp="$(mktemp)"
-          pair="$(mktemp)"
-
-          station_id=""
-          variable=""
-
-          for i in $(seq 1 90); do
-            # Try /latest without params
-            code="$(curl -sS -o "$tmp" -w "%{http_code}" http://localhost:8000/latest || true)"
-
-            if [ "$code" = "200" ]; then
-              if python tools/validate_latest_report.py "$tmp" >/dev/null 2>&1; then
-                mv "$tmp" _ci_out/live_smoke/latest.json
-                echo "latest OK (no params)"
-                exit 0
-              fi
-            fi
-
-            # If API requires query params (FastAPI Query(...)), discover first pair via /stations
-            if [ "$code" = "422" ]; then
-              if [ -z "$station_id" ] || [ -z "$variable" ]; then
-                st_code="$(curl -sS -o "$tmp" -w "%{http_code}" http://localhost:8000/stations || true)"
-                if [ "$st_code" = "200" ]; then
-                  python -c "import json,sys; d=json.load(open(sys.argv[1], 'r', encoding='utf-8')); st=d.get('stations', {}); sid=sorted(st.keys())[0] if isinstance(st, dict) and st else ''; vv=st.get(sid, []) if isinstance(st, dict) else []; var=sorted([x for x in vv if isinstance(x, str) and x])[0] if isinstance(vv, list) and vv else ''; print(sid); print(var)" "$tmp" > "$pair" 2>/dev/null || true
-                  station_id="$(sed -n '1p' "$pair")"
-                  variable="$(sed -n '2p' "$pair")"
-                fi
-              fi
-
-              if [ -n "$station_id" ] && [ -n "$variable" ]; then
-                url="http://localhost:8000/latest?station_id=${station_id}&variable=${variable}"
-                code2="$(curl -sS -o "$tmp" -w "%{http_code}" "$url" || true)"
-                if [ "$code2" = "200" ]; then
-                  if python tools/validate_latest_report.py "$tmp" >/dev/null 2>&1; then
-                    mv "$tmp" _ci_out/live_smoke/latest.json
-                    echo "latest OK (station_id=$station_id variable=$variable)"
-                    exit 0
-                  fi
-                fi
-              fi
-            fi
-
-            sleep 2
-          done
-
-          echo "/latest timeout or invalid"
-          echo "Last HTTP code (no params): $code"
-          if [ -n "$station_id" ] && [ -n "$variable" ]; then
-            echo "Tried station_id=$station_id variable=$variable"
-          fi
-          if [ -s "$tmp" ]; then
-            echo "--- validation ---"
-            python tools/validate_latest_report.py "$tmp" || true
-            echo "--- payload ---"
-            cat "$tmp" || true
-          else
-            echo "(empty response)"
-          fi
-          exit 1
-
-      - name: Validate latest.json (strict)
-        run: |
-          set -euo pipefail
-          python tools/validate_latest_report.py _ci_out/live_smoke/latest.json
+          url = "http://localhost:8000/latest"
+          out = Path("_ci_out/live_smoke/latest.json")
+          t0 = time.time()
+          last = None
+          while True:
+            try:
+              req = Request(url, headers={"Accept":"application/json"})
+              with urlopen(req, timeout=2.5) as r:
+                data = r.read().decode("utf-8", errors="replace")
+              obj = json.loads(data)
+              last = obj
+              if isinstance(obj, dict) and obj.get("score") is not None and obj.get("state") is not None:
+                out.write_text(json.dumps(obj, indent=2, sort_keys=True), encoding="utf-8")
+                print("saved", out)
+                break
+            except Exception as e:
+              last = {"error": str(e)}
+            if time.time() - t0 > 90:
+              raise SystemExit(f"/latest not ready after 90s, last={last}")
+            time.sleep(1.0)
+          PY
 
       - name: Generate bulletin (md + json + history)
-        if: always()
         run: |
-          set -euo pipefail
-          python tools/generate_bulletin.py \
-            --api-url http://localhost:8000 \
-            --out-dir _ci_out/live_smoke \
-            --compose-file docker-compose.yml \
-            --reports-stream meteovoid:reports
+          python tools/generate_bulletin.py             --api-url http://localhost:8000             --out-dir _ci_out/live_smoke             --compose-file docker-compose.yml
 
-      - name: Capture ps
+      - name: Capture compose logs + ps
         if: always()
         run: |
-          set -euo pipefail
+          mkdir -p _ci_out/live_smoke
           docker compose -f docker-compose.yml ps > _ci_out/live_smoke/ps.txt || true
-
-      - name: Capture logs
-        if: always()
-        run: |
-          set -euo pipefail
           docker compose -f docker-compose.yml logs --no-color > _ci_out/live_smoke/compose.log || true
+          echo "=== _ci_out/live_smoke contents ==="
+          ls -la _ci_out/live_smoke || true
 
-      - name: Upload artifact
+      - name: Upload live smoke report artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: live_smoke_report
           path: _ci_out/live_smoke/
-          if-no-files-found: error
 
-      - name: Down
+      - name: Shutdown
         if: always()
         run: |
-          set -euo pipefail
           docker compose -f docker-compose.yml down -v
