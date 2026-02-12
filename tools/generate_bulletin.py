@@ -329,7 +329,9 @@ def _station_aggregate(rows: list[VarRow]) -> dict[str, Any]:
         "score_global": score_global,
         "severity_global": sev_global,
         "confidence_global": conf_global,
-        "worst": [{"variable": w.variable, "severity": w.severity, "score": w.score} for w in worst],
+        "worst": [
+            {"variable": w.variable, "severity": w.severity, "score": w.score} for w in worst
+        ],
     }
 
 
@@ -447,7 +449,9 @@ def main(argv: list[str] | None = None) -> int:
     stations = len({r.station_id for r in rows})
     variables = len(rows)
     alerts = sum(
-        1 for r in rows if _severity_rank(r.severity) >= _severity_rank("high") or "alert" in r.flags
+        1
+        for r in rows
+        if _severity_rank(r.severity) >= _severity_rank("high") or "alert" in r.flags
     )
     watches = sum(1 for r in rows if r.severity == "medium" or "watch" in r.flags)
     data_holes = sum(1 for r in rows if "data_hole" in r.flags or r.missing_time_frac > 0.0)
