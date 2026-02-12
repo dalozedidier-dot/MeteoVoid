@@ -18,7 +18,7 @@ class _FakeHTTPResponse:
     def read(self) -> bytes:
         return self._payload
 
-    def __enter__(self) -> "_FakeHTTPResponse":
+    def __enter__(self) -> _FakeHTTPResponse:
         return self
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:  # noqa: ANN401
@@ -45,7 +45,8 @@ def test_http_json_rejects_non_object(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_main_once_runs_and_prints_summary(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     station = StationSpec(
         station_id="BE_UCCLE",
@@ -57,13 +58,15 @@ def test_main_once_runs_and_prints_summary(
         variables=["wind_gusts_10m"],
     )
 
-    monkeypatch.setattr(
-        ie, "load_stations_config", lambda _p: SimpleNamespace(stations=[station])
-    )
+    monkeypatch.setattr(ie, "load_stations_config", lambda _p: SimpleNamespace(stations=[station]))
     monkeypatch.setattr(ie.redis.Redis, "from_url", lambda *a, **k: object())
 
     def fake_ingest_once(
-        *, r: Any, station: Any, out_stream: str, per_stream: bool
+        *,
+        r: Any,
+        station: Any,
+        out_stream: str,
+        per_stream: bool,
     ) -> dict[str, Any]:  # noqa: ANN401,ARG001
         return {
             "station_id": station.station_id,
@@ -86,7 +89,8 @@ def test_main_once_runs_and_prints_summary(
 
 
 def test_main_once_handles_ingest_errors(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     station = StationSpec(
         station_id="BE_UCCLE",
@@ -98,13 +102,15 @@ def test_main_once_handles_ingest_errors(
         variables=["wind_gusts_10m"],
     )
 
-    monkeypatch.setattr(
-        ie, "load_stations_config", lambda _p: SimpleNamespace(stations=[station])
-    )
+    monkeypatch.setattr(ie, "load_stations_config", lambda _p: SimpleNamespace(stations=[station]))
     monkeypatch.setattr(ie.redis.Redis, "from_url", lambda *a, **k: object())
 
     def boom(
-        *, r: Any, station: Any, out_stream: str, per_stream: bool
+        *,
+        r: Any,
+        station: Any,
+        out_stream: str,
+        per_stream: bool,
     ) -> dict[str, Any]:  # noqa: ANN401,ARG001
         raise URLError("network down")
 
