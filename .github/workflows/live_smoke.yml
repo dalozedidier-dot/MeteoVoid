@@ -3,20 +3,35 @@ name: Live Smoke (Docker Compose)
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 * * * *"
-
-concurrency:
-  group: live-smoke-${{ github.ref }}
-  cancel-in-progress: true
+    - cron: "17 * * * *"
+  push:
+    paths:
+      - ".github/workflows/live_smoke.yml"
+      - "docker-compose.yml"
+      - "docker-compose.ci.override.yml"
+      - "src/**"
+      - "tools/**"
 
 jobs:
   live-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install (for bulletin tool)
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -e ".[live]"
+          python -c "import redis" || pip install redis
 
       - name: Prepare output dir
         run: |
@@ -32,127 +47,147 @@ jobs:
         run: |
           set -euo pipefail
           docker compose -f docker-compose.yml -f docker-compose.ci.override.yml up -d redis
-          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps
+          for i in $(seq 1 30); do
+            if docker compose -f docker-compose.yml -f docker-compose.ci.override.yml exec -T redis redis-cli ping >/dev/null 2>&1; then
+              echo "redis OK"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "redis timeout"
+          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps --all || true
+          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color --tail=200 redis || true
+          exit 1
 
       - name: Up live + api
         run: |
           set -euo pipefail
           docker compose -f docker-compose.yml -f docker-compose.ci.override.yml up -d meteovoid-live meteovoid-api
-          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps
+          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps --all || true
 
-      - name: Wait /health (inside api container)
+      - name: Wait /health (host poll)
         run: |
           set -euo pipefail
+          ok=0
           for i in $(seq 1 60); do
-            if docker compose -f docker-compose.yml -f docker-compose.ci.override.yml exec -T meteovoid-api               python -c "import json; from urllib.request import Request, urlopen; req=Request('http://localhost:8000/health', headers={'Accept':'application/json'}); data=urlopen(req, timeout=2).read().decode('utf-8', errors='replace'); obj=json.loads(data); raise SystemExit(0 if isinstance(obj, dict) and obj.get('status')=='ok' else 1)"               >/dev/null 2>&1; then
+            if python - <<'PY'
+import json
+from urllib.request import Request, urlopen
+req = Request("http://localhost:8000/health", headers={"Accept":"application/json"})
+data = urlopen(req, timeout=2).read().decode("utf-8", errors="replace")
+obj = json.loads(data)
+raise SystemExit(0 if isinstance(obj, dict) and obj.get("status") == "ok" else 1)
+PY
+            then
               echo "health OK"
-              exit 0
+              ok=1
+              break
+            fi
+
+            # if API container died, fail early with logs
+            if ! docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps --all | grep -E "meteovoid-api\s+.*\sUp\s" -q; then
+              echo "API container is not running"
+              docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps --all || true
+              docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color --tail=300 meteovoid-api || true
+              docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color --tail=300 meteovoid-live || true
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          if [ "$ok" -ne 1 ]; then
+            echo "health timeout"
+            docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps --all || true
+            docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color --tail=300 meteovoid-api || true
+            docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color --tail=300 meteovoid-live || true
+            exit 1
+          fi
+
+      - name: Seed observations (host -> Redis Streams)
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+import time
+from typing import Any
+import redis
+
+r = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
+stream = "meteovoid:observations"
+
+now = time.time()
+# 250 points, 1s spacing, with one synthetic gap in the middle to exercise gap logic
+for i in range(250):
+    if i == 120:
+        now += 90.0  # create a gap
+    ts = now + i * 1.0
+    fields: dict[str, Any] = {
+        "station_id": "S1",
+        "variable": "wind_speed_ms",
+        "value": f"{5.0 + (i % 10) * 0.1:.3f}",
+        "ts": str(ts),
+    }
+    r.xadd(stream, fields)
+print("seeded", r.xlen(stream), "messages")
+PY
+
+      - name: Wait /latest and save latest.json
+        run: |
+          set -euo pipefail
+          ok=0
+          for i in $(seq 1 90); do
+            if python - <<'PY'
+import json
+from urllib.request import Request, urlopen
+req = Request("http://localhost:8000/latest", headers={"Accept":"application/json"})
+data = urlopen(req, timeout=2).read().decode("utf-8", errors="replace")
+obj = json.loads(data)
+if isinstance(obj, dict) and ("score" in obj) and ("state" in obj):
+    print(json.dumps(obj, ensure_ascii=False, indent=2))
+    raise SystemExit(0)
+raise SystemExit(1)
+PY
+            then
+              python - <<'PY' > _ci_out/live_smoke/latest.json
+import json
+from urllib.request import Request, urlopen
+req = Request("http://localhost:8000/latest", headers={"Accept":"application/json"})
+data = urlopen(req, timeout=2).read().decode("utf-8", errors="replace")
+obj = json.loads(data)
+print(json.dumps(obj, ensure_ascii=False, indent=2))
+PY
+              ok=1
+              break
             fi
             sleep 2
           done
-          echo "health timeout"
-          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps || true
-          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color --tail=200 meteovoid-api || true
-          exit 1
 
-      - name: Seed stream (simulate or fallback)
-        run: |
-          set -euo pipefail
-
-          SERVICES="$(docker compose -f docker-compose.yml -f docker-compose.ci.override.yml config --services)"
-
-          if echo "$SERVICES" | grep -qx "meteovoid-simulate"; then
-            echo "Seeding via meteovoid-simulate"
-            if docker compose -f docker-compose.yml -f docker-compose.ci.override.yml run --rm meteovoid-simulate; then
-              exit 0
-            fi
+          if [ "$ok" -ne 1 ]; then
+            echo "latest timeout"
+            docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps --all || true
+            docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color --tail=300 meteovoid-api || true
+            docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color --tail=300 meteovoid-live || true
+            exit 1
           fi
 
-          echo "Fallback seeding via redis-cli"
-          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml exec -T redis sh -lc '
-            for i in $(seq 1 250); do
-              redis-cli XADD meteovoid:observations "*" station_id "BE_UCCLE" variable "wind_gust_ms" value "10.0" ts "$i" >/dev/null
-            done
-            redis-cli XLEN meteovoid:observations
-          '
-
-      - name: Fetch /latest (supports 422) -> latest.json
+      - name: Generate bulletin (markdown + json + history)
         run: |
           set -euo pipefail
-          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml exec -T meteovoid-api python - <<'PY' > _ci_out/live_smoke/latest.json
-          import json, time
-          from urllib.parse import urlencode
-          from urllib.request import Request, urlopen
-
-          BASE = "http://localhost:8000"
-
-          def get_json(url: str):
-              req = Request(url, headers={"Accept": "application/json"})
-              with urlopen(req, timeout=3.0) as r:
-                  body = r.read().decode("utf-8", errors="replace")
-              return json.loads(body)
-
-          t0 = time.time()
-          station_id = None
-          variable = None
-          last = None
-
-          while True:
-              try:
-                  obj = get_json(f"{BASE}/latest")
-                  last = obj
-                  if isinstance(obj, dict) and obj.get("score") is not None and obj.get("state") is not None:
-                      print(json.dumps(obj, indent=2, sort_keys=True))
-                      break
-
-                  if isinstance(obj, dict) and obj.get("detail") is not None and station_id is None:
-                      st = get_json(f"{BASE}/stations")
-                      if isinstance(st, dict) and isinstance(st.get("stations"), dict) and st["stations"]:
-                          station_id = sorted(st["stations"].keys())[0]
-                          vars_ = st["stations"].get(station_id)
-                          if isinstance(vars_, list) and vars_:
-                              variable = sorted([v for v in vars_ if isinstance(v, str) and v])[0]
-
-                  if station_id and variable:
-                      qs = urlencode({"station_id": station_id, "variable": variable})
-                      obj2 = get_json(f"{BASE}/latest?{qs}")
-                      last = obj2
-                      if isinstance(obj2, dict) and obj2.get("score") is not None and obj2.get("state") is not None:
-                          print(json.dumps(obj2, indent=2, sort_keys=True))
-                          break
-              except Exception as e:
-                  last = {"error": str(e)}
-
-              if time.time() - t0 > 150:
-                  raise SystemExit(f"latest timeout, last={last}")
-
-              time.sleep(2.0)
-          PY
-
-      - name: Post-process latest.json (optional)
-        run: |
-          set -euo pipefail
-          if [ -f tools/postprocess_live_report.py ]; then
-            python tools/postprocess_live_report.py               --latest _ci_out/live_smoke/latest.json               --out-dir _ci_out/live_smoke               --config config/incoherence.json
-          else
-            echo "tools/postprocess_live_report.py not found, skipping"
-          fi
+          python tools/postprocess_live_report.py             --latest _ci_out/live_smoke/latest.json             --out-dir _ci_out/live_smoke
 
       - name: Capture ps + logs
         if: always()
         run: |
           set -euo pipefail
-          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps > _ci_out/live_smoke/ps.txt || true
+          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps --all > _ci_out/live_smoke/ps.txt || true
           docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color > _ci_out/live_smoke/compose.log || true
-          ls -la _ci_out/live_smoke || true
 
-      - name: Upload artifact
+      - name: Upload live smoke report artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: live_smoke_report
-          path: _ci_out/live_smoke/
-          if-no-files-found: error
+          path: _ci_out/live_smoke
 
       - name: Down
         if: always()

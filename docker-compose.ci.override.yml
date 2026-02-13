@@ -1,21 +1,17 @@
-# CI override: bypass image ENTRYPOINT so commands do not become "meteovoid uvicorn ..."
-#
-# This is intentionally minimal:
-# - It forces service entrypoints to a shell, then runs the real command.
-# - It requires that "uvicorn" is installed in the image (usually via requirements for the API).
+# docker-compose.ci.override.yml
+# CI-focused overrides:
+# - Clear image ENTRYPOINT (some images use the 'meteovoid' CLI as entrypoint)
+# - Expose API port to the host for simple polling
+# - Keep Redis exposed for host seeding
 
 services:
   meteovoid-api:
-    entrypoint: ["/bin/sh", "-lc"]
-    command: "python -m uvicorn meteovoid.api:app --host 0.0.0.0 --port 8000"
+    entrypoint: []
+    ports:
+      - "8000:8000"
 
   meteovoid-live:
-    # Keep default if your image entrypoint already runs the worker correctly.
-    # If your image ENTRYPOINT breaks this too, uncomment and set the right command.
-    # entrypoint: ["/bin/sh", "-lc"]
-    # command: "python -m meteovoid.live --in-stream meteovoid:observations --out-stream meteovoid:reports"
-    {}
+    entrypoint: []
 
   meteovoid-simulate:
-    # Prefer your existing simulate service command if present.
-    {}
+    entrypoint: []
