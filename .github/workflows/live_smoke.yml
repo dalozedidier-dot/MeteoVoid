@@ -43,9 +43,9 @@ jobs:
           docker compose -f docker-compose.yml -f docker-compose.ci.override.yml up -d meteovoid-live meteovoid-api
           docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps
 
-      - name: Wait /health (inside api container)
+      - name: Wait /health (host -> api)
         run: |
-          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml exec -T meteovoid-api python - <<'PY'
+          python - <<'PY'
           import json, time
           from urllib.request import Request, urlopen
 
@@ -93,9 +93,9 @@ jobs:
             '
           fi
 
-      - name: Wait /latest and save latest.json
+      - name: Wait /latest and save latest.json (host -> api)
         run: |
-          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml exec -T meteovoid-api python - <<'PY' > _ci_out/live_smoke/latest.json
+          python - <<'PY' > _ci_out/live_smoke/latest.json
           import json, time
           from urllib.request import Request, urlopen
 

@@ -1,14 +1,15 @@
 services:
   meteovoid-api:
-    # The image uses ENTRYPOINT=["meteovoid"].
-    # So the correct way is to pass subcommands (serve/live/simulate) as "command:",
-    # NOT "python -m ...".
+    # The built image uses ENTRYPOINT=["meteovoid"].
+    # Use the CLI subcommand instead of "python -m uvicorn".
     command:
       - serve
       - --host
       - 0.0.0.0
       - --port
       - "8000"
+    ports:
+      - "8000:8000"
     healthcheck:
       test:
         [
