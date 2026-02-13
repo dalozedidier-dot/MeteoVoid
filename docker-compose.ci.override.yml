@@ -1,11 +1,14 @@
 services:
   meteovoid-api:
-    # Image ENTRYPOINT=["meteovoid"] breaks any "python ..." command by turning it into:
-    #   meteovoid python ...
-    # So in CI we replace the entrypoint and run uvicorn directly.
-    entrypoint: ["sh", "-lc"]
-    command: >
-      python -m uvicorn meteovoid.api:app --host 0.0.0.0 --port 8000
+    # The image uses ENTRYPOINT=["meteovoid"].
+    # So the correct way is to pass subcommands (serve/live/simulate) as "command:",
+    # NOT "python -m ...".
+    command:
+      - serve
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
     healthcheck:
       test:
         [
@@ -19,15 +22,21 @@ services:
       retries: 40
 
   meteovoid-live:
-    # Same ENTRYPOINT issue: base compose uses a python entrypoint, which becomes "meteovoid python ..."
-    entrypoint: ["sh", "-lc"]
-    command: >
-      meteovoid live --redis-url redis://redis:6379/0
-      --in-stream meteovoid:observations --out-stream meteovoid:reports
+    command:
+      - live
+      - --redis-url
+      - redis://redis:6379/0
+      - --in-stream
+      - meteovoid:observations
+      - --out-stream
+      - meteovoid:reports
 
   meteovoid-simulate:
-    # Ensure seeding works when workflow prefers the simulate service.
-    entrypoint: ["sh", "-lc"]
-    command: >
-      meteovoid simulate --redis-url redis://redis:6379/0
-      --out-stream meteovoid:observations --n 250
+    command:
+      - simulate
+      - --redis-url
+      - redis://redis:6379/0
+      - --out-stream
+      - meteovoid:observations
+      - --n
+      - "250"

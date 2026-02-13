@@ -114,7 +114,7 @@ jobs:
                       break
               except Exception as e:
                   last = {"error": str(e)}
-              if time.time() - t0 > 120:
+              if time.time() - t0 > 150:
                   raise SystemExit(f"latest timeout, last={last}")
               time.sleep(2.0)
           PY
@@ -126,6 +126,8 @@ jobs:
       - name: Capture ps + logs
         if: always()
         run: |
+          echo "=== docker compose ps ==="
+          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps || true
           docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps > _ci_out/live_smoke/ps.txt || true
           docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color > _ci_out/live_smoke/compose.log || true
           echo "=== meteovoid-live (tail) ==="
