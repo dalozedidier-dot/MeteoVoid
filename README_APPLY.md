@@ -1,11 +1,21 @@
-Fix pre-commit failures for tools/append_live_history.py
+Patch: Incoherence score (gaps + out-of-range + stuck) + bulletin in live_smoke_report
 
-From logs:
-- ruff: UP038 (use X | Y in isinstance), UP017 (datetime.UTC)
-- black: would reformat tools/append_live_history.py
+What you get:
+- latest.json enriched with an "incoherence" object:
+  - score (0..1), severity (low/medium/high)
+  - components: gap/range/stuck
+  - weights and meta (expected ranges, notes)
+- bulletin.md + bulletin.json produced in _ci_out/live_smoke/
+- history.csv + history.jsonl appended each run
 
-This patch replaces the file with a ruff+black compatible version.
+Files:
+- src/meteovoid/incoherence.py
+- tools/generate_bulletin.py
+- config/incoherence_defaults.json
+- tests/test_incoherence.py
+- .github/workflows/live_smoke.yml (adds the bulletin generation step)
 
 Apply:
-- Replace tools/append_live_history.py with the one from this zip.
-- Commit + push.
+- Unzip at repo root (overwrite files)
+- Commit + push
+- Re-run Live Smoke
