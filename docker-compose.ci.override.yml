@@ -1,7 +1,6 @@
 services:
   meteovoid-api:
-    # The built image uses ENTRYPOINT=["meteovoid"].
-    # Use the CLI subcommand instead of "python -m uvicorn".
+    # Image ENTRYPOINT=["meteovoid"] -> we pass CLI subcommand.
     command:
       - serve
       - --host

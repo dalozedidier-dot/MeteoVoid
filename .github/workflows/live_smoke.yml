@@ -84,10 +84,11 @@ jobs:
           fi
 
           if [ "$SEED_OK" -ne 1 ]; then
-            echo "Fallback seeding via redis-cli (250 points)..."
+            echo "Fallback seeding via redis-cli (250 points, varying values)..."
             docker compose -f docker-compose.yml -f docker-compose.ci.override.yml exec -T redis sh -lc '
               for i in $(seq 1 250); do
-                redis-cli XADD meteovoid:observations "*" station_id "BE_UCCLE" variable "wind_gust_ms" value "10.0" ts "$i" >/dev/null
+                v=$((10 + (i % 25)))
+                redis-cli XADD meteovoid:observations "*" station_id "BE_UCCLE" variable "wind_gust_ms" value "$v" ts "$i" >/dev/null
               done
               redis-cli XLEN meteovoid:observations
             '
@@ -119,9 +120,13 @@ jobs:
               time.sleep(2.0)
           PY
 
-      - name: Generate bulletin (markdown + json + history)
+      - name: Generate bulletin (markdown + json)
         run: |
           python tools/generate_bulletin.py             --api-url http://localhost:8000             --out-dir _ci_out/live_smoke             --compose-file docker-compose.yml             --latest-path latest.json
+
+      - name: Append history (always non-empty)
+        run: |
+          python tools/append_live_history.py             --latest _ci_out/live_smoke/latest.json             --out-dir _ci_out/live_smoke
 
       - name: Capture ps + logs
         if: always()
