@@ -1,9 +1,4 @@
 # docker-compose.ci.override.yml
-# CI-focused overrides:
-# - Clear image ENTRYPOINT (some images use the 'meteovoid' CLI as entrypoint)
-# - Expose API port to the host for simple polling
-# - Keep Redis exposed for host seeding
-
 services:
   meteovoid-api:
     entrypoint: []
