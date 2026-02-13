@@ -27,6 +27,38 @@ def _read_table(path: Path) -> pd.DataFrame:
     raise ValueError(f"Unsupported input format: {path.name}")
 
 
+def _parse_timestamps(col: pd.Series) -> pd.Series:
+    """Parse timestamps robustly.
+
+    Pandas has edge cases parsing ISO8601 strings with fractional seconds + timezone (e.g. ...000001Z).
+    We first try format="ISO8601" (fast + robust for the common case), then fall back.
+    """
+    # 1) ISO8601 (handles microseconds + 'Z' reliably)
+    ts = pd.to_datetime(col, utc=True, errors="coerce", format="ISO8601")
+
+    # 2) Fallback: generic parser (mixed inputs)
+    if ts.isna().any():
+        ts2 = pd.to_datetime(col, utc=True, errors="coerce")
+        ts = ts.fillna(ts2)
+
+    # 3) Fallback for numeric epochs (seconds/ms/ns heuristic)
+    if ts.isna().any():
+        num = pd.to_numeric(col, errors="coerce")
+        if num.notna().any():
+            mx = float(num.max())
+            # Heuristic: choose the most likely unit by magnitude.
+            if mx > 1e14:
+                unit = "ns"
+            elif mx > 1e11:
+                unit = "ms"
+            else:
+                unit = "s"
+            ts3 = pd.to_datetime(num, utc=True, errors="coerce", unit=unit)
+            ts = ts.fillna(ts3)
+
+    return ts
+
+
 def scan_series_for_voids(
     csv_path: Path,
     time_col: str = "timestamp",
@@ -49,8 +81,7 @@ def scan_series_for_voids(
     if value_col not in df.columns:
         raise ValueError(f"Missing value column: {value_col}")
 
-    # Be permissive: accept ISO strings or numeric timestamps.
-    ts = pd.to_datetime(df[time_col], utc=True, errors="coerce")
+    ts = _parse_timestamps(df[time_col])
     if ts.isna().any():
         bad = int(ts.isna().sum())
         raise ValueError(f"{bad} timestamps could not be parsed in column {time_col}")

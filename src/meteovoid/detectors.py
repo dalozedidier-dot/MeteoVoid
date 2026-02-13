@@ -61,9 +61,18 @@ def robust_zscore_outliers(values: list[float], z_thresh: float = 3.5) -> Outlie
 
     med = _median(values)
     mad = _mad(values, med)
-    # Avoid divide-by-zero; if MAD=0, no dispersion -> no outliers.
+
+    # If MAD=0 but not all values equal, we still want to flag non-median points.
+    # This happens with "mostly constant + one extreme" patterns, which are meaningful anomalies.
     if mad <= 1e-12:
-        return OutlierResult(frac=0.0, max_score=0.0, method="robust_z", details={"mad": mad})
+        non_med = [x for x in values if abs(x - med) > 1e-12]
+        frac = float(len(non_med) / len(values)) if values else 0.0
+        return OutlierResult(
+            frac=clamp01(frac),
+            max_score=1.0 if non_med else 0.0,
+            method="robust_z",
+            details={"median": med, "mad": mad, "fallback": "non_median"},
+        )
 
     sigma = 1.4826 * mad
     zs = [abs((x - med) / sigma) for x in values]
@@ -87,13 +96,23 @@ def iqr_outliers(values: list[float], k: float = 1.5) -> OutlierResult:
     q1 = xs[int(0.25 * (n - 1))]
     q3 = xs[int(0.75 * (n - 1))]
     iqr = float(q3 - q1)
+
+    # If IQR=0 but not all values equal, flag points that differ from the quartiles.
     if iqr <= 1e-12:
-        return OutlierResult(frac=0.0, max_score=0.0, method="iqr", details={"iqr": iqr})
+        non_q = [x for x in values if abs(x - float(q1)) > 1e-12]
+        frac = float(len(non_q) / len(values)) if values else 0.0
+        return OutlierResult(
+            frac=clamp01(frac),
+            max_score=1.0 if non_q else 0.0,
+            method="iqr",
+            details={"q1": float(q1), "q3": float(q3), "iqr": iqr, "fallback": "non_quartile"},
+        )
 
     lo = float(q1 - float(k) * iqr)
     hi = float(q3 + float(k) * iqr)
     flagged = [x for x in values if x < lo or x > hi]
     frac = float(len(flagged) / len(values))
+
     # "max_score" is normalized distance beyond fence
     dist = 0.0
     for x in flagged:
@@ -101,6 +120,7 @@ def iqr_outliers(values: list[float], k: float = 1.5) -> OutlierResult:
             dist = max(dist, float((lo - x) / iqr))
         else:
             dist = max(dist, float((x - hi) / iqr))
+
     return OutlierResult(
         frac=clamp01(frac),
         max_score=float(dist),
@@ -109,42 +129,11 @@ def iqr_outliers(values: list[float], k: float = 1.5) -> OutlierResult:
     )
 
 
-def flatline_score(values: list[float], eps: float = 1e-6, min_run: int = 30) -> float:
-    """Return a [0..1] score for abnormal flatlining.
-
-    We detect the longest run of consecutive values whose range <= eps.
-    Score = clamp01((run_len - min_run + 1) / len(values)) if run_len >= min_run else 0.
-    """
-    if len(values) < max(2, int(min_run)):
-        return 0.0
-
-    eps = float(abs(eps))
-    best = 1
-    run = 1
-
-    # Compare consecutive differences. This is robust to small jitter.
-    for i in range(1, len(values)):
-        if abs(values[i] - values[i - 1]) <= eps:
-            run += 1
-        else:
-            if run > best:
-                best = run
-            run = 1
-
-    if run > best:
-        best = run
-
-    if best < int(min_run):
-        return 0.0
-
-    raw = float((best - int(min_run) + 1) / float(max(1, len(values))))
-    return clamp01(raw)
-
-
 def spike_score(values: list[float], k: float = 6.0) -> float:
     """Return a [0..1] score for abrupt spikes/step changes.
 
     We compute robust scale of first differences via MAD, then count diffs exceeding k*sigma.
+    If the robust scale collapses (MAD=0) but diffs contain non-zero jumps, we treat that as a spike.
     """
     if len(values) < 6:
         return 0.0
@@ -152,8 +141,11 @@ def spike_score(values: list[float], k: float = 6.0) -> float:
     diffs = [float(values[i] - values[i - 1]) for i in range(1, len(values))]
     med = _median(diffs)
     mad = _mad(diffs, med)
+
+    # Common "one spike in otherwise constant series" pattern -> MAD==0, but it's still a spike.
     if mad <= 1e-12:
-        return 0.0
+        has_jump = any(abs(d - med) > 1e-12 for d in diffs)
+        return 1.0 if has_jump else 0.0
 
     sigma = 1.4826 * mad
     thr = float(abs(k)) * sigma
