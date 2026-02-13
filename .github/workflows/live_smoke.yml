@@ -18,6 +18,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Prepare output dir
         run: |
           set -euo pipefail
@@ -26,33 +31,31 @@ jobs:
       - name: Build images
         run: |
           set -euo pipefail
-          docker compose -f docker-compose.yml build
+          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml build
 
       - name: Up Redis
         run: |
           set -euo pipefail
-          docker compose -f docker-compose.yml up -d redis
-          docker compose -f docker-compose.yml ps
+          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml up -d redis
+          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps
 
       - name: Up live + api
         run: |
           set -euo pipefail
-          docker compose -f docker-compose.yml up -d meteovoid-live meteovoid-api
-          docker compose -f docker-compose.yml ps
+          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml up -d meteovoid-live meteovoid-api
+          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps
 
       - name: Wait /health (inside api container)
         run: |
           set -euo pipefail
-          last=""
           for i in $(seq 1 60); do
-            if docker compose -f docker-compose.yml exec -T meteovoid-api python - <<'PY' >/dev/null 2>&1; then
+            if docker compose -f docker-compose.yml -f docker-compose.ci.override.yml exec -T meteovoid-api python - <<'PY' >/dev/null 2>&1; then
           import json
           from urllib.request import Request, urlopen
 
           req = Request("http://localhost:8000/health", headers={"Accept": "application/json"})
           with urlopen(req, timeout=2.0) as r:
-              data = r.read().decode("utf-8", errors="replace")
-          obj = json.loads(data)
+              obj = json.loads(r.read().decode("utf-8", errors="replace"))
           if not (isinstance(obj, dict) and obj.get("status") == "ok"):
               raise SystemExit(1)
           PY
@@ -62,29 +65,35 @@ jobs:
             sleep 2
           done
           echo "health timeout"
-          docker compose -f docker-compose.yml ps || true
-          docker compose -f docker-compose.yml logs --no-color --tail=200 meteovoid-api || true
+          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps || true
+          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color --tail=200 meteovoid-api || true
           exit 1
 
       - name: Seed stream (simulate or fallback)
         run: |
           set -euo pipefail
 
-          SERVICES="$(docker compose -f docker-compose.yml config --services)"
+          SERVICES="$(docker compose -f docker-compose.yml -f docker-compose.ci.override.yml config --services)"
 
           SEED_OK=0
           if echo "$SERVICES" | grep -qx "meteovoid-simulate"; then
             echo "Seeding via meteovoid-simulate..."
-            if docker compose -f docker-compose.yml run --rm meteovoid-simulate; then
+            if docker compose -f docker-compose.yml -f docker-compose.ci.override.yml run --rm meteovoid-simulate; then
               SEED_OK=1
             fi
           fi
 
           if [ "$SEED_OK" -ne 1 ]; then
             echo "Fallback seeding via redis-cli (250 points)..."
-            docker compose -f docker-compose.yml exec -T redis sh -lc '
+            docker compose -f docker-compose.yml -f docker-compose.ci.override.yml exec -T redis sh -lc '
               for i in $(seq 1 250); do
-                redis-cli XADD meteovoid:observations "*" station_id "BE_UCCLE" variable "wind_gust_ms" value "10.0" ts "$i" >/dev/null
+                v=$(python - <<PY
+import math
+i=int("'"$i"'")
+print(10.0 + 2.0*math.sin(i/10.0))
+PY
+)
+                redis-cli XADD meteovoid:observations "*" station_id "BE_UCCLE" variable "wind_gust_ms" value "$v" ts "$i" >/dev/null
               done
               redis-cli XLEN meteovoid:observations
             '
@@ -93,20 +102,15 @@ jobs:
       - name: Fetch /latest (handles 422) -> latest.json
         run: |
           set -euo pipefail
-          docker compose -f docker-compose.yml exec -T meteovoid-api python - <<'PY' > _ci_out/live_smoke/latest.json
+          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml exec -T meteovoid-api python - <<'PY' > _ci_out/live_smoke/latest.json
           import json, time
           from urllib.parse import urlencode
           from urllib.request import Request, urlopen
 
-          def get_json(url: str) -> tuple[int, object]:
+          def get_json(url: str):
               req = Request(url, headers={"Accept": "application/json"})
-              try:
-                  with urlopen(req, timeout=2.0) as r:
-                      body = r.read().decode("utf-8", errors="replace")
-                  return 200, json.loads(body)
-              except Exception as e:
-                  # best effort: retry in caller
-                  return 0, {"error": str(e)}
+              with urlopen(req, timeout=2.0) as r:
+                  return json.loads(r.read().decode("utf-8", errors="replace"))
 
           base = "http://localhost:8000"
           t0 = time.time()
@@ -116,29 +120,30 @@ jobs:
           variable = None
 
           while True:
-              code, obj = get_json(f"{base}/latest")
-              last = obj
-              if isinstance(obj, dict) and obj.get("score") is not None and obj.get("state") is not None:
-                  print(json.dumps(obj, indent=2, sort_keys=True))
-                  break
-
-              # Some API versions require query params (FastAPI 422).
-              # We'll discover (station_id, variable) via /stations then retry /latest?station_id=...&variable=...
-              if isinstance(obj, dict) and obj.get("detail") is not None and station_id is None:
-                  _, st = get_json(f"{base}/stations")
-                  if isinstance(st, dict) and isinstance(st.get("stations"), dict) and st["stations"]:
-                      station_id = sorted(st["stations"].keys())[0]
-                      vars_ = st["stations"].get(station_id)
-                      if isinstance(vars_, list) and vars_:
-                          variable = sorted([v for v in vars_ if isinstance(v, str) and v])[0]
-
-              if station_id and variable:
-                  qs = urlencode({"station_id": station_id, "variable": variable})
-                  code2, obj2 = get_json(f"{base}/latest?{qs}")
-                  last = obj2
-                  if isinstance(obj2, dict) and obj2.get("score") is not None and obj2.get("state") is not None:
-                      print(json.dumps(obj2, indent=2, sort_keys=True))
+              try:
+                  obj = get_json(f"{base}/latest")
+                  last = obj
+                  if isinstance(obj, dict) and obj.get("score") is not None and obj.get("state") is not None:
+                      print(json.dumps(obj, indent=2, sort_keys=True))
                       break
+
+                  if isinstance(obj, dict) and obj.get("detail") is not None and station_id is None:
+                      st = get_json(f"{base}/stations")
+                      if isinstance(st, dict) and isinstance(st.get("stations"), dict) and st["stations"]:
+                          station_id = sorted(st["stations"].keys())[0]
+                          vars_ = st["stations"].get(station_id)
+                          if isinstance(vars_, list) and vars_:
+                              variable = sorted([v for v in vars_ if isinstance(v, str) and v])[0]
+
+                  if station_id and variable:
+                      qs = urlencode({"station_id": station_id, "variable": variable})
+                      obj2 = get_json(f"{base}/latest?{qs}")
+                      last = obj2
+                      if isinstance(obj2, dict) and obj2.get("score") is not None and obj2.get("state") is not None:
+                          print(json.dumps(obj2, indent=2, sort_keys=True))
+                          break
+              except Exception as e:
+                  last = {"error": str(e)}
 
               if time.time() - t0 > 150:
                   raise SystemExit(f"latest timeout, last={last}")
@@ -158,8 +163,8 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          docker compose -f docker-compose.yml ps > _ci_out/live_smoke/ps.txt || true
-          docker compose -f docker-compose.yml logs --no-color > _ci_out/live_smoke/compose.log || true
+          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps > _ci_out/live_smoke/ps.txt || true
+          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color > _ci_out/live_smoke/compose.log || true
           ls -la _ci_out/live_smoke || true
 
       - name: Upload artifact
@@ -174,4 +179,4 @@ jobs:
         if: always()
         run: |
           set -euo pipefail
-          docker compose -f docker-compose.yml down -v || true
+          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml down -v || true

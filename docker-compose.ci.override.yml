@@ -1,6 +1,7 @@
 services:
   meteovoid-api:
-    # Image ENTRYPOINT=["meteovoid"] -> we pass CLI subcommand.
+    # Image ENTRYPOINT is "meteovoid". Do NOT call uvicorn subcommand (it doesn't exist).
+    # Use the built-in CLI "serve".
     command:
       - serve
       - --host
@@ -9,19 +10,9 @@ services:
       - "8000"
     ports:
       - "8000:8000"
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import json,urllib.request; r=urllib.request.urlopen('http://localhost:8000/health',timeout=2); json.loads(r.read().decode('utf-8')); print('ok')",
-        ]
-      interval: 3s
-      timeout: 3s
-      retries: 40
 
   meteovoid-live:
+    # Use CLI "live" (avoid "python -m ..." which becomes "meteovoid python -m ...")
     command:
       - live
       - --redis-url

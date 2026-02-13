@@ -1,18 +1,21 @@
-Fix for logs_57319537478:
-- /health on the HOST failed (no published port in docker-compose.yml),
-  causing a health timeout.
+Fix for logs_57324456881:
 
-This patch makes Live Smoke independent of published ports:
-- /health and /latest are polled from INSIDE the meteovoid-api container via python urllib.
-- It still writes latest.json to _ci_out/live_smoke/latest.json on the runner.
+Observed error:
+- meteovoid-api container ran: "meteovoid uvicorn ..." then exited.
+- CLI error: No such command 'uvicorn'.
 
-Adds lightweight incoherence score (Σ wᵢ φᵢ(x)):
-- tools/postprocess_live_report.py
-- config/incoherence.json
-- workflow step to enrich latest.json and generate bulletin.* + history.*
+Root cause:
+- The image ENTRYPOINT is "meteovoid", but the CLI does not expose an "uvicorn" subcommand.
+- Therefore any compose command like "uvicorn ..." becomes "meteovoid uvicorn ..." and fails.
 
-Outputs in live_smoke_report:
-- latest.json (enriched)
-- bulletin.json + bulletin.md
-- history.csv + history.jsonl
-- ps.txt + compose.log
+This patch:
+- Adds docker-compose.ci.override.yml forcing correct CLI commands:
+  - meteovoid-api: serve --host 0.0.0.0 --port 8000
+  - meteovoid-live: live ...
+  - meteovoid-simulate: simulate ...
+- Updates .github/workflows/live_smoke.yml to always use the override file.
+
+Apply:
+- Put docker-compose.ci.override.yml at repo root
+- Replace .github/workflows/live_smoke.yml
+- Commit + push, rerun Live Smoke
