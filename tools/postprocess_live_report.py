@@ -22,13 +22,13 @@ import argparse
 import csv
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 
 def _now_utc() -> datetime:
-    return datetime.now(UTC)
+    return datetime.now(timezone.utc)
 
 
 def _epoch(dt: datetime) -> float:
@@ -36,14 +36,14 @@ def _epoch(dt: datetime) -> float:
 
 
 def _iso_from_epoch(ts: float) -> str:
-    dt = datetime.fromtimestamp(float(ts), tz=UTC)
+    dt = datetime.fromtimestamp(float(ts), tz=timezone.utc)
     return dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _safe_float(x: Any) -> float | None:
     if isinstance(x, bool):
         return None
-    if isinstance(x, int | float):
+    if isinstance(x, (int, float)):
         return float(x)
     try:
         return float(str(x).strip())
@@ -121,7 +121,7 @@ def _load_incoherence_config(path: str | None) -> IncoherenceConfig:
         for k, v in w.items():
             if (
                 isinstance(k, str)
-                and isinstance(v, int | float)
+                and isinstance(v, (int, float))
                 and not isinstance(v, bool)
             ):
                 weights[k] = float(v)
@@ -424,10 +424,8 @@ def main() -> int:
     enriched = _enrich_latest(latest)
 
     cfg = _load_incoherence_config(args.config if args.config else None)
-    history_csv = (
-        (out_dir / "history.csv") if (out_dir / "history.csv").exists() else None
-    )
-    inco = _compute_incoherence(enriched, cfg, history_csv=history_csv)
+    history_csv = (out_dir / "history.csv") if (out_dir / "history.csv").exists() else None
+inco = _compute_incoherence(enriched, cfg, history_csv=history_csv)
 
     enriched["incoherence"] = inco
     enriched["incoherence_score"] = inco.get("total")
