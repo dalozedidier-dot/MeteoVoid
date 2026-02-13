@@ -1,23 +1,18 @@
-Patch: incoherence score (Σ wᵢ φᵢ(x)) injected into latest.json and bulletin.
+Fix for logs_57319537478:
+- /health on the HOST failed (no published port in docker-compose.yml),
+  causing a health timeout.
 
-Outputs in live_smoke_report artifact:
-- latest.json enriched with:
-  - incoherence_score
-  - incoherence_contributions
-  - incoherence {total, breakdown, phis, weights, meta}
-- bulletin.json and bulletin.md
-- history.csv and history.jsonl (append-only)
+This patch makes Live Smoke independent of published ports:
+- /health and /latest are polled from INSIDE the meteovoid-api container via python urllib.
+- It still writes latest.json to _ci_out/live_smoke/latest.json on the runner.
 
-φᵢ (minimal, cheap):
-- φ_gap: gap duration in hours (max(gap_total_s, missing_time_s)/3600)
-- φ_smoke: (smoke_index - baseline)/scale, if smoke/aqi present (or pm25/aqi proxy)
-- φ_stuck: 1 if (max-min) <= eps_range and n_points >= min_points
-- φ_drift: z-shift of stats.mean versus recent history.csv (needs >=5 history points)
-
-Weights configurable in config/incoherence.json.
-Apply:
+Adds lightweight incoherence score (Σ wᵢ φᵢ(x)):
 - tools/postprocess_live_report.py
 - config/incoherence.json
-- .github/workflows/live_smoke.yml
+- workflow step to enrich latest.json and generate bulletin.* + history.*
 
-Commit + push, rerun Live Smoke.
+Outputs in live_smoke_report:
+- latest.json (enriched)
+- bulletin.json + bulletin.md
+- history.csv + history.jsonl
+- ps.txt + compose.log

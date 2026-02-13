@@ -61,7 +61,6 @@ def _read_history_rows(history_csv: Path) -> list[dict[str, str]]:
 def _history_stats_for(
     rows: list[dict[str, str]], station_id: str, variable: str, *, limit: int = 48
 ) -> tuple[float | None, float | None]:
-    # Return (mean_of_means, std_of_means) for the last rows of this station/variable.
     vals: list[float] = []
     for row in rows[::-1]:
         if row.get("station_id") != station_id or row.get("variable") != variable:
@@ -83,7 +82,6 @@ def _history_stats_for(
 
 
 def _derive_smoke_index(latest: dict[str, Any]) -> float | None:
-    # Explicit fields, if present.
     for key in ("current_smoke_index", "smoke_index", "aqi", "air_quality_index"):
         v = _safe_float(latest.get(key))
         if v is not None:
@@ -96,7 +94,6 @@ def _derive_smoke_index(latest: dict[str, Any]) -> float | None:
             if v is not None:
                 return v
 
-    # Heuristic: if variable name suggests air quality, use stats.mean as proxy.
     var = str(latest.get("variable") or "")
     if any(s in var.lower() for s in ("pm25", "pm2.5", "pm2_5", "aqi", "smoke")):
         stats = latest.get("stats")
@@ -111,7 +108,6 @@ def compute_incoherence(
     history_rows: list[dict[str, str]],
     cfg: dict[str, Any],
 ) -> dict[str, Any]:
-    # Compute incoherence as Σ w_i φ_i(x), plus a contribution breakdown.
     stats = latest.get("stats")
     if not isinstance(stats, dict):
         stats = {}
@@ -119,12 +115,10 @@ def compute_incoherence(
     station_id = str(latest.get("station_id") or "")
     variable = str(latest.get("variable") or "")
 
-    # φ_gap: duration/intensity of void
     gap_total_s = _safe_float(stats.get("gap_total_s")) or 0.0
     missing_time_s = _safe_float(stats.get("missing_time_s")) or 0.0
     gap_hours = max(gap_total_s, missing_time_s) / 3600.0
 
-    # φ_stuck: values fixed (stuck sensor), derived from min/max if raw points not present
     vmin = _safe_float(stats.get("min"))
     vmax = _safe_float(stats.get("max"))
     n_points = _safe_int(stats.get("n_points")) or 0
@@ -136,7 +130,6 @@ def compute_incoherence(
         if abs(vmax - vmin) <= eps_range:
             stuck_count = 1.0
 
-    # φ_smoke: deviation vs baseline smoke index
     smoke_index = _derive_smoke_index(latest)
     smoke_baseline = float(cfg.get("smoke_baseline", 50.0))
     smoke_scale = float(cfg.get("smoke_scale", 100.0))
@@ -144,14 +137,12 @@ def compute_incoherence(
     if smoke_index is not None:
         smoke_dev = max(0.0, smoke_index - smoke_baseline) / max(1e-9, smoke_scale)
 
-    # φ_drift: recent shift vs history.csv (mean of stats.mean)
     hist_mu, hist_sigma = _history_stats_for(history_rows, station_id, variable)
     cur_mean = _safe_float(stats.get("mean"))
     drift_z = 0.0
     if cur_mean is not None and hist_mu is not None and hist_sigma is not None and hist_sigma > 0:
         drift_z = abs(cur_mean - hist_mu) / hist_sigma
 
-    # weights: default + per-variable overrides
     weights: dict[str, float] = {
         "smoke": float(cfg.get("w_smoke", 0.5)),
         "gap": float(cfg.get("w_gap", 0.3)),
@@ -205,12 +196,10 @@ def compute_incoherence(
 
 
 def _render_bulletin_md(latest: dict[str, Any]) -> str:
-    inco = latest.get("incoherence")
-    inco_total = None
-    breakdown = None
-    if isinstance(inco, dict):
-        inco_total = inco.get("total")
-        breakdown = inco.get("breakdown")
+    inco_total = latest.get("incoherence_score")
+    breakdown = latest.get("incoherence_contributions")
+    if not isinstance(breakdown, dict):
+        breakdown = None
 
     meteo = latest.get("meteo")
     severity = None
@@ -233,6 +222,7 @@ def _render_bulletin_md(latest: dict[str, Any]) -> str:
     if flags:
         lines.append(f"- flags: {', '.join(flags)}")
     lines.append("")
+
     if isinstance(breakdown, dict):
         lines.append("## Incohérence globale (Σ wᵢ φᵢ)")
         lines.append("")
@@ -242,9 +232,7 @@ def _render_bulletin_md(latest: dict[str, Any]) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def _append_history(
-    latest: dict[str, Any], *, history_csv: Path, history_jsonl: Path
-) -> None:
+def _append_history(latest: dict[str, Any], *, history_csv: Path, history_jsonl: Path) -> None:
     stats = latest.get("stats")
     if not isinstance(stats, dict):
         stats = {}
@@ -253,15 +241,6 @@ def _append_history(
     severity = ""
     if isinstance(meteo, dict) and meteo.get("severity") is not None:
         severity = str(meteo.get("severity"))
-
-    inco = latest.get("incoherence")
-    inco_total = None
-    inco_breakdown: dict[str, Any] | None = None
-    if isinstance(inco, dict):
-        inco_total = inco.get("total")
-        bd = inco.get("breakdown")
-        if isinstance(bd, dict):
-            inco_breakdown = bd
 
     gap_total_s = _safe_float(stats.get("gap_total_s")) or 0.0
     missing_time_s = _safe_float(stats.get("missing_time_s")) or 0.0
@@ -277,9 +256,11 @@ def _append_history(
         "severity": severity,
         "mean_value": _safe_float(stats.get("mean")),
         "gap_hours": round(gap_hours, 6),
-        "incoherence_total": _safe_float(inco_total),
-        "incoherence_breakdown": json.dumps(inco_breakdown, ensure_ascii=False)
-        if inco_breakdown is not None
+        "incoherence_total": _safe_float(latest.get("incoherence_score")),
+        "incoherence_breakdown": json.dumps(
+            latest.get("incoherence_contributions"), ensure_ascii=False
+        )
+        if isinstance(latest.get("incoherence_contributions"), dict)
         else "",
     }
 
@@ -316,11 +297,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--latest", required=True, help="Path to latest.json")
     ap.add_argument("--out-dir", required=True, help="Output directory for bulletin/history")
-    ap.add_argument(
-        "--config",
-        default="config/incoherence.json",
-        help="Config JSON path (weights/baselines).",
-    )
+    ap.add_argument("--config", default="config/incoherence.json", help="Config JSON path.")
     args = ap.parse_args(argv)
 
     latest_path = Path(args.latest)
@@ -335,7 +312,6 @@ def main(argv: list[str] | None = None) -> int:
     rows = _read_history_rows(history_csv)
 
     inco = compute_incoherence(latest, history_rows=rows, cfg=cfg)
-
     latest["incoherence"] = inco
     latest["incoherence_score"] = inco.get("total")
     latest["incoherence_contributions"] = inco.get("breakdown")
@@ -370,7 +346,6 @@ def main(argv: list[str] | None = None) -> int:
     (out_dir / "bulletin.md").write_text(_render_bulletin_md(latest), encoding="utf-8")
 
     _append_history(latest, history_csv=history_csv, history_jsonl=history_jsonl)
-
     return 0
 
 
