@@ -1,17 +1,15 @@
 """Generate simple anomaly plots for Live Smoke artifacts.
 
-Inputs:
+Inputs
 - history.csv produced by tools/postprocess_live_report.py
-- latest.json or latest_enriched.json
+- latest.json or latest_enriched.json (optional)
 
-Outputs (in out-dir):
+Outputs (in out-dir)
 - fig_score.png
 - fig_incoherence.png
 - fig_contributions.png (if incoherence breakdown exists)
 
-Design:
-- Robust: works even if some columns are missing.
-- Uses matplotlib with a non-interactive backend (Agg).
+The script is robust: if some columns are missing, it still produces what it can.
 """
 
 from __future__ import annotations
@@ -20,7 +18,7 @@ import argparse
 import csv
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -33,8 +31,7 @@ def _parse_dt(value: str) -> datetime | None:
     # Epoch seconds
     try:
         if all(c in "0123456789.+-" for c in v) and any(c.isdigit() for c in v):
-            ts = float(v)
-            return datetime.fromtimestamp(ts, tz=timezone.utc)
+            return datetime.fromtimestamp(float(v), tz=UTC)
     except Exception:
         pass
 
@@ -44,11 +41,12 @@ def _parse_dt(value: str) -> datetime | None:
 
     try:
         dt = datetime.fromisoformat(v)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc)
     except Exception:
         return None
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def _safe_float(value: str) -> float | None:
@@ -109,7 +107,6 @@ def _load_json(p: Path) -> dict[str, Any]:
 
 
 def _ensure_matplotlib() -> None:
-    # Defer import so the script stays lightweight unless plots are requested.
     import matplotlib
 
     matplotlib.use("Agg")  # type: ignore[call-arg]
@@ -127,7 +124,8 @@ def _plot_score(rows: list[Row], out_png: Path) -> None:
     flags = [
         (r.state.lower() != "stable") or (r.severity.lower() in {"high", "critical"}) for r in rows
     ]
-fig = plt.figure()
+
+    fig = plt.figure()
     ax = fig.add_subplot(111)
 
     ax.plot(xs, ys, marker="o", linewidth=1)
@@ -150,7 +148,7 @@ def _plot_incoherence(rows: list[Row], out_png: Path) -> None:
     import matplotlib.pyplot as plt
 
     vals = [(r.ts, r.incoherence_score) for r in rows if r.incoherence_score is not None]
-if not vals:
+    if not vals:
         return
 
     xs = [t for t, _ in vals]
@@ -172,12 +170,12 @@ def _plot_contrib(latest: dict[str, Any], out_png: Path) -> None:
     _ensure_matplotlib()
     import matplotlib.pyplot as plt
 
-    breakdown = None
+    breakdown: dict[str, Any] | None = None
     if isinstance(latest.get("incoherence_contributions"), dict):
         breakdown = latest.get("incoherence_contributions")
     else:
         inco = latest.get("incoherence") if isinstance(latest.get("incoherence"), dict) else None
-if isinstance(inco, dict) and isinstance(inco.get("breakdown"), dict):
+        if isinstance(inco, dict) and isinstance(inco.get("breakdown"), dict):
             breakdown = inco.get("breakdown")
 
     if not isinstance(breakdown, dict) or not breakdown:
@@ -190,7 +188,7 @@ if isinstance(inco, dict) and isinstance(inco.get("breakdown"), dict):
     vals: list[float] = []
     for k in keys:
         v = breakdown.get(k)
-        if isinstance(v, (int, float)) and not isinstance(v, bool):
+        if isinstance(v, int | float) and not isinstance(v, bool):
             vals.append(float(v))
         else:
             vals.append(0.0)
@@ -212,7 +210,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--history", required=True)
-    ap.add_argument("--latest", required=False, default="")
+    ap.add_argument("--latest", default="")
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir)

@@ -1,18 +1,18 @@
-"""Post-process Live Smoke artifacts to produce a usable bulletin, history, and incoherence summary.
+"""Post-process Live Smoke artifacts to produce a bulletin, history, and incoherence summary.
 
-Inputs:
+Inputs
 - latest.json: a single report from /latest (validated by tools/validate_latest_report.py)
 
-Outputs (in out-dir):
+Outputs (in out-dir)
 - latest_enriched.json
 - bulletin.json
 - bulletin.md
 - history.csv (append-only)
 - history.jsonl (append-only)
 
-Notes:
-- Keeps latest.json numeric timestamps (ts, ts_ingest) intact.
-- Adds ts_iso and ts_ingest_iso for human readability.
+Notes
+- Preserves numeric timestamps (ts, ts_ingest).
+- Adds ts_iso and ts_ingest_iso for readability.
 - Adds incoherence_score and incoherence_contributions for convenience.
 """
 
@@ -22,13 +22,13 @@ import argparse
 import csv
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 
 def _now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _epoch(dt: datetime) -> float:
@@ -36,14 +36,14 @@ def _epoch(dt: datetime) -> float:
 
 
 def _iso_from_epoch(ts: float) -> str:
-    dt = datetime.fromtimestamp(float(ts), tz=timezone.utc)
+    dt = datetime.fromtimestamp(float(ts), tz=UTC)
     return dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _safe_float(x: Any) -> float | None:
     if isinstance(x, bool):
         return None
-    if isinstance(x, (int, float)):
+    if isinstance(x, int | float):
         return float(x)
     try:
         return float(str(x).strip())
@@ -70,7 +70,8 @@ def _safe_str(x: Any) -> str | None:
 
 
 def _load_json(p: Path) -> dict[str, Any]:
-    return json.loads(p.read_text(encoding="utf-8"))
+    d = json.loads(p.read_text(encoding="utf-8"))
+    return d if isinstance(d, dict) else {}
 
 
 def _write_json(path: Path, data: dict[str, Any]) -> None:
@@ -86,6 +87,7 @@ class IncoherenceConfig:
 
 
 def _default_incoherence_config() -> IncoherenceConfig:
+    # Weights are tuned to stay simple and interpretable.
     return IncoherenceConfig(
         weights={
             "gap_hours": 0.30,
@@ -115,22 +117,19 @@ def _load_incoherence_config(path: str | None) -> IncoherenceConfig:
     except Exception:
         return default
 
+    if not isinstance(d, dict):
+        return default
+
     weights = dict(default.weights)
-    w = d.get("weights") if isinstance(d, dict) else None
+    w = d.get("weights")
     if isinstance(w, dict):
         for k, v in w.items():
-            if (
-                isinstance(k, str)
-                and isinstance(v, (int, float))
-                and not isinstance(v, bool)
-            ):
+            if isinstance(k, str) and isinstance(v, int | float) and not isinstance(v, bool):
                 weights[k] = float(v)
 
-    smoke_threshold = (
-        _safe_float(d.get("smoke_threshold")) if isinstance(d, dict) else None
-    )
-    stuck_eps = _safe_float(d.get("stuck_eps")) if isinstance(d, dict) else None
-    drift_window = _safe_int(d.get("drift_window")) if isinstance(d, dict) else None
+    smoke_threshold = _safe_float(d.get("smoke_threshold"))
+    stuck_eps = _safe_float(d.get("stuck_eps"))
+    drift_window = _safe_int(d.get("drift_window"))
 
     return IncoherenceConfig(
         weights=weights,
@@ -138,17 +137,12 @@ def _load_incoherence_config(path: str | None) -> IncoherenceConfig:
             smoke_threshold if smoke_threshold is not None else default.smoke_threshold
         ),
         stuck_eps=float(stuck_eps if stuck_eps is not None else default.stuck_eps),
-        drift_window=int(
-            drift_window if drift_window is not None else default.drift_window
-        ),
+        drift_window=int(drift_window if drift_window is not None else default.drift_window),
     )
 
 
 def _history_recent_means(
-    history_csv: Path,
-    station_id: str,
-    variable: str,
-    window: int,
+    history_csv: Path, station_id: str, variable: str, window: int
 ) -> list[float]:
     """Return recent stats.mean values from history for drift detection."""
     if window <= 0 or not history_csv.exists():
@@ -182,15 +176,10 @@ def _compute_incoherence(
     meteo = latest.get("meteo") if isinstance(latest.get("meteo"), dict) else {}
 
     # phi_gap: duration of gaps in hours (prefer missing_time_s, fallback to gap_total_s)
-    missing_time_s = (
-        _safe_float(stats.get("missing_time_s")) if isinstance(stats, dict) else None
-    )
-    gap_total_s = (
-        _safe_float(stats.get("gap_total_s")) if isinstance(stats, dict) else None
-    )
+    missing_time_s = _safe_float(stats.get("missing_time_s")) if isinstance(stats, dict) else None
+    gap_total_s = _safe_float(stats.get("gap_total_s")) if isinstance(stats, dict) else None
     phi_gap_hours = (
-        float((missing_time_s if missing_time_s is not None else gap_total_s) or 0.0)
-        / 3600.0
+        float((missing_time_s if missing_time_s is not None else gap_total_s) or 0.0) / 3600.0
     )
 
     # phi_smoke: if the variable looks like air quality, compare mean to threshold
@@ -278,9 +267,7 @@ def _append_history(out_dir: Path, enriched: dict[str, Any]) -> None:
     ts = _safe_float(enriched.get("ts"))
     ts_ingest = _safe_float(enriched.get("ts_ingest"))
 
-    ts_iso = _safe_str(enriched.get("ts_iso")) or (
-        _iso_from_epoch(ts) if ts is not None else ""
-    )
+    ts_iso = _safe_str(enriched.get("ts_iso")) or (_iso_from_epoch(ts) if ts is not None else "")
     ts_ingest_iso = _safe_str(enriched.get("ts_ingest_iso")) or (
         _iso_from_epoch(ts_ingest) if ts_ingest is not None else ""
     )
@@ -316,10 +303,10 @@ def _append_history(out_dir: Path, enriched: dict[str, Any]) -> None:
     fieldnames = list(row.keys())
     exists = history_csv.exists()
     with history_csv.open("a", encoding="utf-8", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
         if not exists:
-            w.writeheader()
-        w.writerow({k: "" if v is None else v for k, v in row.items()})
+            writer.writeheader()
+        writer.writerow({k: "" if v is None else v for k, v in row.items()})
 
     with history_jsonl.open("a", encoding="utf-8") as f:
         f.write(json.dumps(row, sort_keys=True) + "\n")
@@ -328,11 +315,7 @@ def _append_history(out_dir: Path, enriched: dict[str, Any]) -> None:
 def _make_bulletin(enriched: dict[str, Any]) -> dict[str, Any]:
     stats = enriched.get("stats") if isinstance(enriched.get("stats"), dict) else {}
     meteo = enriched.get("meteo") if isinstance(enriched.get("meteo"), dict) else {}
-    inco = (
-        enriched.get("incoherence")
-        if isinstance(enriched.get("incoherence"), dict)
-        else {}
-    )
+    inco = enriched.get("incoherence") if isinstance(enriched.get("incoherence"), dict) else {}
 
     return {
         "generated_at": _iso_from_epoch(_epoch(_now_utc())),
@@ -342,9 +325,7 @@ def _make_bulletin(enriched: dict[str, Any]) -> dict[str, Any]:
         "score": _safe_float(enriched.get("score")),
         "severity": _safe_str(meteo.get("severity")) if isinstance(meteo, dict) else "",
         "flags": meteo.get("flags", []) if isinstance(meteo, dict) else [],
-        "interpretation": (
-            _safe_str(meteo.get("interpretation")) if isinstance(meteo, dict) else ""
-        ),
+        "interpretation": _safe_str(meteo.get("interpretation")) if isinstance(meteo, dict) else "",
         "stats": stats,
         "incoherence": inco,
     }
@@ -366,6 +347,7 @@ def _write_bulletin_md(path: Path, bulletin: dict[str, Any]) -> None:
     lines.append(f"State: {s('state')}")
     lines.append(f"Score: {s('score')}")
     lines.append(f"Severity: {s('severity')}")
+
     flags = bulletin.get("flags", [])
     lines.append(f"Flags: {', '.join(flags or [])}")
     lines.append("")
@@ -414,7 +396,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--latest", required=True)
     ap.add_argument("--out-dir", required=True)
-    ap.add_argument("--config", required=False, default="")
+    ap.add_argument("--config", default="")
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -425,7 +407,7 @@ def main() -> int:
 
     cfg = _load_incoherence_config(args.config if args.config else None)
     history_csv = (out_dir / "history.csv") if (out_dir / "history.csv").exists() else None
-inco = _compute_incoherence(enriched, cfg, history_csv=history_csv)
+    inco = _compute_incoherence(enriched, cfg, history_csv=history_csv)
 
     enriched["incoherence"] = inco
     enriched["incoherence_score"] = inco.get("total")
@@ -437,7 +419,6 @@ inco = _compute_incoherence(enriched, cfg, history_csv=history_csv)
     bulletin = _make_bulletin(enriched)
     _write_json(out_dir / "bulletin.json", bulletin)
     _write_bulletin_md(out_dir / "bulletin.md", bulletin)
-
     return 0
 
 
