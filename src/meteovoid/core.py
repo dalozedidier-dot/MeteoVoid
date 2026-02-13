@@ -14,19 +14,43 @@ class VoidSegment:
     gap_seconds: int
 
 
+def _read_table(path: Path) -> pd.DataFrame:
+    suf = path.suffix.lower()
+    if suf == ".csv":
+        return pd.read_csv(path)
+    if suf in {".parquet", ".pq"}:
+        return pd.read_parquet(path)  # requires pyarrow or fastparquet
+    if suf in {".jsonl", ".ndjson"}:
+        return pd.read_json(path, lines=True)
+    if suf == ".json":
+        return pd.read_json(path)
+    raise ValueError(f"Unsupported input format: {path.name}")
+
+
 def scan_series_for_voids(
     csv_path: Path,
     time_col: str = "timestamp",
     value_col: str = "value",
     max_gap_seconds: int = 3600,
 ) -> dict[str, Any]:
-    df = pd.read_csv(csv_path)
+    """Detect void segments (large gaps) in a time series file.
+
+    Supported inputs:
+      - CSV (.csv)
+      - Parquet (.parquet, .pq) if pyarrow/fastparquet is installed
+      - JSON Lines (.jsonl, .ndjson)
+      - JSON (.json)
+
+    The output schema remains stable for CI + reproducibility.
+    """
+    df = _read_table(csv_path)
     if time_col not in df.columns:
         raise ValueError(f"Missing time column: {time_col}")
     if value_col not in df.columns:
         raise ValueError(f"Missing value column: {value_col}")
 
-    ts = pd.to_datetime(df[time_col], utc=True, errors="coerce", format="ISO8601")
+    # Be permissive: accept ISO strings or numeric timestamps.
+    ts = pd.to_datetime(df[time_col], utc=True, errors="coerce")
     if ts.isna().any():
         bad = int(ts.isna().sum())
         raise ValueError(f"{bad} timestamps could not be parsed in column {time_col}")
@@ -46,7 +70,6 @@ def scan_series_for_voids(
                 )
             )
 
-    # Simple anomaly proxies
     values = pd.to_numeric(df[value_col], errors="coerce")
     n_nan = int(values.isna().sum())
     finite = values.dropna()
@@ -64,7 +87,7 @@ def scan_series_for_voids(
         "time_col": time_col,
         "value_col": value_col,
         "max_gap_seconds": int(max_gap_seconds),
-        "void_count": len(voids),
+        "void_count": int(len(voids)),
         "voids": [asdict(v) for v in voids],
         "value_stats": stats,
     }

@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from typing import Any, Protocol, cast
 
 from fastapi import FastAPI, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 
 from .utils import make_redis
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+OUT_STREAM = os.getenv("METEOVOID_OUT_STREAM", "meteovoid:reports")
 
 
 class RedisLike(Protocol):
@@ -118,12 +120,144 @@ def latest_any(redis_url: str = REDIS_URL) -> dict[str, Any]:
     return best if best is not None else {"status": "not_found"}
 
 
+def _prom_escape(s: str) -> str:
+    return s.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+
+
+def metrics(redis_url: str = REDIS_URL) -> str:
+    """Prometheus text format metrics computed from latest payloads."""
+    r = _make_redis(redis_url)
+    keys = _iter_latest_keys(r, "meteovoid:latest:*")
+
+    now = time.time()
+    lines: list[str] = []
+    lines.append("# HELP meteovoid_latest_keys Number of meteovoid:latest:* keys.")
+    lines.append("# TYPE meteovoid_latest_keys gauge")
+    lines.append(f"meteovoid_latest_keys {len(keys)}")
+
+    # Per-station/variable age + score
+    lines.append("# HELP meteovoid_latest_age_seconds Age of latest report since ts_ingest.")
+    lines.append("# TYPE meteovoid_latest_age_seconds gauge")
+    lines.append("# HELP meteovoid_latest_score Latest composite score.")
+    lines.append("# TYPE meteovoid_latest_score gauge")
+
+    for k in keys:
+        parts = k.split(":")
+        if len(parts) < 4:
+            continue
+        station_id = parts[2]
+        variable = ":".join(parts[3:])
+        raw = r.get(k)
+        if raw is None:
+            continue
+        try:
+            payload_any: Any = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload_any, dict):
+            continue
+
+        ts = _ts_ingest(payload_any)
+        age = max(0.0, float(now - ts)) if ts > 0.0 else float("nan")
+        score = payload_any.get("score")
+        try:
+            score_f = float(score)
+        except (TypeError, ValueError):
+            score_f = float("nan")
+
+        labels = f'station_id="{_prom_escape(station_id)}",variable="{_prom_escape(variable)}"'
+        lines.append(f"meteovoid_latest_age_seconds{{{labels}}} {age:.6f}")
+        lines.append(f"meteovoid_latest_score{{{labels}}} {score_f:.6f}")
+
+    # Stream backlog, if supported by the redis client
+    try:
+        xlen = getattr(r, "xlen", None)
+        if callable(xlen):
+            n = int(xlen(OUT_STREAM))
+            lines.append("# HELP meteovoid_out_stream_len Length of the out stream.")
+            lines.append("# TYPE meteovoid_out_stream_len gauge")
+            lines.append(f'meteovoid_out_stream_len{{stream="{_prom_escape(OUT_STREAM)}"}} {n}')
+    except Exception:
+        pass
+
+    return "\n".join(lines).strip() + "\n"
+
+
+def history(
+    *,
+    station_id: str,
+    variable: str,
+    limit: int = 200,
+    redis_url: str = REDIS_URL,
+) -> dict[str, Any]:
+    """Return recent reports from the output stream, filtered in Python.
+
+    This is meant for troubleshooting and small-scale dashboards.
+    """
+    r = make_redis(redis_url)
+    xrevrange = getattr(r, "xrevrange", None)
+    if not callable(xrevrange):
+        return {"status": "unsupported"}
+
+    limit = max(1, min(2000, int(limit)))
+
+    # Pull a bit more than we need, since we filter client-side.
+    raw_msgs = xrevrange(OUT_STREAM, count=min(limit * 10, 5000))
+    out: list[dict[str, Any]] = []
+    for msg_id, fields in raw_msgs:
+        try:
+            sid = fields.get(b"station_id") if isinstance(fields, dict) else None
+            var = fields.get(b"variable") if isinstance(fields, dict) else None
+            payload = fields.get(b"payload") if isinstance(fields, dict) else None
+        except Exception:
+            continue
+
+        sid_s = (
+            sid.decode("utf-8", errors="replace")
+            if isinstance(sid, bytes | bytearray)
+            else str(sid or "")
+        )
+        var_s = (
+            var.decode("utf-8", errors="replace")
+            if isinstance(var, bytes | bytearray)
+            else str(var or "")
+        )
+        if sid_s != station_id or var_s != variable:
+            continue
+
+        try:
+            payload_any: Any = json.loads(payload) if payload is not None else {}
+        except Exception:
+            payload_any = {}
+        if not isinstance(payload_any, dict):
+            payload_any = {}
+
+        msg_id_s = (
+            msg_id.decode("utf-8", errors="replace")
+            if isinstance(msg_id, bytes | bytearray)
+            else str(msg_id)
+        )
+        payload_any["stream_id"] = payload_any.get("stream_id", msg_id_s)
+
+        out.append(payload_any)
+        if len(out) >= limit:
+            break
+
+    out.reverse()
+    return {"status": "ok", "station_id": station_id, "variable": variable, "items": out}
+
+
 app = FastAPI()
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/metrics", response_class=PlainTextResponse)
+def metrics_http() -> PlainTextResponse:  # pragma: no cover
+    return PlainTextResponse(metrics(redis_url=REDIS_URL))
 
 
 @app.get("/stations")
@@ -166,6 +300,15 @@ def latest_http(
     return latest_any(redis_url=REDIS_URL)
 
 
+@app.get("/history")
+def history_http(
+    station_id: str = Query(...),
+    variable: str = Query(...),
+    limit: int = Query(200, ge=1, le=2000),
+) -> dict[str, Any]:  # pragma: no cover
+    return history(station_id=station_id, variable=variable, limit=limit, redis_url=REDIS_URL)
+
+
 @app.get("/", response_class=HTMLResponse)
 def root() -> HTMLResponse:  # pragma: no cover
     return dashboard()
@@ -184,35 +327,33 @@ def dashboard() -> HTMLResponse:  # pragma: no cover
             for v in vars_:
                 vv = str(v)
                 links.append(f'<a href="/latest?station_id={sid}&variable={vv}">{vv}</a>')
-            rows.append("<tr>" f"<td><b>{sid}</b></td>" f"<td>{', '.join(links)}</td>" "</tr>")
+            rows.append(f"<tr><td>{sid}</td><td>{' , '.join(links)}</td></tr>")
 
-    rows_html = "\n".join(rows) if rows else "<tr><td colspan='2'>(no data)</td></tr>"
+    body = "\n".join(rows) if rows else "<tr><td colspan='2'>No data</td></tr>"
 
-    html = """<!doctype html>
+    html = f"""
+<!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="utf-8"/>
-    <title>MeteoVoid Dashboard</title>
-    <style>
-      body { font-family: ui-sans-serif, system-ui; margin: 24px; }
-      table { border-collapse: collapse; width: 100%; }
-      td, th { border: 1px solid #ddd; padding: 8px; vertical-align: top; }
-      th { background: #f5f5f5; text-align: left; }
-      code { background: #f5f5f5; padding: 2px 4px; }
-    </style>
-  </head>
-  <body>
-    <h2>MeteoVoid</h2>
-    <p>Endpoints: <code>/latest</code>, <code>/stations</code>, <code>/dashboard</code></p>
-    <table>
-      <thead><tr><th>Station</th><th>Variables</th></tr></thead>
-      <tbody>
-        __ROWS__
-      </tbody>
-    </table>
-  </body>
+<head>
+  <meta charset="utf-8">
+  <title>MeteoVoid</title>
+  <style>
+    body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding: 16px; }}
+    table {{ border-collapse: collapse; width: 100%; }}
+    th, td {{ border: 1px solid #ddd; padding: 8px; }}
+    th {{ text-align: left; background: #f5f5f5; }}
+    code {{ background: #f0f0f0; padding: 2px 4px; border-radius: 4px; }}
+  </style>
+</head>
+<body>
+  <h1>MeteoVoid</h1>
+  <p>Endpoints: <code>/health</code> <code>/stations</code> <code>/latest</code> <code>/history</code> <code>/metrics</code></p>
+  <table>
+    <thead><tr><th>Station</th><th>Variables</th></tr></thead>
+    <tbody>{body}</tbody>
+  </table>
+</body>
 </html>
-"""
-    html = html.replace("__ROWS__", rows_html)
+""".strip()
 
-    return HTMLResponse(content=html)
+    return HTMLResponse(html)

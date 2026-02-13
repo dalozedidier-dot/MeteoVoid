@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 import meteovoid.api as api_mod
 
@@ -9,6 +10,7 @@ class FakeRedis:
     def __init__(self) -> None:
         self._kv: dict[str, str] = {}
         self._keys: list[str] = []
+        self._stream_len: dict[str, int] = {}
 
     def get(self, key: str) -> str | None:
         return self._kv.get(key)
@@ -38,6 +40,12 @@ class FakeRedis:
             if ok:
                 out.append(k)
         return out
+
+    def xlen(self, stream: str) -> int:
+        return int(self._stream_len.get(stream, 0))
+
+    def set_stream_len(self, stream: str, n: int) -> None:
+        self._stream_len[stream] = int(n)
 
 
 def test_api_latest_and_stations(monkeypatch) -> None:
@@ -69,3 +77,27 @@ def test_api_latest_and_stations(monkeypatch) -> None:
     st = api_mod.stations(pattern="*", redis_url="redis://x")
     assert "S1" in st["stations"]
     assert "wind_gust_ms" in st["stations"]["S1"]
+
+
+def test_api_metrics_smoke(monkeypatch) -> None:
+    fr = FakeRedis()
+    fr.set_stream_len("meteovoid:reports", 123)
+
+    payload = {
+        "station_id": "S1",
+        "variable": "temperature_c",
+        "score": 0.12,
+        "state": "stable",
+        "ts_ingest": time.time() - 3.0,
+    }
+    fr.set("meteovoid:latest:S1:temperature_c", json.dumps(payload), ex=60)
+
+    def fake_make(_url: str):  # noqa: ANN001
+        return fr
+
+    monkeypatch.setattr(api_mod, "_make_redis", fake_make)
+
+    txt = api_mod.metrics(redis_url="redis://x")
+    assert "meteovoid_latest_keys" in txt
+    assert "meteovoid_latest_score" in txt
+    assert "meteovoid_out_stream_len" in txt

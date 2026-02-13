@@ -13,11 +13,18 @@ ImputeMode = Literal["none", "ffill", "mean"]
 
 @dataclass(frozen=True)
 class LiveConfig:
-    """Configuration for live scoring and gap handling."""
+    """Configuration for live scoring and gap handling.
+
+    Scores are normalized to [0..1]. Thresholds are therefore expressed in [0..1].
+    """
 
     window_s: int = 300
     stable_threshold: float = 0.15
     unstable_threshold: float = 0.30
+
+    # Volatility normalization (used by analyze_window only).
+    # The score is std / (std + volatility_ref). Default is 1.0.
+    volatility_ref: float = 1.0
 
     # Gap + imputation controls (used by stream.py)
     max_gap_s: float = 300.0
@@ -79,18 +86,33 @@ class RollingWindow:
         return [v for _, v in self.samples(now)]
 
 
-def _score(values: list[float]) -> float:
+def _clamp01(x: float) -> float:
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+    return float(x)
+
+
+def _score(values: list[float], volatility_ref: float) -> float:
+    """Normalized volatility score in [0..1]."""
     if len(values) < 2:
         return 0.0
-    return float(pstdev(values))
+    std = float(pstdev(values))
+    ref = float(volatility_ref) if float(volatility_ref) > 0.0 else 1.0
+    return _clamp01(float(std / (std + ref)))
 
 
 def analyze_window(values: list[float], cfg: LiveConfig | None = None) -> dict[str, Any]:
-    """Compute a simple stability score and state."""
+    """Compute a simple normalized stability score and state.
+
+    This function is intentionally lightweight and kept for backwards compatibility.
+    The live worker uses a richer composite score implemented in stream.py.
+    """
     if cfg is None:
         cfg = LiveConfig()
 
-    score = _score(values)
+    score = _score(values, cfg.volatility_ref)
     th = cfg.thresholds()
 
     if score < th["stable_threshold"]:

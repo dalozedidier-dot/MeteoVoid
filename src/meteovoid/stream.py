@@ -12,6 +12,7 @@ from redis.typing import EncodableT
 from .alerts import maybe_send_alert
 from .config import StationConfig, env_config_path, load_station_config, resolve_variable_overrides
 from .live import LiveConfig, RollingWindow, State, analyze_window
+from .scoring import compute_composite_score
 from .utils import make_redis
 
 StreamFields = dict[str, str]
@@ -66,6 +67,13 @@ def _median(values: list[float]) -> float:
     return float((xs[mid - 1] + xs[mid]) / 2.0)
 
 
+def _median_dict_vals(d: dict[str, float], exclude_key: str) -> float | None:
+    xs = [float(v) for k, v in d.items() if k != exclude_key]
+    if len(xs) < 3:
+        return None
+    return _median(xs)
+
+
 def _state_from_score(score: float, stable_th: float, unstable_th: float) -> State:
     if score < stable_th:
         return "stable"
@@ -85,7 +93,10 @@ def _meteo_interpretation(
     alert_threshold: float,
     imputed_frac: float,
     max_imputed_frac: float,
+    signals: dict[str, float] | None = None,
 ) -> dict[str, Any]:
+    signals = signals or {}
+
     flags: list[str] = []
     severity = "low"
 
@@ -114,6 +125,18 @@ def _meteo_interpretation(
             flags.append("imputation_high")
             severity = "high"
 
+    # Explainability flags (soft)
+    def _flag_if(name: str, thr: float = 0.45) -> None:
+        try:
+            v = float(signals.get(name, 0.0))
+        except (TypeError, ValueError):
+            v = 0.0
+        if v >= thr:
+            flags.append(name)
+
+    for nm in ("outlier", "flatline", "spike", "drift", "spatial", "multivar"):
+        _flag_if(nm)
+
     phrases: list[str] = []
     if n_points < 20:
         phrases.append("Peu de points dans la fenêtre, confiance limitée.")
@@ -126,6 +149,18 @@ def _meteo_interpretation(
 
     if "data_hole" in flags:
         phrases.append("Présence de trous de données dans la fenêtre.")
+    if "outlier" in flags:
+        phrases.append("Valeurs aberrantes détectées.")
+    if "flatline" in flags:
+        phrases.append("Plateau anormal possible.")
+    if "spike" in flags:
+        phrases.append("Sauts brusques détectés.")
+    if "drift" in flags:
+        phrases.append("Dérive lente détectée.")
+    if "spatial" in flags:
+        phrases.append("Incohérence spatiale possible.")
+    if "multivar" in flags:
+        phrases.append("Incohérence multi-variables possible.")
     if "imputation_high" in flags:
         phrases.append("Imputation trop importante, prudence sur le score.")
 
@@ -133,7 +168,7 @@ def _meteo_interpretation(
         "interpretation": " ".join(phrases).strip(),
         "flags": flags,
         "severity": severity,
-        "score_hint": "plus le score est haut, plus la variabilité est forte",
+        "score_hint": "plus le score est haut, plus la stabilité est faible",
         "state_hint": "stable, transition, unstable",
     }
 
@@ -208,6 +243,15 @@ def _get_str(overrides: dict[str, Any], key: str, default: str) -> str:
     return str(v) if v is not None else default
 
 
+def _get_list_str(overrides: dict[str, Any], key: str) -> list[str] | None:
+    v = overrides.get(key)
+    if v is None:
+        return None
+    if isinstance(v, list) and all(isinstance(x, str) for x in v):
+        return [str(x) for x in v if str(x)]
+    return None
+
+
 def process_observation(
     fields: Mapping[str, Any],
     msg_id: str = "",
@@ -215,6 +259,7 @@ def process_observation(
     windows: dict[tuple[str, str], RollingWindow] | None = None,
     ts_ingest: float | None = None,
     station_config: StationConfig | None = None,
+    peer_state: dict[str, dict[str, float]] | None = None,
 ) -> dict[str, Any] | None:
     cfg = cfg or LiveConfig()
     windows = windows if windows is not None else {}
@@ -234,6 +279,9 @@ def process_observation(
 
     overrides = resolve_variable_overrides(station_config, station_id=station_id, variable=variable)
 
+    # Allow per-variable rolling window override.
+    window_s = _get_int(overrides, "window_s", cfg.window_s)
+
     stable_th = _get_float(overrides, "stable_threshold", cfg.stable_threshold)
     unstable_th = _get_float(overrides, "unstable_threshold", cfg.unstable_threshold)
     gap_threshold = _get_float(overrides, "max_gap_s", cfg.max_gap_s)
@@ -247,14 +295,19 @@ def process_observation(
     max_impute_points = _get_int(overrides, "max_impute_points", cfg.max_impute_points)
 
     key = (station_id, variable)
-    win = windows.setdefault(key, RollingWindow(window_s=cfg.window_s))
+    win = windows.get(key)
+    if win is None or int(win.window_s) != int(window_s):
+        win = RollingWindow(window_s=int(window_s))
+        windows[key] = win
+
     win.push(ts, float(value))
 
     samples = win.samples(ts)
     values = [v for _t, v in samples]
 
+    # Base (backward compatible): normalized volatility score + timestamp
     base = dict(analyze_window(values, cfg))
-    score = float(cast(float, base.get("score", 0.0)))
+    base_score = float(cast(float, base.get("score", 0.0)))
 
     n = len(values)
     v_min = float(min(values)) if values else 0.0
@@ -280,7 +333,7 @@ def process_observation(
     gap_total = float(sum(gaps)) if gaps else 0.0
 
     missing_time_s = float(sum(max(0.0, d - dt_expected_s) for d in gaps)) if gaps else 0.0
-    missing_time_frac = float(min(1.0, missing_time_s / float(max(1, cfg.window_s))))
+    missing_time_frac = float(min(1.0, missing_time_s / float(max(1, window_s))))
 
     imputed_values: list[float] = values
     imputed_points = 0
@@ -296,12 +349,39 @@ def process_observation(
     total_points = max(1, len(values) + imputed_points)
     imputed_frac = float(imputed_points / float(total_points)) if imputed_points > 0 else 0.0
 
-    score_raw = score
-    score_imputed = score
+    # Peers (spatial check): median mean over other stations for the same variable
+    peer_median = None
+    if peer_state is not None:
+        block = peer_state.get(variable)
+        if isinstance(block, dict):
+            peer_median = _median_dict_vals(block, exclude_key=station_id)
 
-    if use_imputed_for_score and imputed_points > 0:
-        score_imputed = float(cast(float, analyze_window(imputed_values, cfg).get("score", score)))
-        score = score_imputed
+    # Multi-variable peers: read from windows within the same station
+    multivar_peers: dict[str, list[float]] = {}
+    peers_list = _get_list_str(overrides, "multivar_peers") or []
+    for pvar in peers_list:
+        if pvar == variable:
+            continue
+        other = windows.get((station_id, pvar))
+        if other is None:
+            continue
+        multivar_peers[pvar] = other.values(ts)
+
+    # Composite score (normalized in [0..1])
+    comp = compute_composite_score(
+        samples=samples,
+        values=imputed_values if (use_imputed_for_score and imputed_points > 0) else values,
+        window_s=int(window_s),
+        missing_time_frac=missing_time_frac,
+        overrides=overrides,
+        peer_median=peer_median,
+        peer_tol=_get_float(overrides, "spatial_tol", 0.0) if peer_median is not None else None,
+        multivar_peers=multivar_peers if multivar_peers else None,
+    )
+
+    score_raw = base_score
+    score_imputed = comp.score if (use_imputed_for_score and imputed_points > 0) else base_score
+    score = float(comp.score)
 
     state = _state_from_score(score, stable_th, unstable_th)
 
@@ -318,6 +398,7 @@ def process_observation(
         alert_threshold=alert_threshold,
         imputed_frac=imputed_frac,
         max_imputed_frac=max_imputed_frac,
+        signals=comp.signals,
     )
 
     report: dict[str, Any] = {}
@@ -328,6 +409,9 @@ def process_observation(
             "variable": variable,
             "stream_id": msg_id,
             "ts_ingest": float(ts_ingest if ts_ingest is not None else time.time()),
+            "signals": comp.signals,
+            "contributions": comp.contributions,
+            "score_meta": {"weights": comp.weights, "meta": comp.meta},
             "stats": {
                 "n_points": int(n),
                 "min": v_min,
@@ -347,6 +431,7 @@ def process_observation(
                 "score_raw": float(score_raw),
                 "score_imputed": float(score_imputed),
                 "use_imputed_for_score": bool(use_imputed_for_score),
+                "window_s": int(window_s),
             },
             "meteo": meteo,
         }
@@ -369,6 +454,7 @@ def run_live_worker(
     station_cfg = load_station_config(env_config_path())
 
     windows: dict[tuple[str, str], RollingWindow] = {}
+    peer_means: dict[str, dict[str, float]] = {}
 
     last_id = start_id if start_id is not None else _default_start_id()
     processed = 0
@@ -388,7 +474,12 @@ def run_live_worker(
                 last_id = msg_id
 
                 report = process_observation(
-                    fields, msg_id=msg_id, cfg=cfg, windows=windows, station_config=station_cfg
+                    fields,
+                    msg_id=msg_id,
+                    cfg=cfg,
+                    windows=windows,
+                    station_config=station_cfg,
+                    peer_state=peer_means,
                 )
                 if report is None:
                     continue
@@ -398,6 +489,17 @@ def run_live_worker(
 
                 station_id = cast(str, report["station_id"])
                 variable = cast(str, report["variable"])
+
+                # Update peer stats for spatial consistency checks
+                stats_any = report.get("stats", {})
+                if isinstance(stats_any, dict):
+                    m = stats_any.get("mean")
+                    try:
+                        mean_val = float(m)
+                    except (TypeError, ValueError):
+                        mean_val = None
+                    if mean_val is not None:
+                        peer_means.setdefault(variable, {})[station_id] = float(mean_val)
 
                 payload = json.dumps(report, separators=(",", ":"), sort_keys=True)
 

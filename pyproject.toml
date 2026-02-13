@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "meteo-void"
-version = "0.2.0"
+version = "0.3.0"
 description = "Graph-based upstream weather silence & anomaly detector – voids before the storm"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,6 +24,17 @@ live = [
   "fastapi>=0.110",
   "uvicorn[standard]>=0.29",
 ]
+
+io = [
+  "pyarrow>=15; python_version>='3.11'",
+  "xarray>=2024.1",
+  "cfgrib>=0.9.10.4",
+]
+
+viz = [
+  "matplotlib>=3.8",
+]
+
 
 dev = [
   "pytest>=8",

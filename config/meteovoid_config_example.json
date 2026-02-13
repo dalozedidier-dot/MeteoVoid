@@ -2,16 +2,29 @@
   "stations": {
     "*": {
       "defaults": {
-        "stable_threshold": 0.15,
-        "unstable_threshold": 0.30,
-        "max_gap_s": 300,
         "impute_mode": "none",
+        "max_gap_s": 300,
+        "max_impute_points": 500,
+        "max_imputed_frac": 0.2,
+        "score_weights": {
+          "drift": 0.1,
+          "flatline": 0.1,
+          "gap": 0.25,
+          "multivar": 0.02,
+          "outlier": 0.15,
+          "spatial": 0.03,
+          "spike": 0.1,
+          "volatility": 0.25
+        },
+        "stable_threshold": 0.15,
+        "unstable_threshold": 0.3,
         "use_imputed_for_score": false,
-        "max_imputed_frac": 0.20,
-        "max_impute_points": 500
+        "window_s": 300
       },
       "variables": {
-        "*": { "weight": 1.0 }
+        "*": {
+          "weight": 1.0
+        }
       }
     },
     "DEMO_BE_0001": {
@@ -19,17 +32,29 @@
         "max_gap_s": 120
       },
       "variables": {
-        "wind_gust_ms": {
-          "stable_threshold": 0.12,
-          "unstable_threshold": 0.28,
-          "watch_threshold": 0.20,
-          "alert_threshold": 0.35,
-          "weight": 0.60
-        },
         "temperature_c": {
           "stable_threshold": 0.02,
           "unstable_threshold": 0.08,
-          "weight": 0.40
+          "weight": 0.4
+        },
+        "wind_gust_ms": {
+          "alert_threshold": 0.35,
+          "expected_range": {
+            "max": 45,
+            "min": 0
+          },
+          "flatline_min_run": 25,
+          "hard_max": 70,
+          "hard_min": 0,
+          "multivar_peers": [
+            "temperature_c"
+          ],
+          "outlier_z_thresh": 3.0,
+          "spike_k": 5.0,
+          "stable_threshold": 0.12,
+          "unstable_threshold": 0.28,
+          "watch_threshold": 0.2,
+          "weight": 0.6
         }
       }
     }

@@ -1,18 +1,18 @@
-"""Post-process Live Smoke artifacts to produce a bulletin, history, and incoherence summary.
+"""Post-process Live Smoke artifacts to produce a usable bulletin, history, and incoherence summary.
 
-Inputs
+Inputs:
 - latest.json: a single report from /latest (validated by tools/validate_latest_report.py)
 
-Outputs (in out-dir)
+Outputs (in out-dir):
 - latest_enriched.json
 - bulletin.json
 - bulletin.md
 - history.csv (append-only)
 - history.jsonl (append-only)
 
-Notes
-- Preserves numeric timestamps (ts, ts_ingest).
-- Adds ts_iso and ts_ingest_iso for readability.
+Notes:
+- Keeps latest.json numeric timestamps (ts, ts_ingest) intact.
+- Adds ts_iso and ts_ingest_iso for human readability.
 - Adds incoherence_score and incoherence_contributions for convenience.
 """
 
@@ -70,8 +70,7 @@ def _safe_str(x: Any) -> str | None:
 
 
 def _load_json(p: Path) -> dict[str, Any]:
-    d = json.loads(p.read_text(encoding="utf-8"))
-    return d if isinstance(d, dict) else {}
+    return json.loads(p.read_text(encoding="utf-8"))
 
 
 def _write_json(path: Path, data: dict[str, Any]) -> None:
@@ -87,7 +86,6 @@ class IncoherenceConfig:
 
 
 def _default_incoherence_config() -> IncoherenceConfig:
-    # Weights are tuned to stay simple and interpretable.
     return IncoherenceConfig(
         weights={
             "gap_hours": 0.30,
@@ -117,19 +115,16 @@ def _load_incoherence_config(path: str | None) -> IncoherenceConfig:
     except Exception:
         return default
 
-    if not isinstance(d, dict):
-        return default
-
     weights = dict(default.weights)
-    w = d.get("weights")
+    w = d.get("weights") if isinstance(d, dict) else None
     if isinstance(w, dict):
         for k, v in w.items():
             if isinstance(k, str) and isinstance(v, int | float) and not isinstance(v, bool):
                 weights[k] = float(v)
 
-    smoke_threshold = _safe_float(d.get("smoke_threshold"))
-    stuck_eps = _safe_float(d.get("stuck_eps"))
-    drift_window = _safe_int(d.get("drift_window"))
+    smoke_threshold = _safe_float(d.get("smoke_threshold")) if isinstance(d, dict) else None
+    stuck_eps = _safe_float(d.get("stuck_eps")) if isinstance(d, dict) else None
+    drift_window = _safe_int(d.get("drift_window")) if isinstance(d, dict) else None
 
     return IncoherenceConfig(
         weights=weights,
@@ -142,7 +137,10 @@ def _load_incoherence_config(path: str | None) -> IncoherenceConfig:
 
 
 def _history_recent_means(
-    history_csv: Path, station_id: str, variable: str, window: int
+    history_csv: Path,
+    station_id: str,
+    variable: str,
+    window: int,
 ) -> list[float]:
     """Return recent stats.mean values from history for drift detection."""
     if window <= 0 or not history_csv.exists():
@@ -303,10 +301,10 @@ def _append_history(out_dir: Path, enriched: dict[str, Any]) -> None:
     fieldnames = list(row.keys())
     exists = history_csv.exists()
     with history_csv.open("a", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        w = csv.DictWriter(f, fieldnames=fieldnames)
         if not exists:
-            writer.writeheader()
-        writer.writerow({k: "" if v is None else v for k, v in row.items()})
+            w.writeheader()
+        w.writerow({k: "" if v is None else v for k, v in row.items()})
 
     with history_jsonl.open("a", encoding="utf-8") as f:
         f.write(json.dumps(row, sort_keys=True) + "\n")
@@ -325,7 +323,9 @@ def _make_bulletin(enriched: dict[str, Any]) -> dict[str, Any]:
         "score": _safe_float(enriched.get("score")),
         "severity": _safe_str(meteo.get("severity")) if isinstance(meteo, dict) else "",
         "flags": meteo.get("flags", []) if isinstance(meteo, dict) else [],
-        "interpretation": _safe_str(meteo.get("interpretation")) if isinstance(meteo, dict) else "",
+        "interpretation": (
+            _safe_str(meteo.get("interpretation")) if isinstance(meteo, dict) else ""
+        ),
         "stats": stats,
         "incoherence": inco,
     }
@@ -347,7 +347,6 @@ def _write_bulletin_md(path: Path, bulletin: dict[str, Any]) -> None:
     lines.append(f"State: {s('state')}")
     lines.append(f"Score: {s('score')}")
     lines.append(f"Severity: {s('severity')}")
-
     flags = bulletin.get("flags", [])
     lines.append(f"Flags: {', '.join(flags or [])}")
     lines.append("")
@@ -396,7 +395,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--latest", required=True)
     ap.add_argument("--out-dir", required=True)
-    ap.add_argument("--config", default="")
+    ap.add_argument("--config", required=False, default="")
     args = ap.parse_args()
 
     out_dir = Path(args.out_dir)
@@ -419,6 +418,7 @@ def main() -> int:
     bulletin = _make_bulletin(enriched)
     _write_json(out_dir / "bulletin.json", bulletin)
     _write_bulletin_md(out_dir / "bulletin.md", bulletin)
+
     return 0
 
 
