@@ -1,27 +1,20 @@
-MeteoVoid hotfix v4: Live Smoke still failing with "No such command 'python'"
+Fix for logs_57266689100.zip:
+- /latest timed out with {status: not_found}
+- docker compose ps showed meteovoid-live running "meteovoid python -m ..." which never starts (ENTRYPOINT issue)
 
-Evidence (logs_57258280677.zip):
-- docker compose ps shows:
-    meteovoid-api  COMMAND "meteovoid python -m ..."
-    meteovoid-live COMMAND "meteovoid python -m ..."
-- container logs show:
-    No such command 'python'
+This patch:
+1) docker-compose.ci.override.yml
+   - overrides ENTRYPOINT for meteovoid-api, meteovoid-live, meteovoid-simulate using ["sh","-lc"]
+   - ensures commands are executed as intended (no "meteovoid python ..." prefix)
 
-Root cause:
-- Image ENTRYPOINT=["meteovoid"] is still active.
-- Your CI override changed "command" but not in a way that prevents ENTRYPOINT from prepending "meteovoid".
-
-Fix:
-- Override entrypoint to ["sh","-lc"] (guaranteed to replace ENTRYPOINT)
-- Provide command as a shell string:
-    python -m uvicorn meteovoid.api:app ...
-    meteovoid live ...
+2) live_smoke.yml
+   - unchanged logic, but logs tail now includes meteovoid-live for easier diagnosis
 
 Apply:
-- Replace docker-compose.ci.override.yml with this one.
-- Commit + push, rerun Live Smoke.
-
+- Replace docker-compose.ci.override.yml
+- Replace .github/workflows/live_smoke.yml
+- Commit + push, rerun Live Smoke
 Expected:
-- ps shows meteovoid-api command starts with "sh -lc python -m uvicorn ..."
-- /health becomes ok
-- live_smoke_report contains latest.json + bulletin.*
+- ps shows meteovoid-live command starts with "sh -lc meteovoid live ..."
+- /latest returns a report with score/state
+- live_smoke_report artifact includes latest.json + bulletin.* + logs
