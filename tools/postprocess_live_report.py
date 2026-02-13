@@ -22,13 +22,13 @@ import argparse
 import csv
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 
 def _now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _epoch(dt: datetime) -> float:
@@ -36,14 +36,14 @@ def _epoch(dt: datetime) -> float:
 
 
 def _iso_from_epoch(ts: float) -> str:
-    dt = datetime.fromtimestamp(float(ts), tz=timezone.utc)
+    dt = datetime.fromtimestamp(float(ts), tz=UTC)
     return dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _safe_float(x: Any) -> float | None:
     if isinstance(x, bool):
         return None
-    if isinstance(x, (int, float)):
+    if isinstance(x, int | float):
         return float(x)
     try:
         return float(str(x).strip())
@@ -121,7 +121,7 @@ def _load_incoherence_config(path: str | None) -> IncoherenceConfig:
         for k, v in w.items():
             if (
                 isinstance(k, str)
-                and isinstance(v, (int, float))
+                and isinstance(v, int | float)
                 and not isinstance(v, bool)
             ):
                 weights[k] = float(v)

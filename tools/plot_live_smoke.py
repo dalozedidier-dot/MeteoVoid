@@ -20,7 +20,7 @@ import argparse
 import csv
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +34,7 @@ def _parse_dt(value: str) -> datetime | None:
     try:
         if all(c in "0123456789.+-" for c in v) and any(c.isdigit() for c in v):
             ts = float(v)
-            return datetime.fromtimestamp(ts, tz=timezone.utc)
+            return datetime.fromtimestamp(ts, tz=UTC)
     except Exception:
         pass
 
@@ -45,8 +45,8 @@ def _parse_dt(value: str) -> datetime | None:
     try:
         dt = datetime.fromisoformat(v)
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC)
     except Exception:
         return None
 
@@ -198,7 +198,7 @@ def _plot_contrib(latest: dict[str, Any], out_png: Path) -> None:
     vals: list[float] = []
     for k in keys:
         v = breakdown.get(k)
-        if isinstance(v, (int, float)) and not isinstance(v, bool):
+        if isinstance(v, int | float) and not isinstance(v, bool):
             vals.append(float(v))
         else:
             vals.append(0.0)

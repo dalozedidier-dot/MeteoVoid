@@ -51,6 +51,7 @@ jobs:
         run: |
           set -euo pipefail
           docker compose -f docker-compose.yml -f docker-compose.ci.override.yml up -d meteovoid-live meteovoid-api
+          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps
 
       - name: Wait /health (inside meteovoid-api)
         run: |
@@ -73,14 +74,53 @@ jobs:
           docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color --tail=200 meteovoid-api || true
           exit 1
 
-      - name: Seed stream (simulate)
+      - name: Seed stream (simulate) and assert XLEN > 0
         run: |
           set -euo pipefail
-          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml run --rm meteovoid-simulate || true
+          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml run --rm meteovoid-simulate
 
-          # Best-effort visibility: show stream length if redis-cli is present.
-          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml exec -T redis \
-            sh -lc "redis-cli XLEN meteovoid:observations 2>/dev/null || true" || true
+          xlen="$(
+            docker compose -f docker-compose.yml -f docker-compose.ci.override.yml exec -T redis \
+              sh -lc "redis-cli XLEN meteovoid:observations" \
+              2>/dev/null | tr -d '\r' | tail -n 1
+          )"
+          echo "XLEN(meteovoid:observations)=$xlen"
+          if [ -z "$xlen" ] || [ "$xlen" -le 0 ]; then
+            echo "simulate produced no messages; dumping logs"
+            docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color --tail=400 meteovoid-simulate || true
+            docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color --tail=400 meteovoid-live || true
+            exit 1
+          fi
+
+      - name: Wait for /stations to become non-empty
+        run: |
+          set -euo pipefail
+          fetch() {
+            docker compose -f docker-compose.yml -f docker-compose.ci.override.yml exec -T meteovoid-api \
+              python -c "import sys,urllib.request; print(urllib.request.urlopen(sys.argv[1],timeout=2).read().decode())" \
+              "$1" 2>/dev/null
+          }
+
+          tmp_stations="$(mktemp)"
+          for i in $(seq 1 60); do
+            if fetch "http://localhost:8000/stations" >"$tmp_stations"; then
+              ok="$(
+                python -c "import json,sys; d=json.load(open(sys.argv[1],'r',encoding='utf-8')); st=d.get('stations',{}); print('1' if isinstance(st,dict) and len(st)>0 else '0')" \
+                  "$tmp_stations" 2>/dev/null || echo 0
+              )"
+              if [ "$ok" = "1" ]; then
+                echo "stations OK"
+                cat "$tmp_stations"
+                exit 0
+              fi
+            fi
+            sleep 2
+          done
+
+          echo "stations stayed empty"
+          cat "$tmp_stations" || true
+          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color --tail=400 meteovoid-live || true
+          exit 1
 
       - name: Fetch /latest (inside meteovoid-api)
         run: |
@@ -99,24 +139,13 @@ jobs:
               2>/dev/null
           }
 
+          fetch "http://localhost:8000/stations" >"$tmp_stations"
+          python -c "import json,sys; d=json.load(open(sys.argv[1], 'r', encoding='utf-8')); st=d.get('stations', {}); sid=sorted(st.keys())[0] if isinstance(st, dict) and st else ''; vv=st.get(sid, []) if isinstance(st, dict) else []; var=sorted([x for x in vv if isinstance(x, str) and x])[0] if isinstance(vv, list) and vv else ''; print(sid); print(var)" \
+            "$tmp_stations" >"$pair" 2>/dev/null || true
+          station_id="$(sed -n '1p' "$pair")"
+          variable="$(sed -n '2p' "$pair")"
+
           for i in $(seq 1 90); do
-            if fetch "http://localhost:8000/latest" >"$tmp_latest"; then
-              if python tools/validate_latest_report.py "$tmp_latest" >/dev/null 2>&1; then
-                mv "$tmp_latest" _ci_out/live_smoke/latest.json
-                echo "latest OK (no params)"
-                exit 0
-              fi
-            fi
-
-            if [ -z "$station_id" ] || [ -z "$variable" ]; then
-              if fetch "http://localhost:8000/stations" >"$tmp_stations"; then
-                python -c "import json,sys; d=json.load(open(sys.argv[1], 'r', encoding='utf-8')); st=d.get('stations', {}); sid=sorted(st.keys())[0] if isinstance(st, dict) and st else ''; vv=st.get(sid, []) if isinstance(st, dict) else []; var=sorted([x for x in vv if isinstance(x, str) and x])[0] if isinstance(vv, list) and vv else ''; print(sid); print(var)" \
-                  "$tmp_stations" >"$pair" 2>/dev/null || true
-                station_id="$(sed -n '1p' "$pair")"
-                variable="$(sed -n '2p' "$pair")"
-              fi
-            fi
-
             if [ -n "$station_id" ] && [ -n "$variable" ]; then
               url="http://localhost:8000/latest?station_id=${station_id}&variable=${variable}"
               if fetch "$url" >"$tmp_latest"; then
@@ -128,25 +157,24 @@ jobs:
               fi
             fi
 
+            if fetch "http://localhost:8000/latest" >"$tmp_latest"; then
+              if python tools/validate_latest_report.py "$tmp_latest" >/dev/null 2>&1; then
+                mv "$tmp_latest" _ci_out/live_smoke/latest.json
+                echo "latest OK (no params)"
+                exit 0
+              fi
+            fi
+
             sleep 2
           done
 
           echo "/latest timeout or invalid"
           echo "--- stations payload ---"
-          if [ -s "$tmp_stations" ]; then
-            cat "$tmp_stations" || true
-          else
-            echo "(empty stations response)"
-          fi
-
+          cat "$tmp_stations" || true
           echo "--- latest validation ---"
-          if [ -s "$tmp_latest" ]; then
-            python tools/validate_latest_report.py "$tmp_latest" || true
-            echo "--- latest payload ---"
-            cat "$tmp_latest" || true
-          else
-            echo "(empty latest response)"
-          fi
+          python tools/validate_latest_report.py "$tmp_latest" || true
+          echo "--- latest payload ---"
+          cat "$tmp_latest" || true
           exit 1
 
       - name: Validate latest.json (strict)

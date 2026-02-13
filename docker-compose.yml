@@ -17,9 +17,9 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
     command:
-      - python
-      - -m
-      - meteovoid.live
+      - live
+      - --redis-url
+      - redis://redis:6379/0
       - --in-stream
       - meteovoid:observations
       - --out-stream
@@ -35,8 +35,7 @@ services:
     ports:
       - "8000:8000"
     command:
-      - uvicorn
-      - meteovoid.api:app
+      - serve
       - --host
       - 0.0.0.0
       - --port
@@ -61,11 +60,19 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
     command:
-      - python
-      - -m
-      - meteovoid.simulate
-      - --out-stream
+      - simulate
+      - --redis-url
+      - redis://redis:6379/0
+      - --stream
       - meteovoid:observations
+      - --station-id
+      - DEMO_BE_0001
+      - --variable
+      - wind_gust_ms
+      - --steps
+      - "250"
+      - --sleep
+      - "0.01"
 
   meteovoid-ingest-europe:
     build: .
@@ -74,10 +81,8 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379/0
+    entrypoint: ["python", "-m", "meteovoid.ingest_europe"]
     command:
-      - python
-      - -m
-      - meteovoid.ingest_europe
       - --config
       - config/stations_europe.yaml
       - --redis-url

@@ -1,12 +1,5 @@
 # docker-compose.ci.override.yml
 services:
-  meteovoid-api:
-    entrypoint: []
-    ports:
-      - "8000:8000"
-
   meteovoid-live:
-    entrypoint: []
-
-  meteovoid-simulate:
-    entrypoint: []
+    environment:
+      METEOVOID_START_ID: "0-0"
