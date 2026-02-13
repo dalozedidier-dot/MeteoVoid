@@ -1,0 +1,209 @@
+"""Generate simple anomaly plots for Live Smoke artifacts.
+
+Inputs:
+- history.csv produced by tools/postprocess_live_report.py
+- latest.json or latest_enriched.json
+
+Outputs (in out-dir):
+- fig_score.png
+- fig_incoherence.png
+- fig_contributions.png (if incoherence breakdown exists)
+
+This script is designed to be lightweight and robust:
+- Works even if some columns are missing.
+- Uses matplotlib with a non-interactive backend (Agg).
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Optional
+
+
+def _parse_dt(value: str) -> Optional[datetime]:
+    v = value.strip()
+    if not v:
+        return None
+    # Accept ISO with Z
+    if v.endswith("Z"):
+        v = v[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(v)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _safe_float(value: str) -> Optional[float]:
+    try:
+        return float(value)
+    except Exception:
+        return None
+
+
+@dataclass
+class Row:
+    ts: datetime
+    score: Optional[float]
+    state: str
+    severity: str
+    incoherence_total: Optional[float]
+
+
+def _read_history(history_csv: Path) -> list[Row]:
+    rows: list[Row] = []
+    if not history_csv.exists():
+        return rows
+
+    with history_csv.open("r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for d in reader:
+            ts = _parse_dt(d.get("ts_ingest", "")) or _parse_dt(d.get("ts", "")) or _parse_dt(d.get("ts_iso", ""))
+            if ts is None:
+                continue
+            rows.append(
+                Row(
+                    ts=ts,
+                    score=_safe_float(d.get("score", "")),
+                    state=(d.get("state", "") or "").strip(),
+                    severity=(d.get("severity", "") or "").strip(),
+                    incoherence_total=_safe_float(d.get("incoherence_total", "")),
+                )
+            )
+    rows.sort(key=lambda r: r.ts)
+    return rows
+
+
+def _load_json(p: Path) -> dict[str, Any]:
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _ensure_matplotlib():
+    # Defer import so the script can fail gracefully with a clear message
+    import matplotlib
+
+    matplotlib.use("Agg")  # type: ignore[call-arg]
+
+
+def _plot_score(rows: list[Row], out_png: Path) -> None:
+    _ensure_matplotlib()
+    import matplotlib.pyplot as plt  # noqa: WPS433
+
+    if not rows:
+        return
+
+    xs = [r.ts for r in rows]
+    ys = [r.score if r.score is not None else float("nan") for r in rows]
+    flags = [(r.state.lower() != "stable") or (r.severity.lower() in {"high", "critical"}) for r in rows]
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.plot(xs, ys, marker="o", linewidth=1)
+    # Mark anomalous points
+    for x, y, bad in zip(xs, ys, flags, strict=False):
+        if bad and y == y:  # not NaN
+            ax.scatter([x], [y], marker="x")
+
+    ax.set_title("Score (Live Smoke)")
+    ax.set_xlabel("Time (UTC)")
+    ax.set_ylabel("score")
+    fig.autofmt_xdate()
+    fig.tight_layout()
+    fig.savefig(out_png)
+    plt.close(fig)
+
+
+def _plot_incoherence(rows: list[Row], out_png: Path) -> None:
+    _ensure_matplotlib()
+    import matplotlib.pyplot as plt  # noqa: WPS433
+
+    vals = [(r.ts, r.incoherence_total) for r in rows if r.incoherence_total is not None]
+    if not vals:
+        return
+
+    xs = [t for t, _ in vals]
+    ys = [v for _, v in vals]
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.plot(xs, ys, marker="o", linewidth=1)
+    ax.set_title("Incoherence total")
+    ax.set_xlabel("Time (UTC)")
+    ax.set_ylabel("incoherence_total")
+    fig.autofmt_xdate()
+    fig.tight_layout()
+    fig.savefig(out_png)
+    plt.close(fig)
+
+
+def _plot_contrib(latest: dict[str, Any], out_png: Path) -> None:
+    _ensure_matplotlib()
+    import matplotlib.pyplot as plt  # noqa: WPS433
+
+    inco = latest.get("incoherence") if isinstance(latest, dict) else None
+    if not isinstance(inco, dict):
+        return
+
+    breakdown = inco.get("breakdown")
+    if not isinstance(breakdown, dict) or not breakdown:
+        return
+
+    keys = [k for k in breakdown.keys() if isinstance(k, str)]
+    vals: list[float] = []
+    for k in keys:
+        v = breakdown.get(k)
+        if isinstance(v, (int, float)):
+            vals.append(float(v))
+        else:
+            vals.append(0.0)
+
+    if not keys:
+        return
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+    ax.bar(range(len(keys)), vals)
+    ax.set_title("Incoherence contributions (latest)")
+    ax.set_xlabel("phi")
+    ax.set_ylabel("weighted contribution")
+    ax.set_xticks(range(len(keys)))
+    ax.set_xticklabels(keys, rotation=45, ha="right")
+    fig.tight_layout()
+    fig.savefig(out_png)
+    plt.close(fig)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out-dir", required=True)
+    ap.add_argument("--history", required=True)
+    ap.add_argument("--latest", required=False, default="")
+    args = ap.parse_args()
+
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    rows = _read_history(Path(args.history))
+    latest = _load_json(Path(args.latest)) if args.latest else {}
+
+    _plot_score(rows, out_dir / "fig_score.png")
+    _plot_incoherence(rows, out_dir / "fig_incoherence.png")
+    _plot_contrib(latest, out_dir / "fig_contributions.png")
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

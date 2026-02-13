@@ -1,13 +1,10 @@
 {
-  "smoke_baseline": 50.0,
-  "smoke_scale": 100.0,
-  "stuck_eps_range": 0.02,
-  "stuck_min_points": 30,
-  "w_smoke": 0.5,
-  "w_gap": 0.3,
-  "w_stuck": 0.2,
-  "w_drift": 0.2,
-  "per_variable": {
-    "pm25_ugm3": { "w_smoke": 0.6, "w_gap": 0.2, "w_stuck": 0.2, "w_drift": 0.2 }
+  "smoke_threshold": 50.0,
+  "stuck_eps": 1e-09,
+  "weights": {
+    "gap_hours": 0.3,
+    "out_of_range": 0.15,
+    "score": 0.35,
+    "stuck": 0.2
   }
 }

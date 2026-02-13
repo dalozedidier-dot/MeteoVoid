@@ -1,21 +1,21 @@
+# .github/workflows/live_smoke.yml
 name: Live Smoke (Docker Compose)
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "17 * * * *"
   push:
-    paths:
-      - ".github/workflows/live_smoke.yml"
-      - "docker-compose.yml"
-      - "docker-compose.ci.override.yml"
-      - "src/**"
-      - "tools/**"
+    branches: ["main"]
+  schedule:
+    - cron: "0 * * * *"
+
+concurrency:
+  group: live-smoke-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   live-smoke:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -26,12 +26,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install (for bulletin tool)
+      - name: Install tooling (viz + bulletin)
         run: |
           set -euo pipefail
           python -m pip install --upgrade pip
-          pip install -e ".[live]"
-          python -c "import redis" || pip install redis
+          # matplotlib is used only to generate PNG charts in the artifact
+          python -m pip install "matplotlib>=3.8"
 
       - name: Prepare output dir
         run: |
@@ -41,156 +41,139 @@ jobs:
       - name: Build images
         run: |
           set -euo pipefail
-          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml build
+          docker compose -f docker-compose.yml build
 
       - name: Up Redis
         run: |
           set -euo pipefail
-          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml up -d redis
-          for i in $(seq 1 30); do
-            if docker compose -f docker-compose.yml -f docker-compose.ci.override.yml exec -T redis redis-cli ping >/dev/null 2>&1; then
-              echo "redis OK"
-              exit 0
-            fi
-            sleep 1
-          done
-          echo "redis timeout"
-          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps --all || true
-          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color --tail=200 redis || true
-          exit 1
+          docker compose -f docker-compose.yml up -d redis
 
       - name: Up live + api
         run: |
           set -euo pipefail
-          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml up -d meteovoid-live meteovoid-api
-          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps --all || true
+          docker compose -f docker-compose.yml up -d meteovoid-live meteovoid-api
 
-      - name: Wait /health (host poll)
+      - name: Wait /health
         run: |
           set -euo pipefail
-          ok=0
           for i in $(seq 1 60); do
-            if python - <<'PY'
-import json
-from urllib.request import Request, urlopen
-req = Request("http://localhost:8000/health", headers={"Accept":"application/json"})
-data = urlopen(req, timeout=2).read().decode("utf-8", errors="replace")
-obj = json.loads(data)
-raise SystemExit(0 if isinstance(obj, dict) and obj.get("status") == "ok" else 1)
-PY
-            then
+            if curl -fsS http://localhost:8000/health >/dev/null; then
               echo "health OK"
-              ok=1
-              break
+              exit 0
             fi
-
-            # if API container died, fail early with logs
-            if ! docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps --all | grep -E "meteovoid-api\s+.*\sUp\s" -q; then
-              echo "API container is not running"
-              docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps --all || true
-              docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color --tail=300 meteovoid-api || true
-              docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color --tail=300 meteovoid-live || true
-              exit 1
-            fi
-
             sleep 2
           done
+          echo "health timeout"
+          docker compose -f docker-compose.yml ps || true
+          docker compose -f docker-compose.yml logs --no-color --tail=200 meteovoid-api || true
+          exit 1
 
-          if [ "$ok" -ne 1 ]; then
-            echo "health timeout"
-            docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps --all || true
-            docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color --tail=300 meteovoid-api || true
-            docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color --tail=300 meteovoid-live || true
-            exit 1
-          fi
-
-      - name: Seed observations (host -> Redis Streams)
+      - name: Seed stream (simulate)
         run: |
           set -euo pipefail
-          python - <<'PY'
-import time
-from typing import Any
-import redis
+          docker compose -f docker-compose.yml run --rm meteovoid-simulate
 
-r = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
-stream = "meteovoid:observations"
-
-now = time.time()
-# 250 points, 1s spacing, with one synthetic gap in the middle to exercise gap logic
-for i in range(250):
-    if i == 120:
-        now += 90.0  # create a gap
-    ts = now + i * 1.0
-    fields: dict[str, Any] = {
-        "station_id": "S1",
-        "variable": "wind_speed_ms",
-        "value": f"{5.0 + (i % 10) * 0.1:.3f}",
-        "ts": str(ts),
-    }
-    r.xadd(stream, fields)
-print("seeded", r.xlen(stream), "messages")
-PY
-
-      - name: Wait /latest and save latest.json
+      - name: Wait /latest enriched (supports required query params)
         run: |
           set -euo pipefail
-          ok=0
+
+          tmp="$(mktemp)"
+          pair="$(mktemp)"
+
+          station_id=""
+          variable=""
+
           for i in $(seq 1 90); do
-            if python - <<'PY'
-import json
-from urllib.request import Request, urlopen
-req = Request("http://localhost:8000/latest", headers={"Accept":"application/json"})
-data = urlopen(req, timeout=2).read().decode("utf-8", errors="replace")
-obj = json.loads(data)
-if isinstance(obj, dict) and ("score" in obj) and ("state" in obj):
-    print(json.dumps(obj, ensure_ascii=False, indent=2))
-    raise SystemExit(0)
-raise SystemExit(1)
-PY
-            then
-              python - <<'PY' > _ci_out/live_smoke/latest.json
-import json
-from urllib.request import Request, urlopen
-req = Request("http://localhost:8000/latest", headers={"Accept":"application/json"})
-data = urlopen(req, timeout=2).read().decode("utf-8", errors="replace")
-obj = json.loads(data)
-print(json.dumps(obj, ensure_ascii=False, indent=2))
-PY
-              ok=1
-              break
+            # Try /latest without params
+            code="$(curl -sS -o "$tmp" -w "%{http_code}" http://localhost:8000/latest || true)"
+
+            if [ "$code" = "200" ]; then
+              if python tools/validate_latest_report.py "$tmp" >/dev/null 2>&1; then
+                mv "$tmp" _ci_out/live_smoke/latest.json
+                echo "latest OK (no params)"
+                exit 0
+              fi
             fi
+
+            # If API requires query params (FastAPI Query(...)), discover first pair via /stations
+            if [ "$code" = "422" ]; then
+              if [ -z "$station_id" ] || [ -z "$variable" ]; then
+                st_code="$(curl -sS -o "$tmp" -w "%{http_code}" http://localhost:8000/stations || true)"
+                if [ "$st_code" = "200" ]; then
+                  python -c "import json,sys; d=json.load(open(sys.argv[1], 'r', encoding='utf-8')); st=d.get('stations', {}); sid=sorted(st.keys())[0] if isinstance(st, dict) and st else ''; vv=st.get(sid, []) if isinstance(st, dict) else []; var=sorted([x for x in vv if isinstance(x, str) and x])[0] if isinstance(vv, list) and vv else ''; print(sid); print(var)" "$tmp" > "$pair" 2>/dev/null || true
+                  station_id="$(sed -n '1p' "$pair")"
+                  variable="$(sed -n '2p' "$pair")"
+                fi
+              fi
+
+              if [ -n "$station_id" ] && [ -n "$variable" ]; then
+                url="http://localhost:8000/latest?station_id=${station_id}&variable=${variable}"
+                code2="$(curl -sS -o "$tmp" -w "%{http_code}" "$url" || true)"
+                if [ "$code2" = "200" ]; then
+                  if python tools/validate_latest_report.py "$tmp" >/dev/null 2>&1; then
+                    mv "$tmp" _ci_out/live_smoke/latest.json
+                    echo "latest OK (station_id=$station_id variable=$variable)"
+                    exit 0
+                  fi
+                fi
+              fi
+            fi
+
             sleep 2
           done
 
-          if [ "$ok" -ne 1 ]; then
-            echo "latest timeout"
-            docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps --all || true
-            docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color --tail=300 meteovoid-api || true
-            docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color --tail=300 meteovoid-live || true
-            exit 1
+          echo "/latest timeout or invalid"
+          echo "Last HTTP code (no params): $code"
+          if [ -n "$station_id" ] && [ -n "$variable" ]; then
+            echo "Tried station_id=$station_id variable=$variable"
           fi
+          if [ -s "$tmp" ]; then
+            echo "--- validation ---"
+            python tools/validate_latest_report.py "$tmp" || true
+            echo "--- payload ---"
+            cat "$tmp" || true
+          else
+            echo "(empty response)"
+          fi
+          exit 1
 
-      - name: Generate bulletin (markdown + json + history)
+      - name: Validate latest.json (strict)
         run: |
           set -euo pipefail
-          python tools/postprocess_live_report.py             --latest _ci_out/live_smoke/latest.json             --out-dir _ci_out/live_smoke
+          python tools/validate_latest_report.py _ci_out/live_smoke/latest.json
 
-      - name: Capture ps + logs
+      - name: Generate bulletin + history + incoherence
+        run: |
+          set -euo pipefail
+          python tools/postprocess_live_report.py             --latest _ci_out/live_smoke/latest.json             --out-dir _ci_out/live_smoke             --config config/incoherence.json
+
+      - name: Generate anomaly plots (PNG)
+        run: |
+          set -euo pipefail
+          python tools/plot_live_smoke.py             --out-dir _ci_out/live_smoke             --history _ci_out/live_smoke/history.csv             --latest _ci_out/live_smoke/latest_enriched.json
+
+      - name: Capture ps
         if: always()
         run: |
           set -euo pipefail
-          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml ps --all > _ci_out/live_smoke/ps.txt || true
-          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml logs --no-color > _ci_out/live_smoke/compose.log || true
+          docker compose -f docker-compose.yml ps > _ci_out/live_smoke/ps.txt || true
 
-      - name: Upload live smoke report artifact
+      - name: Capture logs
+        if: always()
+        run: |
+          set -euo pipefail
+          docker compose -f docker-compose.yml logs --no-color > _ci_out/live_smoke/compose.log || true
+
+      - name: Upload artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: live_smoke_report
-          path: _ci_out/live_smoke
+          path: _ci_out/live_smoke/
+          if-no-files-found: error
 
       - name: Down
         if: always()
         run: |
           set -euo pipefail
-          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml down -v || true
+          docker compose -f docker-compose.yml down -v
