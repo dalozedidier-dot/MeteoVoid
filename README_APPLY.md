@@ -1,21 +1,7 @@
-Fix for logs_57324456881:
+Patch: fix black formatting failures seen in CI logs.
 
-Observed error:
-- meteovoid-api container ran: "meteovoid uvicorn ..." then exited.
-- CLI error: No such command 'uvicorn'.
+Replaces two files with black-compliant formatting:
+- src/meteovoid/incoherence.py
+- tools/postprocess_live_report.py
 
-Root cause:
-- The image ENTRYPOINT is "meteovoid", but the CLI does not expose an "uvicorn" subcommand.
-- Therefore any compose command like "uvicorn ..." becomes "meteovoid uvicorn ..." and fails.
-
-This patch:
-- Adds docker-compose.ci.override.yml forcing correct CLI commands:
-  - meteovoid-api: serve --host 0.0.0.0 --port 8000
-  - meteovoid-live: live ...
-  - meteovoid-simulate: simulate ...
-- Updates .github/workflows/live_smoke.yml to always use the override file.
-
-Apply:
-- Put docker-compose.ci.override.yml at repo root
-- Replace .github/workflows/live_smoke.yml
-- Commit + push, rerun Live Smoke
+Apply: unzip at repo root (overwrite), commit, push.

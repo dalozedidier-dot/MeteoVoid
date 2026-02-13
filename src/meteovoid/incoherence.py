@@ -157,9 +157,7 @@ def compute_incoherence_from_latest(
         phi_stuck = _clamp01(1.0 - (observed_range / eps_range))
 
     score = (
-        weights["gap"] * phi_gap
-        + weights["range"] * phi_range
-        + weights["stuck"] * phi_stuck
+        weights["gap"] * phi_gap + weights["range"] * phi_range + weights["stuck"] * phi_stuck
     ) / wsum
     score = _clamp01(score)
 
