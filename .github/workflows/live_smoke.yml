@@ -73,18 +73,16 @@ jobs:
           variable=""
 
           for i in $(seq 1 90); do
-            # Try /latest without params
             code="$(curl -sS -o "$tmp" -w "%{http_code}" http://localhost:8000/latest || true)"
 
             if [ "$code" = "200" ]; then
               if python tools/validate_latest_report.py "$tmp" >/dev/null 2>&1; then
                 mv "$tmp" _ci_out/live_smoke/latest.json
                 echo "latest OK (no params)"
-                exit 0
+                break
               fi
             fi
 
-            # If API requires query params (FastAPI Query(...)), discover first pair via /stations
             if [ "$code" = "422" ]; then
               if [ -z "$station_id" ] || [ -z "$variable" ]; then
                 st_code="$(curl -sS -o "$tmp" -w "%{http_code}" http://localhost:8000/stations || true)"
@@ -102,7 +100,7 @@ jobs:
                   if python tools/validate_latest_report.py "$tmp" >/dev/null 2>&1; then
                     mv "$tmp" _ci_out/live_smoke/latest.json
                     echo "latest OK (station_id=$station_id variable=$variable)"
-                    exit 0
+                    break
                   fi
                 fi
               fi
@@ -111,30 +109,15 @@ jobs:
             sleep 2
           done
 
-          echo "/latest timeout or invalid"
-          echo "Last HTTP code (no params): $code"
-          if [ -n "$station_id" ] && [ -n "$variable" ]; then
-            echo "Tried station_id=$station_id variable=$variable"
+          if [ ! -f _ci_out/live_smoke/latest.json ]; then
+            echo "/latest timeout or invalid"
+            exit 1
           fi
-          if [ -s "$tmp" ]; then
-            echo "--- validation ---"
-            python tools/validate_latest_report.py "$tmp" || true
-            echo "--- payload ---"
-            cat "$tmp" || true
-          else
-            echo "(empty response)"
-          fi
-          exit 1
 
-      - name: Validate latest.json (strict)
+      - name: Post-process report (incoherence + bulletin + history)
         run: |
           set -euo pipefail
-          python tools/validate_latest_report.py _ci_out/live_smoke/latest.json
-
-      - name: Generate bulletin + history (incoherence)
-        run: |
-          set -euo pipefail
-          python tools/generate_bulletin.py --latest _ci_out/live_smoke/latest.json --out-dir _ci_out/live_smoke --config config/incoherence_defaults.json
+          python tools/postprocess_live_report.py             --latest _ci_out/live_smoke/latest.json             --out-dir _ci_out/live_smoke             --config config/incoherence.json
 
       - name: Capture ps
         if: always()
