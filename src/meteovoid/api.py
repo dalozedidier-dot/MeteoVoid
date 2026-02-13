@@ -159,11 +159,14 @@ def metrics(redis_url: str = REDIS_URL) -> str:
 
         ts = _ts_ingest(payload_any)
         age = max(0.0, float(now - ts)) if ts > 0.0 else float("nan")
-        score = payload_any.get("score")
-        try:
-            score_f = float(score)
-        except (TypeError, ValueError):
+        score_any = payload_any.get("score")
+        if score_any is None:
             score_f = float("nan")
+        else:
+            try:
+                score_f = float(score_any)
+            except (TypeError, ValueError):
+                score_f = float("nan")
 
         labels = f'station_id="{_prom_escape(station_id)}",variable="{_prom_escape(variable)}"'
         lines.append(f"meteovoid_latest_age_seconds{{{labels}}} {age:.6f}")

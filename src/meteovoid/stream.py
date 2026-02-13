@@ -493,11 +493,14 @@ def run_live_worker(
                 # Update peer stats for spatial consistency checks
                 stats_any = report.get("stats", {})
                 if isinstance(stats_any, dict):
-                    m = stats_any.get("mean")
-                    try:
-                        mean_val = float(m)
-                    except (TypeError, ValueError):
+                    m_any = stats_any.get("mean")
+                    if m_any is None:
                         mean_val = None
+                    else:
+                        try:
+                            mean_val = float(m_any)
+                        except (TypeError, ValueError):
+                            mean_val = None
                     if mean_val is not None:
                         peer_means.setdefault(variable, {})[station_id] = float(mean_val)
 

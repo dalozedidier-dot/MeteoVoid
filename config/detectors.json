@@ -1,0 +1,27 @@
+{
+  "thresholds": {
+    "stable": 0.15,
+    "unstable": 0.3
+  },
+  "variables": {
+    "__default__": {
+      "drift_norm_th": 0.35,
+      "flat_eps": 1e-06,
+      "flat_min_run": 25,
+      "multivar_expected_abs_corr_min": 0.5,
+      "outlier_z": 3.5,
+      "spatial_z": 4.0,
+      "spike_z": 6.0
+    }
+  },
+  "weights": {
+    "base": 0.4,
+    "drift": 0.03,
+    "flatline": 0.07,
+    "gap": 0.25,
+    "multivar": 0.0,
+    "outlier": 0.15,
+    "spatial": 0.0,
+    "spike": 0.1
+  }
+}
