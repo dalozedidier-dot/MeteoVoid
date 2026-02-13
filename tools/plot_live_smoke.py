@@ -125,7 +125,8 @@ def _plot_score(rows: list[Row], out_png: Path) -> None:
     xs = [r.ts for r in rows]
     ys = [r.score if r.score is not None else float("nan") for r in rows]
     flags = [
-        (r.state.lower() != "stable") or (r.severity.lower() in {"high", "critical"}) for r in rows
+        (r.state.lower() != "stable") or (r.severity.lower() in {"high", "critical"})
+        for r in rows
     ]
 
     fig = plt.figure()
@@ -150,7 +151,9 @@ def _plot_incoherence(rows: list[Row], out_png: Path) -> None:
     _ensure_matplotlib()
     import matplotlib.pyplot as plt
 
-    vals = [(r.ts, r.incoherence_score) for r in rows if r.incoherence_score is not None]
+    vals = [
+        (r.ts, r.incoherence_score) for r in rows if r.incoherence_score is not None
+    ]
     if not vals:
         return
 
@@ -177,7 +180,11 @@ def _plot_contrib(latest: dict[str, Any], out_png: Path) -> None:
     if isinstance(latest.get("incoherence_contributions"), dict):
         breakdown = latest.get("incoherence_contributions")
     else:
-        inco = latest.get("incoherence") if isinstance(latest.get("incoherence"), dict) else None
+        inco = (
+            latest.get("incoherence")
+            if isinstance(latest.get("incoherence"), dict)
+            else None
+        )
         if isinstance(inco, dict) and isinstance(inco.get("breakdown"), dict):
             breakdown = inco.get("breakdown")
 

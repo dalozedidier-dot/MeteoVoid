@@ -119,10 +119,16 @@ def _load_incoherence_config(path: str | None) -> IncoherenceConfig:
     w = d.get("weights") if isinstance(d, dict) else None
     if isinstance(w, dict):
         for k, v in w.items():
-            if isinstance(k, str) and isinstance(v, (int, float)) and not isinstance(v, bool):
+            if (
+                isinstance(k, str)
+                and isinstance(v, (int, float))
+                and not isinstance(v, bool)
+            ):
                 weights[k] = float(v)
 
-    smoke_threshold = _safe_float(d.get("smoke_threshold")) if isinstance(d, dict) else None
+    smoke_threshold = (
+        _safe_float(d.get("smoke_threshold")) if isinstance(d, dict) else None
+    )
     stuck_eps = _safe_float(d.get("stuck_eps")) if isinstance(d, dict) else None
     drift_window = _safe_int(d.get("drift_window")) if isinstance(d, dict) else None
 
@@ -132,7 +138,9 @@ def _load_incoherence_config(path: str | None) -> IncoherenceConfig:
             smoke_threshold if smoke_threshold is not None else default.smoke_threshold
         ),
         stuck_eps=float(stuck_eps if stuck_eps is not None else default.stuck_eps),
-        drift_window=int(drift_window if drift_window is not None else default.drift_window),
+        drift_window=int(
+            drift_window if drift_window is not None else default.drift_window
+        ),
     )
 
 
@@ -174,11 +182,16 @@ def _compute_incoherence(
     meteo = latest.get("meteo") if isinstance(latest.get("meteo"), dict) else {}
 
     # phi_gap: duration of gaps in hours (prefer missing_time_s, fallback to gap_total_s)
-    missing_time_s = _safe_float(stats.get("missing_time_s")) if isinstance(stats, dict) else None
-    gap_total_s = _safe_float(stats.get("gap_total_s")) if isinstance(stats, dict) else None
-    phi_gap_hours = float(
-        (missing_time_s if missing_time_s is not None else gap_total_s) or 0.0
-    ) / 3600.0
+    missing_time_s = (
+        _safe_float(stats.get("missing_time_s")) if isinstance(stats, dict) else None
+    )
+    gap_total_s = (
+        _safe_float(stats.get("gap_total_s")) if isinstance(stats, dict) else None
+    )
+    phi_gap_hours = (
+        float((missing_time_s if missing_time_s is not None else gap_total_s) or 0.0)
+        / 3600.0
+    )
 
     # phi_smoke: if the variable looks like air quality, compare mean to threshold
     variable = _safe_str(latest.get("variable")) or ""
@@ -265,7 +278,9 @@ def _append_history(out_dir: Path, enriched: dict[str, Any]) -> None:
     ts = _safe_float(enriched.get("ts"))
     ts_ingest = _safe_float(enriched.get("ts_ingest"))
 
-    ts_iso = _safe_str(enriched.get("ts_iso")) or (_iso_from_epoch(ts) if ts is not None else "")
+    ts_iso = _safe_str(enriched.get("ts_iso")) or (
+        _iso_from_epoch(ts) if ts is not None else ""
+    )
     ts_ingest_iso = _safe_str(enriched.get("ts_ingest_iso")) or (
         _iso_from_epoch(ts_ingest) if ts_ingest is not None else ""
     )
@@ -276,7 +291,9 @@ def _append_history(out_dir: Path, enriched: dict[str, Any]) -> None:
 
     stats = enriched.get("stats") if isinstance(enriched.get("stats"), dict) else {}
     gap_count = _safe_int(stats.get("gap_count")) if isinstance(stats, dict) else None
-    missing_time_frac = _safe_float(stats.get("missing_time_frac")) if isinstance(stats, dict) else None
+    missing_time_frac = (
+        _safe_float(stats.get("missing_time_frac")) if isinstance(stats, dict) else None
+    )
     stats_mean = _safe_float(stats.get("mean")) if isinstance(stats, dict) else None
 
     inco_total = _safe_float(enriched.get("incoherence_score"))
@@ -311,7 +328,11 @@ def _append_history(out_dir: Path, enriched: dict[str, Any]) -> None:
 def _make_bulletin(enriched: dict[str, Any]) -> dict[str, Any]:
     stats = enriched.get("stats") if isinstance(enriched.get("stats"), dict) else {}
     meteo = enriched.get("meteo") if isinstance(enriched.get("meteo"), dict) else {}
-    inco = enriched.get("incoherence") if isinstance(enriched.get("incoherence"), dict) else {}
+    inco = (
+        enriched.get("incoherence")
+        if isinstance(enriched.get("incoherence"), dict)
+        else {}
+    )
 
     return {
         "generated_at": _iso_from_epoch(_epoch(_now_utc())),
@@ -321,7 +342,9 @@ def _make_bulletin(enriched: dict[str, Any]) -> dict[str, Any]:
         "score": _safe_float(enriched.get("score")),
         "severity": _safe_str(meteo.get("severity")) if isinstance(meteo, dict) else "",
         "flags": meteo.get("flags", []) if isinstance(meteo, dict) else [],
-        "interpretation": _safe_str(meteo.get("interpretation")) if isinstance(meteo, dict) else "",
+        "interpretation": (
+            _safe_str(meteo.get("interpretation")) if isinstance(meteo, dict) else ""
+        ),
         "stats": stats,
         "incoherence": inco,
     }
@@ -401,7 +424,9 @@ def main() -> int:
     enriched = _enrich_latest(latest)
 
     cfg = _load_incoherence_config(args.config if args.config else None)
-    history_csv = (out_dir / "history.csv") if (out_dir / "history.csv").exists() else None
+    history_csv = (
+        (out_dir / "history.csv") if (out_dir / "history.csv").exists() else None
+    )
     inco = _compute_incoherence(enriched, cfg, history_csv=history_csv)
 
     enriched["incoherence"] = inco
