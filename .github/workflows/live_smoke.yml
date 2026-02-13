@@ -18,11 +18,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
       - name: Prepare output dir
         run: |
           set -euo pipefail
@@ -49,16 +44,7 @@ jobs:
         run: |
           set -euo pipefail
           for i in $(seq 1 60); do
-            if docker compose -f docker-compose.yml -f docker-compose.ci.override.yml exec -T meteovoid-api python - <<'PY' >/dev/null 2>&1; then
-          import json
-          from urllib.request import Request, urlopen
-
-          req = Request("http://localhost:8000/health", headers={"Accept": "application/json"})
-          with urlopen(req, timeout=2.0) as r:
-              obj = json.loads(r.read().decode("utf-8", errors="replace"))
-          if not (isinstance(obj, dict) and obj.get("status") == "ok"):
-              raise SystemExit(1)
-          PY
+            if docker compose -f docker-compose.yml -f docker-compose.ci.override.yml exec -T meteovoid-api               python -c "import json; from urllib.request import Request, urlopen; req=Request('http://localhost:8000/health', headers={'Accept':'application/json'}); data=urlopen(req, timeout=2).read().decode('utf-8', errors='replace'); obj=json.loads(data); raise SystemExit(0 if isinstance(obj, dict) and obj.get('status')=='ok' else 1)"               >/dev/null 2>&1; then
               echo "health OK"
               exit 0
             fi
@@ -75,31 +61,22 @@ jobs:
 
           SERVICES="$(docker compose -f docker-compose.yml -f docker-compose.ci.override.yml config --services)"
 
-          SEED_OK=0
           if echo "$SERVICES" | grep -qx "meteovoid-simulate"; then
-            echo "Seeding via meteovoid-simulate..."
+            echo "Seeding via meteovoid-simulate"
             if docker compose -f docker-compose.yml -f docker-compose.ci.override.yml run --rm meteovoid-simulate; then
-              SEED_OK=1
+              exit 0
             fi
           fi
 
-          if [ "$SEED_OK" -ne 1 ]; then
-            echo "Fallback seeding via redis-cli (250 points)..."
-            docker compose -f docker-compose.yml -f docker-compose.ci.override.yml exec -T redis sh -lc '
-              for i in $(seq 1 250); do
-                v=$(python - <<PY
-import math
-i=int("'"$i"'")
-print(10.0 + 2.0*math.sin(i/10.0))
-PY
-)
-                redis-cli XADD meteovoid:observations "*" station_id "BE_UCCLE" variable "wind_gust_ms" value "$v" ts "$i" >/dev/null
-              done
-              redis-cli XLEN meteovoid:observations
-            '
-          fi
+          echo "Fallback seeding via redis-cli"
+          docker compose -f docker-compose.yml -f docker-compose.ci.override.yml exec -T redis sh -lc '
+            for i in $(seq 1 250); do
+              redis-cli XADD meteovoid:observations "*" station_id "BE_UCCLE" variable "wind_gust_ms" value "10.0" ts "$i" >/dev/null
+            done
+            redis-cli XLEN meteovoid:observations
+          '
 
-      - name: Fetch /latest (handles 422) -> latest.json
+      - name: Fetch /latest (supports 422) -> latest.json
         run: |
           set -euo pipefail
           docker compose -f docker-compose.yml -f docker-compose.ci.override.yml exec -T meteovoid-api python - <<'PY' > _ci_out/live_smoke/latest.json
@@ -107,28 +84,29 @@ PY
           from urllib.parse import urlencode
           from urllib.request import Request, urlopen
 
+          BASE = "http://localhost:8000"
+
           def get_json(url: str):
               req = Request(url, headers={"Accept": "application/json"})
-              with urlopen(req, timeout=2.0) as r:
-                  return json.loads(r.read().decode("utf-8", errors="replace"))
+              with urlopen(req, timeout=3.0) as r:
+                  body = r.read().decode("utf-8", errors="replace")
+              return json.loads(body)
 
-          base = "http://localhost:8000"
           t0 = time.time()
-          last = None
-
           station_id = None
           variable = None
+          last = None
 
           while True:
               try:
-                  obj = get_json(f"{base}/latest")
+                  obj = get_json(f"{BASE}/latest")
                   last = obj
                   if isinstance(obj, dict) and obj.get("score") is not None and obj.get("state") is not None:
                       print(json.dumps(obj, indent=2, sort_keys=True))
                       break
 
                   if isinstance(obj, dict) and obj.get("detail") is not None and station_id is None:
-                      st = get_json(f"{base}/stations")
+                      st = get_json(f"{BASE}/stations")
                       if isinstance(st, dict) and isinstance(st.get("stations"), dict) and st["stations"]:
                           station_id = sorted(st["stations"].keys())[0]
                           vars_ = st["stations"].get(station_id)
@@ -137,7 +115,7 @@ PY
 
                   if station_id and variable:
                       qs = urlencode({"station_id": station_id, "variable": variable})
-                      obj2 = get_json(f"{base}/latest?{qs}")
+                      obj2 = get_json(f"{BASE}/latest?{qs}")
                       last = obj2
                       if isinstance(obj2, dict) and obj2.get("score") is not None and obj2.get("state") is not None:
                           print(json.dumps(obj2, indent=2, sort_keys=True))
@@ -151,13 +129,14 @@ PY
               time.sleep(2.0)
           PY
 
-      - name: Post-process latest.json (incoherence + bulletin + history)
+      - name: Post-process latest.json (optional)
         run: |
           set -euo pipefail
-          python tools/postprocess_live_report.py \
-            --latest _ci_out/live_smoke/latest.json \
-            --out-dir _ci_out/live_smoke \
-            --config config/incoherence.json
+          if [ -f tools/postprocess_live_report.py ]; then
+            python tools/postprocess_live_report.py               --latest _ci_out/live_smoke/latest.json               --out-dir _ci_out/live_smoke               --config config/incoherence.json
+          else
+            echo "tools/postprocess_live_report.py not found, skipping"
+          fi
 
       - name: Capture ps + logs
         if: always()

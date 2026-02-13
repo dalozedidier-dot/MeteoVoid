@@ -1,33 +1,21 @@
+# CI override: bypass image ENTRYPOINT so commands do not become "meteovoid uvicorn ..."
+#
+# This is intentionally minimal:
+# - It forces service entrypoints to a shell, then runs the real command.
+# - It requires that "uvicorn" is installed in the image (usually via requirements for the API).
+
 services:
   meteovoid-api:
-    # Image ENTRYPOINT is "meteovoid". Do NOT call uvicorn subcommand (it doesn't exist).
-    # Use the built-in CLI "serve".
-    command:
-      - serve
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8000"
-    ports:
-      - "8000:8000"
+    entrypoint: ["/bin/sh", "-lc"]
+    command: "python -m uvicorn meteovoid.api:app --host 0.0.0.0 --port 8000"
 
   meteovoid-live:
-    # Use CLI "live" (avoid "python -m ..." which becomes "meteovoid python -m ...")
-    command:
-      - live
-      - --redis-url
-      - redis://redis:6379/0
-      - --in-stream
-      - meteovoid:observations
-      - --out-stream
-      - meteovoid:reports
+    # Keep default if your image entrypoint already runs the worker correctly.
+    # If your image ENTRYPOINT breaks this too, uncomment and set the right command.
+    # entrypoint: ["/bin/sh", "-lc"]
+    # command: "python -m meteovoid.live --in-stream meteovoid:observations --out-stream meteovoid:reports"
+    {}
 
   meteovoid-simulate:
-    command:
-      - simulate
-      - --redis-url
-      - redis://redis:6379/0
-      - --out-stream
-      - meteovoid:observations
-      - --n
-      - "250"
+    # Prefer your existing simulate service command if present.
+    {}
