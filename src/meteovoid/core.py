@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pandas as pd
 
@@ -15,48 +15,42 @@ class VoidSegment:
 
 
 def _read_table(path: Path) -> pd.DataFrame:
-    suf = path.suffix.lower()
-    if suf == ".csv":
+    suffix = path.suffix.lower()
+    if suffix == ".csv":
         return pd.read_csv(path)
-    if suf in {".parquet", ".pq"}:
-        return pd.read_parquet(path)  # requires pyarrow or fastparquet
-    if suf in {".jsonl", ".ndjson"}:
+    if suffix in {".jsonl", ".ndjson"}:
         return pd.read_json(path, lines=True)
-    if suf == ".json":
+    if suffix == ".json":
         return pd.read_json(path)
-    raise ValueError(f"Unsupported input format: {path.name}")
+    if suffix == ".parquet":
+        # Requires pyarrow or fastparquet in the environment.
+        return pd.read_parquet(path)
+    raise ValueError(f"Unsupported input format: {suffix}")
 
 
-def _parse_timestamps(col: pd.Series) -> pd.Series:
-    """Parse timestamps robustly.
+def _parse_timestamps(series: pd.Series[Any]) -> pd.Series[Any]:
+    # First: ISO 8601 (handles Z, fractional seconds, etc.).
+    ts = pd.to_datetime(series, utc=True, errors="coerce", format="ISO8601")
+    if not ts.isna().all():
+        return ts
 
-    Pandas has edge cases parsing ISO8601 strings with fractional seconds + timezone (e.g. ...000001Z).
-    We first try format="ISO8601" (fast + robust for the common case), then fall back.
-    """
-    # 1) ISO8601 (handles microseconds + 'Z' reliably)
-    ts = pd.to_datetime(col, utc=True, errors="coerce", format="ISO8601")
+    # Fallback: numeric epoch (s/ms/ns).
+    num = pd.to_numeric(series, errors="coerce")
+    if num.isna().all():
+        return ts
 
-    # 2) Fallback: generic parser (mixed inputs)
-    if ts.isna().any():
-        ts2 = pd.to_datetime(col, utc=True, errors="coerce")
-        ts = ts.fillna(ts2)
+    mx = float(num.max())
+    unit: Literal["ns", "ms", "s"]
+    if mx > 1e14:
+        unit = "ns"
+    elif mx > 1e11:
+        unit = "ms"
+    else:
+        unit = "s"
 
-    # 3) Fallback for numeric epochs (seconds/ms/ns heuristic)
-    if ts.isna().any():
-        num = pd.to_numeric(col, errors="coerce")
-        if num.notna().any():
-            mx = float(num.max())
-            # Heuristic: choose the most likely unit by magnitude.
-            if mx > 1e14:
-                unit = "ns"
-            elif mx > 1e11:
-                unit = "ms"
-            else:
-                unit = "s"
-            ts3 = pd.to_datetime(num, utc=True, errors="coerce", unit=unit)
-            ts = ts.fillna(ts3)
-
-    return ts
+    # IMPORTANT: pass by keyword (arg=...) so mypy matches pandas overloads.
+    ts2 = pd.to_datetime(arg=num, utc=True, errors="coerce", unit=unit)
+    return ts2
 
 
 def scan_series_for_voids(
@@ -65,17 +59,8 @@ def scan_series_for_voids(
     value_col: str = "value",
     max_gap_seconds: int = 3600,
 ) -> dict[str, Any]:
-    """Detect void segments (large gaps) in a time series file.
-
-    Supported inputs:
-      - CSV (.csv)
-      - Parquet (.parquet, .pq) if pyarrow/fastparquet is installed
-      - JSON Lines (.jsonl, .ndjson)
-      - JSON (.json)
-
-    The output schema remains stable for CI + reproducibility.
-    """
     df = _read_table(csv_path)
+
     if time_col not in df.columns:
         raise ValueError(f"Missing time column: {time_col}")
     if value_col not in df.columns:
@@ -104,6 +89,7 @@ def scan_series_for_voids(
     values = pd.to_numeric(df[value_col], errors="coerce")
     n_nan = int(values.isna().sum())
     finite = values.dropna()
+
     stats = {
         "count": int(len(values)),
         "nan_values": n_nan,
@@ -118,7 +104,7 @@ def scan_series_for_voids(
         "time_col": time_col,
         "value_col": value_col,
         "max_gap_seconds": int(max_gap_seconds),
-        "void_count": int(len(voids)),
+        "void_count": len(voids),
         "voids": [asdict(v) for v in voids],
         "value_stats": stats,
     }
