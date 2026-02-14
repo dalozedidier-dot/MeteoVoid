@@ -129,6 +129,37 @@ def iqr_outliers(values: list[float], k: float = 1.5) -> OutlierResult:
     )
 
 
+def flatline_score(values: list[float], eps: float = 1e-6, min_run: int = 30) -> float:
+    """Return a [0..1] score for abnormal flatlining.
+
+    We detect the longest run of consecutive values whose absolute step <= eps.
+    Score = clamp01((run_len - min_run + 1) / len(values)) if run_len >= min_run else 0.
+    """
+    if len(values) < max(2, int(min_run)):
+        return 0.0
+
+    eps = float(abs(eps))
+    best = 1
+    run = 1
+
+    for i in range(1, len(values)):
+        if abs(values[i] - values[i - 1]) <= eps:
+            run += 1
+        else:
+            if run > best:
+                best = run
+            run = 1
+
+    if run > best:
+        best = run
+
+    if best < int(min_run):
+        return 0.0
+
+    raw = float((best - int(min_run) + 1) / float(max(1, len(values))))
+    return clamp01(raw)
+
+
 def spike_score(values: list[float], k: float = 6.0) -> float:
     """Return a [0..1] score for abrupt spikes/step changes.
 
