@@ -46,7 +46,12 @@ class FakeRedis:
         # Return newest-first, as redis does.
         return list(reversed(msgs[-count:]))
 
-    def add_stream_msg(self, stream: str, msg_id: str, fields: dict[bytes, bytes]) -> None:
+    def add_stream_msg(
+        self,
+        stream: str,
+        msg_id: str,
+        fields: dict[bytes, bytes],
+    ) -> None:
         self._streams.setdefault(stream, []).append((msg_id, fields))
 
 
@@ -120,7 +125,12 @@ def test_api_history_filters_stream(monkeypatch) -> None:
 
     monkeypatch.setattr(api_mod, "make_redis", fake_make)
 
-    out = api_mod.history(station_id="S1", variable="temperature_c", limit=10, redis_url="redis://x")
+    out = api_mod.history(
+        station_id="S1",
+        variable="temperature_c",
+        limit=10,
+        redis_url="redis://x",
+    )
     assert out["status"] == "ok"
     assert out["station_id"] == "S1"
     assert out["variable"] == "temperature_c"
