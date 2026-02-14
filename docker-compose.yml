@@ -9,6 +9,9 @@ services:
       timeout: 2s
       retries: 30
 
+  # NOTE: the Docker image sets ENTRYPOINT ["meteovoid"].
+  # Therefore service commands must be MeteoVoid CLI subcommands (scan/simulate/live/serve),
+  # not "python -m ..." nor "uvicorn ...".
   meteovoid-live:
     build: .
     depends_on:
@@ -32,7 +35,6 @@ services:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379/0
-      METEOVOID_OUT_STREAM: meteovoid:reports
     ports:
       - "8000:8000"
     command:
@@ -71,6 +73,28 @@ services:
       - --variable
       - wind_gust_ms
       - --steps
-      - "350"
+      - "250"
       - --sleep
       - "0.01"
+
+  # Optional ingest service: keep python module execution by overriding entrypoint.
+  meteovoid-ingest-europe:
+    build: .
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    entrypoint:
+      - python
+    command:
+      - -m
+      - meteovoid.ingest_europe
+      - --config
+      - config/stations_europe.yaml
+      - --redis-url
+      - redis://redis:6379/0
+      - --out-stream
+      - meteovoid:observations
+      - --poll-seconds
+      - "600"

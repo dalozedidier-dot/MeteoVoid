@@ -1,5 +1,7 @@
-# docker-compose.ci.override.yml
+# CI override: do not rely on host port publishing, workflows should poll from inside the API container.
 services:
   meteovoid-api:
-    ports:
-      - "8000:8000"
+    ports: []
+
+  redis:
+    ports: []
