@@ -13,8 +13,11 @@ from .alerts import maybe_send_alert
 from .config import StationConfig, env_config_path, load_station_config, resolve_variable_overrides
 from . import db as _db
 from .live import LiveConfig, RollingWindow, State, analyze_window
+from .log import get_logger
 from .scoring import compute_composite_score
 from .utils import make_redis
+
+_log = get_logger(__name__)
 
 StreamFields = dict[str, str]
 Message = tuple[str, StreamFields]
@@ -521,6 +524,7 @@ def run_live_worker(
     last_id = start_id if start_id is not None else _default_start_id()
     processed = 0
     last_progress = time.time()
+    _log.info("worker.started", in_stream=in_stream, out_stream=out_stream, start_id=last_id)
 
     while True:
         resp_any = r.xread({in_stream: last_id}, block=1000, count=200)
@@ -581,6 +585,16 @@ def run_live_worker(
 
                 # Persist to PostgreSQL (no-op when DATABASE_URL unset)
                 _db.insert_report(report)
+
+                severity = str((report.get("meteo") or {}).get("severity", "low"))
+                if severity in ("medium", "high"):
+                    _log.warning(
+                        "worker.report_alert",
+                        station_id=station_id,
+                        variable=variable,
+                        severity=severity,
+                        score=round(float(report.get("score") or 0.0), 4),
+                    )
 
                 if max_messages is not None and processed >= int(max_messages):
                     return

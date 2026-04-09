@@ -10,7 +10,18 @@ from urllib.request import Request, urlopen
 
 import redis
 
+from . import db as _db
+from .log import get_logger
 from .stations_config import StationSpec, load_stations_config
+
+_log = get_logger(__name__)
+
+# Redis key recording the last time a station successfully published
+_LAST_SEEN_KEY = "meteovoid:ingest_last_seen:{station_id}"
+# Redis key for silence alerts
+_SILENCE_KEY = "meteovoid:silence:{station_id}"
+# Default silence threshold (seconds without data before flagging)
+_DEFAULT_SILENCE_S = 300
 
 
 def _http_json(url: str, timeout_s: float = 8.0) -> dict[str, Any]:
@@ -23,9 +34,28 @@ def _http_json(url: str, timeout_s: float = 8.0) -> dict[str, Any]:
     return obj
 
 
+def _http_json_with_retry(
+    url: str,
+    *,
+    timeout_s: float = 8.0,
+    max_attempts: int = 3,
+    base_backoff_s: float = 2.0,
+) -> dict[str, Any]:
+    """Fetch JSON with exponential backoff retry."""
+    last_exc: Exception = RuntimeError("no attempts made")
+    for attempt in range(max_attempts):
+        try:
+            return _http_json(url, timeout_s=timeout_s)
+        except (URLError, TimeoutError, OSError, ValueError) as exc:
+            last_exc = exc
+            if attempt < max_attempts - 1:
+                sleep_s = base_backoff_s * (2 ** attempt)
+                _log.warning("ingest.http_retry", attempt=attempt + 1, max=max_attempts, sleep=sleep_s, exc=str(exc))
+                time.sleep(sleep_s)
+    raise last_exc
+
+
 def _build_openmeteo_url(st: StationSpec) -> str:
-    # Open-Meteo Forecast API supports current=<vars>
-    # wind_speed_unit supports ms, mph, kn, kmh
     params = {
         "latitude": f"{st.lat:.6f}",
         "longitude": f"{st.lon:.6f}",
@@ -73,8 +103,6 @@ def _publish_observation(
     source: str,
     per_stream: bool,
 ) -> None:
-    # redis-py typing uses a broad union for field/value types.
-    # We store string/int values but keep the mapping typed as Any to satisfy mypy.
     fields: dict[Any, Any] = {
         "station_id": station_id,
         "variable": variable,
@@ -91,18 +119,68 @@ def _publish_observation(
         r.xadd(per, fields, maxlen=50000, approximate=True)
 
 
+def _update_last_seen(r: redis.Redis, station_id: str, silence_threshold_s: int) -> None:
+    """Record current time as last-seen and clear any silence flag."""
+    now_s = int(time.time())
+    key = _LAST_SEEN_KEY.format(station_id=station_id)
+    r.set(key, str(now_s), ex=silence_threshold_s * 4)
+    # Clear silence flag if it was set
+    r.delete(_SILENCE_KEY.format(station_id=station_id))
+
+
+def check_station_silence(
+    r: redis.Redis,
+    station_id: str,
+    *,
+    silence_threshold_s: int = _DEFAULT_SILENCE_S,
+) -> bool:
+    """Return True if the station has been silent longer than the threshold."""
+    key = _LAST_SEEN_KEY.format(station_id=station_id)
+    raw = r.get(key)
+    if raw is None:
+        return False  # Never seen — not yet considered silent (no baseline)
+    try:
+        last_seen = int(raw)
+    except (TypeError, ValueError):
+        return False
+    silence_s = int(time.time()) - last_seen
+    if silence_s > silence_threshold_s:
+        silence_key = _SILENCE_KEY.format(station_id=station_id)
+        r.set(silence_key, str(silence_s), ex=silence_threshold_s * 2)
+        return True
+    return False
+
+
 def ingest_once(
     *,
     r: redis.Redis,
     station: StationSpec,
     out_stream: str,
     per_stream: bool,
+    silence_threshold_s: int = _DEFAULT_SILENCE_S,
 ) -> dict[str, Any]:
     if station.source != "openmeteo":
         return {"station_id": station.station_id, "ok": False, "error": "unsupported source"}
 
     url = _build_openmeteo_url(station)
-    obj = _http_json(url)
+    try:
+        obj = _http_json_with_retry(url)
+    except (URLError, TimeoutError, OSError, ValueError) as exc:
+        error_str = str(exc)
+        _log.warning(
+            "ingest.station_failed",
+            station_id=station.station_id,
+            source=station.source,
+            exc=error_str,
+        )
+        _db.log_ingest_failure(
+            station_id=station.station_id,
+            source=station.source,
+            error=error_str,
+            url=url,
+        )
+        return {"station_id": station.station_id, "ok": False, "error": error_str}
+
     ts, cur = _extract_current(obj)
     published = 0
 
@@ -121,6 +199,9 @@ def ingest_once(
         )
         published += 1
 
+    if published > 0:
+        _update_last_seen(r, station.station_id, silence_threshold_s)
+
     return {
         "station_id": station.station_id,
         "ok": True,
@@ -132,23 +213,17 @@ def ingest_once(
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
+    p.add_argument("--config", required=True, help="Stations YAML path")
+    p.add_argument("--redis-url", default="redis://localhost:6379/0")
+    p.add_argument("--out-stream", default="meteovoid:observations")
+    p.add_argument("--poll-seconds", type=int, default=60)
+    p.add_argument("--once", action="store_true")
+    p.add_argument("--per-stream", action="store_true")
     p.add_argument(
-        "--config",
-        required=True,
-        help="Stations YAML path, ex: config/stations_europe.yaml",
-    )
-    p.add_argument("--redis-url", default="redis://localhost:6379/0", help="Redis URL")
-    p.add_argument(
-        "--out-stream",
-        default="meteovoid:observations",
-        help="Redis stream for observations",
-    )
-    p.add_argument("--poll-seconds", type=int, default=600, help="Polling interval in seconds")
-    p.add_argument("--once", action="store_true", help="Fetch once and exit")
-    p.add_argument(
-        "--per-stream",
-        action="store_true",
-        help="Also write per station/variable stream",
+        "--silence-threshold-s",
+        type=int,
+        default=_DEFAULT_SILENCE_S,
+        help="Seconds without data before a station is flagged as silent.",
     )
     args = p.parse_args(argv)
 
@@ -157,9 +232,12 @@ def main(argv: list[str] | None = None) -> int:
 
     r = redis.Redis.from_url(args.redis_url, decode_responses=True)
 
+    cycle = 0
     while True:
+        cycle += 1
         t0 = time.time()
         results: list[dict[str, Any]] = []
+
         for st in stations:
             try:
                 res = ingest_once(
@@ -167,24 +245,31 @@ def main(argv: list[str] | None = None) -> int:
                     station=st,
                     out_stream=args.out_stream,
                     per_stream=args.per_stream,
+                    silence_threshold_s=args.silence_threshold_s,
                 )
-            except (URLError, TimeoutError, ValueError, OSError) as e:
-                res = {"station_id": st.station_id, "ok": False, "error": str(e)}
+            except Exception as exc:
+                res = {"station_id": st.station_id, "ok": False, "error": str(exc)}
             results.append(res)
+
+        # Silence check after publishing
+        try:
+            for st in stations:
+                if check_station_silence(r, st.station_id, silence_threshold_s=args.silence_threshold_s):
+                    _log.warning("ingest.station_silent", station_id=st.station_id, threshold_s=args.silence_threshold_s)
+        except Exception:
+            pass
 
         ok = sum(1 for x in results if x.get("ok"))
         pub = sum(int(x.get("published", 0) or 0) for x in results if x.get("ok"))
-        dt = time.time() - t0
-        print(
-            json.dumps(
-                {
-                    "ok_stations": ok,
-                    "stations": len(results),
-                    "published": pub,
-                    "seconds": round(dt, 3),
-                },
-                sort_keys=True,
-            )
+        dt = round(time.time() - t0, 3)
+
+        _log.info(
+            "ingest.cycle",
+            cycle=cycle,
+            ok_stations=ok,
+            stations=len(results),
+            published=pub,
+            seconds=dt,
         )
 
         if args.once:

@@ -11,10 +11,25 @@ from meteovoid.stations_config import StationSpec
 class FakeRedis:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[Any, Any]]] = []
+        self._store: dict[str, Any] = {}
 
     def xadd(self, stream: str, fields: dict[Any, Any], **kwargs: Any) -> str:  # noqa: ANN401
         self.calls.append((stream, dict(fields)))
         return "0-1"
+
+    def set(self, key: str, value: Any, **kwargs: Any) -> None:  # noqa: ANN401
+        self._store[key] = value
+
+    def get(self, key: str) -> Any:  # noqa: ANN401
+        return self._store.get(key)
+
+    def delete(self, *keys: str) -> int:
+        removed = 0
+        for k in keys:
+            if k in self._store:
+                del self._store[k]
+                removed += 1
+        return removed
 
 
 def test_build_openmeteo_url_contains_expected_query() -> None:
