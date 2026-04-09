@@ -1,4 +1,20 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: meteovoid
+      POSTGRES_USER: meteovoid
+      POSTGRES_PASSWORD: meteovoid
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meteovoid -d meteovoid"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
   redis:
     image: redis:7-alpine
     ports:
@@ -10,15 +26,38 @@ services:
       retries: 30
 
   # NOTE: the Docker image sets ENTRYPOINT ["meteovoid"].
-  # Therefore service commands must be MeteoVoid CLI subcommands (scan/simulate/live/serve),
+  # Therefore service commands must be MeteoVoid CLI subcommands (scan/simulate/live/serve/ingest),
   # not "python -m ..." nor "uvicorn ...".
-  meteovoid-live:
+
+  meteovoid-ingest-europe:
     build: .
     depends_on:
       redis:
         condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379/0
+    command:
+      - ingest
+      - --config
+      - config/stations_europe.yaml
+      - --redis-url
+      - redis://redis:6379/0
+      - --out-stream
+      - meteovoid:observations
+      - --poll-seconds
+      - "60"
+    restart: unless-stopped
+
+  meteovoid-live:
+    build: .
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql://meteovoid:meteovoid@postgres:5432/meteovoid
     command:
       - live
       - --redis-url
@@ -27,14 +66,18 @@ services:
       - meteovoid:observations
       - --out-stream
       - meteovoid:reports
+    restart: unless-stopped
 
   meteovoid-api:
     build: .
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
     environment:
       REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql://meteovoid:meteovoid@postgres:5432/meteovoid
     ports:
       - "8000:8000"
     command:
@@ -54,8 +97,12 @@ services:
       interval: 3s
       timeout: 3s
       retries: 30
+    restart: unless-stopped
 
+  # Dev/demo mode only: generates synthetic observations instead of real data.
+  # Activate with: docker compose --profile demo up
   meteovoid-simulate:
+    profiles: [demo]
     build: .
     depends_on:
       redis:
@@ -77,24 +124,5 @@ services:
       - --sleep
       - "0.01"
 
-  # Optional ingest service: keep python module execution by overriding entrypoint.
-  meteovoid-ingest-europe:
-    build: .
-    depends_on:
-      redis:
-        condition: service_healthy
-    environment:
-      REDIS_URL: redis://redis:6379/0
-    entrypoint:
-      - python
-    command:
-      - -m
-      - meteovoid.ingest_europe
-      - --config
-      - config/stations_europe.yaml
-      - --redis-url
-      - redis://redis:6379/0
-      - --out-stream
-      - meteovoid:observations
-      - --poll-seconds
-      - "600"
+volumes:
+  postgres_data:

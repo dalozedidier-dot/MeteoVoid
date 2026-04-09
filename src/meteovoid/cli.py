@@ -65,5 +65,37 @@ def serve(host: str = "0.0.0.0", port: int = 8000) -> None:
     uvicorn.run("meteovoid.api:app", host=host, port=port)
 
 
+@app.command()
+def ingest(
+    config: Path = typer.Option(
+        Path("config/stations_europe.yaml"),
+        "--config",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        help="Stations YAML config path.",
+    ),
+    redis_url: str = typer.Option("redis://redis:6379/0", "--redis-url"),
+    out_stream: str = typer.Option("meteovoid:observations", "--out-stream"),
+    poll_seconds: int = typer.Option(60, "--poll-seconds", help="Polling interval in seconds."),
+    once: bool = typer.Option(False, "--once", help="Fetch once and exit."),
+    per_stream: bool = typer.Option(False, "--per-stream", help="Also write per-station/variable stream."),
+) -> None:
+    """Ingest live weather observations from Open-Meteo into Redis Streams (production mode)."""
+    from .ingest_europe import main as _ingest_main
+
+    argv = [
+        "--config", str(config),
+        "--redis-url", redis_url,
+        "--out-stream", out_stream,
+        "--poll-seconds", str(poll_seconds),
+    ]
+    if once:
+        argv.append("--once")
+    if per_stream:
+        argv.append("--per-stream")
+    raise SystemExit(_ingest_main(argv))
+
+
 def main() -> None:
     app()
