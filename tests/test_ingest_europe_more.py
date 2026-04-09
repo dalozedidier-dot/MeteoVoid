@@ -67,6 +67,7 @@ def test_main_once_runs_and_prints_summary(
         station: Any,
         out_stream: str,
         per_stream: bool,
+        silence_threshold_s: int = 300,
     ) -> dict[str, Any]:  # noqa: ANN401,ARG001
         return {
             "station_id": station.station_id,
@@ -81,8 +82,9 @@ def test_main_once_runs_and_prints_summary(
     rc = ie.main(["--config", "config/stations_europe.yaml", "--once"])
     assert rc == 0
 
+    # Log output is structured JSON: find the ingest.cycle line
     out = capsys.readouterr().out.strip()
-    obj = json.loads(out)
+    obj = next(json.loads(line) for line in out.splitlines() if "ingest.cycle" in line)
     assert obj["ok_stations"] == 1
     assert obj["stations"] == 1
     assert obj["published"] == 1
@@ -111,6 +113,7 @@ def test_main_once_handles_ingest_errors(
         station: Any,
         out_stream: str,
         per_stream: bool,
+        silence_threshold_s: int = 300,
     ) -> dict[str, Any]:  # noqa: ANN401,ARG001
         raise URLError("network down")
 
@@ -120,7 +123,7 @@ def test_main_once_handles_ingest_errors(
     assert rc == 0
 
     out = capsys.readouterr().out.strip()
-    obj = json.loads(out)
+    obj = next(json.loads(line) for line in out.splitlines() if "ingest.cycle" in line)
     assert obj["ok_stations"] == 0
     assert obj["stations"] == 1
     assert obj["published"] == 0

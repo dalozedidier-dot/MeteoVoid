@@ -5,11 +5,14 @@ import os
 import time
 from typing import Any, Protocol, cast
 
-from fastapi import FastAPI, Path, Query
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi import Body, FastAPI, Path, Query
+from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 
 from . import db as _db
+from .log import get_logger
 from .utils import make_redis
+
+_log = get_logger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 OUT_STREAM = os.getenv("METEOVOID_OUT_STREAM", "meteovoid:reports")
@@ -172,6 +175,45 @@ def metrics(redis_url: str = REDIS_URL) -> str:
         labels = f'station_id="{_prom_escape(station_id)}",variable="{_prom_escape(variable)}"'
         lines.append(f"meteovoid_latest_age_seconds{{{labels}}} {age:.6f}")
         lines.append(f"meteovoid_latest_score{{{labels}}} {score_f:.6f}")
+
+    # Severity breakdown counters (live)
+    sev_counts: dict[str, int] = {"high": 0, "medium": 0, "low": 0}
+    for k in keys:
+        raw2 = r.get(k)
+        if raw2 is None:
+            continue
+        try:
+            p2: Any = json.loads(raw2)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(p2, dict):
+            continue
+        sev = str((p2.get("meteo") or {}).get("severity", "low"))
+        sev_counts[sev] = sev_counts.get(sev, 0) + 1
+
+    lines.append("# HELP meteovoid_stations_by_severity Number of stations at each severity level.")
+    lines.append("# TYPE meteovoid_stations_by_severity gauge")
+    for sev, cnt in sev_counts.items():
+        lines.append(f'meteovoid_stations_by_severity{{severity="{sev}"}} {cnt}')
+
+    # Station silence flags (Redis)
+    silent_count = 0
+    for k in keys:
+        parts2 = k.split(":")
+        if len(parts2) >= 3:
+            sid2 = parts2[2]
+            if r.get(f"meteovoid:silence:{sid2}") is not None:
+                silent_count += 1
+    lines.append("# HELP meteovoid_silent_stations Number of stations flagged as silent.")
+    lines.append("# TYPE meteovoid_silent_stations gauge")
+    lines.append(f"meteovoid_silent_stations {silent_count}")
+
+    # Open alert count from DB
+    db_summary = _db.query_summary()
+    open_alerts = int(db_summary.get("open_alerts", 0)) if isinstance(db_summary, dict) else 0
+    lines.append("# HELP meteovoid_open_alerts Number of currently open alerts.")
+    lines.append("# TYPE meteovoid_open_alerts gauge")
+    lines.append(f"meteovoid_open_alerts {open_alerts}")
 
     # Stream backlog, if supported by the redis client
     try:
@@ -464,6 +506,274 @@ def top_anomalies_http(
     return {"status": "ok", "hours": hours, "count": len(items), "items": items}
 
 
+# ---------------------------------------------------------------------------
+# SSE — real-time stream of reports
+# ---------------------------------------------------------------------------
+
+@app.get("/events")
+def events_sse() -> StreamingResponse:  # pragma: no cover
+    """Server-Sent Events: pushes every new report as it's computed by the worker.
+
+    Clients connect once and receive events without polling.
+    Each event is a JSON-encoded report followed by two newlines.
+    A keepalive comment (': keepalive') is emitted every 2 s when idle.
+    """
+    def _generate() -> Any:
+        r = make_redis(REDIS_URL)
+        xread = getattr(r, "xread", None)
+        if not callable(xread):
+            yield ": unsupported\n\n"
+            return
+        last_id = "$"
+        while True:
+            try:
+                resp_any = xread({OUT_STREAM: last_id}, block=2000, count=20)
+                if not resp_any:
+                    yield ": keepalive\n\n"
+                    continue
+                for _stream, messages in resp_any:
+                    for msg_id, fields in messages:
+                        last_id = msg_id
+                        payload_raw = (
+                            fields.get(b"payload") or fields.get("payload")
+                        )
+                        if payload_raw is None:
+                            continue
+                        try:
+                            data = json.loads(payload_raw)
+                        except (json.JSONDecodeError, TypeError):
+                            continue
+                        yield f"data: {json.dumps(data, separators=(',', ':'))}\n\n"
+            except Exception as exc:
+                _log.warning("sse.error", exc=str(exc))
+                time.sleep(1)
+                yield ": retry\n\n"
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Alert lifecycle endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/alerts/{alert_id}")
+def alert_detail_http(
+    alert_id: int = Path(..., description="Alert ID"),
+) -> dict[str, Any]:  # pragma: no cover
+    """Fetch one alert with its full lifecycle history."""
+    detail = _db.get_alert_detail(alert_id)
+    if detail is None:
+        return {"status": "not_found", "alert_id": alert_id}
+    return {"status": "ok", "alert": detail}
+
+
+def _alert_action(alert_id: int, status: str, comment: str | None) -> dict[str, Any]:  # pragma: no cover
+    ok = _db.update_alert_status(alert_id, status, comment)
+    if not ok:
+        return {"status": "not_found_or_invalid", "alert_id": alert_id}
+    return {"status": "ok", "alert_id": alert_id, "new_status": status}
+
+
+@app.post("/alerts/{alert_id}/ack")
+def alert_ack_http(
+    alert_id: int = Path(...),
+    comment: str | None = Body(None, embed=True),
+) -> dict[str, Any]:  # pragma: no cover
+    """Acknowledge an alert (operator has seen it)."""
+    return _alert_action(alert_id, "acknowledged", comment)
+
+
+@app.post("/alerts/{alert_id}/resolve")
+def alert_resolve_http(
+    alert_id: int = Path(...),
+    comment: str | None = Body(None, embed=True),
+) -> dict[str, Any]:  # pragma: no cover
+    """Mark alert as resolved by operator."""
+    return _alert_action(alert_id, "resolved", comment)
+
+
+@app.post("/alerts/{alert_id}/ignore")
+def alert_ignore_http(
+    alert_id: int = Path(...),
+    comment: str | None = Body(None, embed=True),
+) -> dict[str, Any]:  # pragma: no cover
+    """Ignore an alert (false positive or not actionable)."""
+    return _alert_action(alert_id, "ignored", comment)
+
+
+# ---------------------------------------------------------------------------
+# Station enriched endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/stations/{sid}/status")
+def station_status_http(
+    sid: str = Path(..., description="Station ID"),
+) -> dict[str, Any]:  # pragma: no cover
+    """Comprehensive status for a station: live snapshot + open alerts + freshness."""
+    r = _make_redis(REDIS_URL)
+    keys = _iter_latest_keys(r, f"meteovoid:latest:{sid}:*")
+
+    variables: dict[str, Any] = {}
+    worst_severity = "low"
+    oldest_ts: float | None = None
+    sev_order = {"high": 2, "medium": 1, "low": 0}
+
+    for k in keys:
+        parts = k.split(":")
+        if len(parts) < 4:
+            continue
+        variable = ":".join(parts[3:])
+        raw = r.get(k)
+        if raw is None:
+            continue
+        try:
+            p: Any = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(p, dict):
+            continue
+        sev = str((p.get("meteo") or {}).get("severity", "low"))
+        if sev_order.get(sev, 0) > sev_order.get(worst_severity, 0):
+            worst_severity = sev
+        ts_val = float(p.get("ts_ingest") or p.get("ts") or 0.0)
+        if oldest_ts is None or ts_val < oldest_ts:
+            oldest_ts = ts_val
+        variables[variable] = {
+            "score": p.get("score"),
+            "state": p.get("state"),
+            "severity": sev,
+            "ts": p.get("ts"),
+            "ts_ingest": p.get("ts_ingest"),
+            "interpretation": (p.get("meteo") or {}).get("interpretation"),
+            "flags": (p.get("meteo") or {}).get("flags", []),
+        }
+
+    now = time.time()
+    last_seen_raw = r.get(f"meteovoid:ingest_last_seen:{sid}")
+    silence_raw = r.get(f"meteovoid:silence:{sid}")
+    last_seen_s: float | None = None
+    try:
+        last_seen_s = float(last_seen_raw) if last_seen_raw else None
+    except (TypeError, ValueError):
+        pass
+
+    open_alerts = _db.query_alerts(station_id=sid, status="open", limit=20)
+
+    return {
+        "status": "ok",
+        "station_id": sid,
+        "severity": worst_severity,
+        "variables": variables,
+        "freshness": {
+            "last_ingest_ts": last_seen_s,
+            "age_s": round(now - last_seen_s, 1) if last_seen_s else None,
+            "is_silent": silence_raw is not None,
+        },
+        "open_alerts": open_alerts,
+    }
+
+
+@app.get("/stations/{sid}/timeseries")
+def station_timeseries_http(
+    sid: str = Path(..., description="Station ID"),
+    variable: str = Query(..., description="Variable name"),
+    hours: float = Query(6.0, ge=0.1, le=168.0),
+    limit: int = Query(500, ge=1, le=5000),
+) -> dict[str, Any]:  # pragma: no cover
+    """Score timeseries for a station/variable. Suitable for charting."""
+    since = time.time() - hours * 3600
+    items = _db.query_timeseries(
+        station_id=sid, variable=variable, since=since, limit=limit
+    )
+    return {
+        "status": "ok",
+        "station_id": sid,
+        "variable": variable,
+        "hours": hours,
+        "count": len(items),
+        "items": items,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Region summary
+# ---------------------------------------------------------------------------
+
+@app.get("/regions/{region}/summary")
+def region_summary_http(
+    region: str = Path(..., description="Region prefix (e.g. BE, FR, DE)"),
+) -> dict[str, Any]:  # pragma: no cover
+    """Aggregate score/alert stats for all stations in a region (last 1h)."""
+    return _db.query_region_summary(region)
+
+
+# ---------------------------------------------------------------------------
+# Thresholds
+# ---------------------------------------------------------------------------
+
+@app.get("/thresholds")
+def thresholds_http(
+    station_id: str | None = Query(None),
+    variable: str | None = Query(None),
+) -> dict[str, Any]:  # pragma: no cover
+    """List configured scoring thresholds."""
+    items = _db.get_thresholds(station_id=station_id, variable=variable)
+    return {"status": "ok", "count": len(items), "items": items}
+
+
+@app.post("/thresholds")
+def thresholds_upsert_http(
+    variable: str = Body(..., embed=True),
+    watch_threshold: float | None = Body(None, embed=True),
+    alert_threshold: float | None = Body(None, embed=True),
+    station_id: str | None = Body(None, embed=True),
+) -> dict[str, Any]:  # pragma: no cover
+    """Create or update a threshold for a variable (optionally per-station)."""
+    ok = _db.upsert_threshold(
+        variable=variable,
+        watch_threshold=watch_threshold,
+        alert_threshold=alert_threshold,
+        station_id=station_id,
+    )
+    return {"status": "ok" if ok else "error", "variable": variable, "station_id": station_id}
+
+
+# ---------------------------------------------------------------------------
+# Sources health
+# ---------------------------------------------------------------------------
+
+@app.get("/sources/health")
+def sources_health_http() -> dict[str, Any]:  # pragma: no cover
+    """Latest ingest success/failure per station.
+    Augmented with live Redis silence flags."""
+    r = _make_redis(REDIS_URL)
+    items = _db.query_ingest_health()
+    now = time.time()
+
+    for item in items:
+        sid = item.get("station_id", "")
+        last_seen_raw = r.get(f"meteovoid:ingest_last_seen:{sid}")
+        silence_raw = r.get(f"meteovoid:silence:{sid}")
+        last_seen_s: float | None = None
+        try:
+            last_seen_s = float(last_seen_raw) if last_seen_raw else None
+        except (TypeError, ValueError):
+            pass
+        item["last_ingest_ts"] = last_seen_s
+        item["age_s"] = round(now - last_seen_s, 1) if last_seen_s else None
+        item["is_silent"] = silence_raw is not None
+
+    return {"status": "ok", "count": len(items), "items": items}
+
+
 @app.get("/", response_class=HTMLResponse)
 def root() -> HTMLResponse:  # pragma: no cover
     return dashboard()
@@ -485,532 +795,573 @@ def _build_dashboard_html() -> str:  # pragma: no cover
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     :root {
-      --bg: #0f1117;
-      --surface: #1a1d27;
-      --border: #2a2d3a;
-      --text: #e2e4f0;
-      --muted: #6b7194;
-      --high: #ef4444;
-      --medium: #f59e0b;
-      --low: #22c55e;
-      --accent: #6366f1;
+      --bg:#0f1117; --surface:#1a1d27; --border:#2a2d3a;
+      --text:#e2e4f0; --muted:#6b7194;
+      --high:#ef4444; --medium:#f59e0b; --low:#22c55e; --accent:#6366f1;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
-      font-size: 14px;
-    }
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 14px 20px;
-      border-bottom: 1px solid var(--border);
-      background: var(--surface);
-    }
-    header h1 { font-size: 18px; font-weight: 700; letter-spacing: .5px; }
-    header h1 span { color: var(--accent); }
-    #refresh-info { font-size: 12px; color: var(--muted); }
-    #status-bar {
-      display: flex; gap: 16px; padding: 10px 20px;
-      background: var(--surface); border-bottom: 1px solid var(--border);
-      flex-wrap: wrap;
-    }
-    .stat-pill {
-      display: flex; align-items: center; gap: 6px;
-      background: var(--bg); border-radius: 20px;
-      padding: 4px 12px; font-size: 12px;
-    }
-    .stat-pill .dot {
-      width: 8px; height: 8px; border-radius: 50%;
-    }
-    .dot-high { background: var(--high); }
-    .dot-medium { background: var(--medium); }
-    .dot-low { background: var(--low); }
-    .dot-accent { background: var(--accent); }
-    #controls {
-      display: flex; gap: 10px; padding: 12px 20px;
-      flex-wrap: wrap; align-items: center;
-    }
-    #controls select, #controls input {
-      background: var(--surface); color: var(--text);
-      border: 1px solid var(--border); border-radius: 6px;
-      padding: 6px 10px; font-size: 13px;
-    }
-    #controls label { color: var(--muted); font-size: 12px; margin-right: 4px; }
-    #grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-      gap: 12px;
-      padding: 12px 20px;
-    }
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 14px;
-      transition: border-color .2s;
-      cursor: pointer;
-    }
-    .card:hover { border-color: var(--accent); }
-    .card.sev-high { border-left: 3px solid var(--high); }
-    .card.sev-medium { border-left: 3px solid var(--medium); }
-    .card.sev-low { border-left: 3px solid var(--low); }
-    .card-header {
-      display: flex; justify-content: space-between; align-items: flex-start;
-      margin-bottom: 8px;
-    }
-    .card-title { font-weight: 600; font-size: 13px; }
-    .card-var { font-size: 11px; color: var(--muted); margin-top: 2px; }
-    .badge {
-      font-size: 10px; font-weight: 700; padding: 2px 8px;
-      border-radius: 20px; text-transform: uppercase; letter-spacing: .5px;
-    }
-    .badge-high { background: rgba(239,68,68,.2); color: var(--high); }
-    .badge-medium { background: rgba(245,158,11,.2); color: var(--medium); }
-    .badge-low { background: rgba(34,197,94,.2); color: var(--low); }
-    .score-bar-bg {
-      height: 4px; background: var(--border); border-radius: 2px;
-      margin: 6px 0;
-    }
-    .score-bar-fill { height: 100%; border-radius: 2px; transition: width .5s; }
-    .fill-high { background: var(--high); }
-    .fill-medium { background: var(--medium); }
-    .fill-low { background: var(--low); }
-    .interp {
-      font-size: 12px; color: var(--muted); margin-top: 6px;
-      line-height: 1.4; min-height: 34px;
-    }
-    .flags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-    .flag-chip {
-      font-size: 10px; background: rgba(99,102,241,.15); color: #a5b4fc;
-      border-radius: 4px; padding: 1px 6px;
-    }
-    .chart-wrap { margin-top: 10px; height: 70px; }
-    .card-foot {
-      margin-top: 8px; font-size: 11px; color: var(--muted);
-      display: flex; justify-content: space-between;
-    }
-    #modal-overlay {
-      display: none; position: fixed; inset: 0;
-      background: rgba(0,0,0,.7); z-index: 100;
-      align-items: center; justify-content: center;
-    }
-    #modal-overlay.open { display: flex; }
-    #modal {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: 12px; padding: 20px;
-      width: min(700px, 95vw); max-height: 85vh; overflow-y: auto;
-    }
-    #modal h2 { font-size: 16px; margin-bottom: 14px; }
-    #modal-chart-wrap { height: 200px; margin: 14px 0; }
-    #modal-signals { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px,1fr)); gap: 8px; }
-    .sig-item {
-      background: var(--bg); border-radius: 6px; padding: 8px;
-    }
-    .sig-label { font-size: 11px; color: var(--muted); }
-    .sig-val { font-size: 20px; font-weight: 700; margin-top: 2px; }
-    #modal-close {
-      float: right; background: none; border: 1px solid var(--border);
-      color: var(--text); border-radius: 6px; padding: 4px 10px;
-      cursor: pointer; font-size: 13px;
-    }
-    #empty { text-align: center; padding: 60px; color: var(--muted); }
-    #empty h2 { font-size: 20px; margin-bottom: 8px; }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,sans-serif;font-size:14px;display:flex;flex-direction:column;height:100vh}
+    header{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--surface);flex-shrink:0}
+    header h1{font-size:17px;font-weight:700} header h1 span{color:var(--accent)}
+    #sse-dot{width:8px;height:8px;border-radius:50%;background:#4b5563;display:inline-block;margin-right:6px;transition:background .3s}
+    #sse-dot.live{background:var(--low);box-shadow:0 0 6px var(--low)}
+    #status-bar{display:flex;gap:12px;padding:8px 20px;background:var(--surface);border-bottom:1px solid var(--border);flex-wrap:wrap;flex-shrink:0}
+    .stat-pill{display:flex;align-items:center;gap:5px;background:var(--bg);border-radius:20px;padding:4px 12px;font-size:12px}
+    .dot{width:8px;height:8px;border-radius:50%}
+    .dot-high{background:var(--high)} .dot-medium{background:var(--medium)} .dot-low{background:var(--low)} .dot-accent{background:var(--accent)} .dot-warn{background:#f97316}
+    #main-layout{display:flex;flex:1;overflow:hidden}
+    #left{flex:1;overflow-y:auto;padding:12px 16px}
+    #right{width:340px;border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden;flex-shrink:0}
+    #controls{display:flex;gap:8px;padding:8px 0;flex-wrap:wrap;align-items:center;flex-shrink:0}
+    #controls select,#controls input{background:var(--surface);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:5px 8px;font-size:12px}
+    #controls label{color:var(--muted);font-size:11px;margin-right:2px}
+    #grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:10px}
+    .card{background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:12px;cursor:pointer;transition:border-color .2s}
+    .card:hover{border-color:var(--accent)}
+    .card.sev-high{border-left:3px solid var(--high)} .card.sev-medium{border-left:3px solid var(--medium)} .card.sev-low{border-left:3px solid var(--low)}
+    .card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}
+    .card-title{font-weight:600;font-size:13px} .card-var{font-size:11px;color:var(--muted);margin-top:1px}
+    .badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;text-transform:uppercase;letter-spacing:.4px}
+    .badge-high{background:rgba(239,68,68,.2);color:var(--high)} .badge-medium{background:rgba(245,158,11,.2);color:var(--medium)} .badge-low{background:rgba(34,197,94,.2);color:var(--low)}
+    .score-bar-bg{height:3px;background:var(--border);border-radius:2px;margin:5px 0}
+    .score-bar-fill{height:100%;border-radius:2px;transition:width .5s}
+    .fill-high{background:var(--high)} .fill-medium{background:var(--medium)} .fill-low{background:var(--low)}
+    .interp{font-size:11px;color:var(--muted);margin-top:5px;line-height:1.4;min-height:30px}
+    .flags{display:flex;flex-wrap:wrap;gap:3px;margin-top:5px}
+    .flag-chip{font-size:10px;background:rgba(99,102,241,.15);color:#a5b4fc;border-radius:4px;padding:1px 5px}
+    .chart-wrap{margin-top:8px;height:60px}
+    .card-foot{margin-top:7px;font-size:11px;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
+    .freshness{font-size:10px;padding:1px 5px;border-radius:3px}
+    .fresh{background:rgba(34,197,94,.15);color:var(--low)} .aging{background:rgba(245,158,11,.15);color:var(--medium)} .stale{background:rgba(239,68,68,.15);color:var(--high)}
+    /* Right panel */
+    #right-tabs{display:flex;border-bottom:1px solid var(--border);flex-shrink:0}
+    .rtab{flex:1;padding:9px;text-align:center;font-size:12px;cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;transition:color .2s}
+    .rtab.active{color:var(--text);border-bottom-color:var(--accent)}
+    .rpanel{display:none;flex:1;overflow-y:auto;padding:10px}
+    .rpanel.active{display:block}
+    /* Alert items */
+    .alert-item{background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:10px;margin-bottom:8px}
+    .alert-item.sev-high{border-left:3px solid var(--high)} .alert-item.sev-medium{border-left:3px solid var(--medium)}
+    .alert-meta{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:4px}
+    .alert-interp{font-size:12px;margin-top:4px;line-height:1.4}
+    .alert-actions{display:flex;gap:5px;margin-top:7px}
+    .btn-sm{font-size:11px;padding:3px 9px;border-radius:5px;border:1px solid var(--border);background:var(--surface);color:var(--text);cursor:pointer;transition:background .2s}
+    .btn-sm:hover{background:var(--border)}
+    .btn-ack{border-color:#6366f1;color:#a5b4fc} .btn-resolve{border-color:var(--low);color:var(--low)} .btn-ignore{border-color:var(--muted);color:var(--muted)}
+    /* Source health */
+    .src-item{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px}
+    .src-status{padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+    .src-ok{background:rgba(34,197,94,.15);color:var(--low)} .src-fail{background:rgba(239,68,68,.15);color:var(--high)} .src-silent{background:rgba(245,158,11,.15);color:var(--medium)}
+    /* Modal */
+    #modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center}
+    #modal-overlay.open{display:flex}
+    #modal{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;width:min(720px,95vw);max-height:88vh;overflow-y:auto}
+    #modal h2{font-size:15px;margin-bottom:10px}
+    #modal-chart-wrap{height:180px;margin:12px 0}
+    #modal-signals{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:7px}
+    .sig-item{background:var(--bg);border-radius:6px;padding:7px}
+    .sig-label{font-size:10px;color:var(--muted)} .sig-val{font-size:18px;font-weight:700;margin-top:1px}
+    #modal-close{float:right;background:none;border:1px solid var(--border);color:var(--text);border-radius:6px;padding:3px 9px;cursor:pointer;font-size:12px}
+    #empty{text-align:center;padding:50px;color:var(--muted)}
+    .section-title{font-size:12px;font-weight:600;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px}
   </style>
 </head>
 <body>
-
 <header>
   <div>
     <h1>Meteo<span>Void</span></h1>
-    <div style="font-size:11px;color:var(--muted);margin-top:2px;">
-      Surveillance des anomalies et ruptures de cohérence des flux météo
-    </div>
+    <div style="font-size:10px;color:var(--muted);margin-top:1px">Surveillance des anomalies et ruptures de cohérence des flux météo</div>
   </div>
-  <div id="refresh-info">Actualisation dans <span id="countdown">15</span>s</div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <span id="sse-dot"></span><span id="sse-label" style="font-size:11px;color:var(--muted)">Connexion…</span>
+    <span id="stat-time" style="font-size:11px;color:var(--muted)"></span>
+  </div>
 </header>
 
 <div id="status-bar">
-  <div class="stat-pill">
-    <div class="dot dot-accent"></div>
-    <span id="stat-stations">— stations</span>
-  </div>
-  <div class="stat-pill">
-    <div class="dot dot-high"></div>
-    <span id="stat-high">— alerte haute</span>
-  </div>
-  <div class="stat-pill">
-    <div class="dot dot-medium"></div>
-    <span id="stat-medium">— surveillance</span>
-  </div>
-  <div class="stat-pill">
-    <div class="dot dot-low"></div>
-    <span id="stat-low">— stables</span>
-  </div>
-  <div class="stat-pill" style="margin-left:auto">
-    <div class="dot dot-accent"></div>
-    <span id="stat-time">—</span>
-  </div>
+  <div class="stat-pill"><div class="dot dot-accent"></div><span id="stat-stations">—</span></div>
+  <div class="stat-pill"><div class="dot dot-high"></div><span id="stat-high">—</span></div>
+  <div class="stat-pill"><div class="dot dot-medium"></div><span id="stat-medium">—</span></div>
+  <div class="stat-pill"><div class="dot dot-low"></div><span id="stat-low">—</span></div>
+  <div class="stat-pill"><div class="dot dot-warn"></div><span id="stat-open-alerts">— alertes ouvertes</span></div>
+  <div class="stat-pill"><div class="dot dot-medium"></div><span id="stat-silent">— silencieuse(s)</span></div>
 </div>
 
-<div id="controls">
-  <div>
-    <label>Région</label>
-    <select id="filter-region">
-      <option value="">Toutes</option>
-    </select>
+<div id="main-layout">
+  <div id="left">
+    <div id="controls">
+      <div><label>Région</label><select id="filter-region"><option value="">Toutes</option></select></div>
+      <div><label>Variable</label><select id="filter-var"><option value="">Toutes</option></select></div>
+      <div><label>Sévérité min</label>
+        <select id="filter-sev">
+          <option value="">Toutes</option>
+          <option value="high">Haute</option>
+          <option value="medium">Moyenne</option>
+          <option value="low">Basse</option>
+        </select>
+      </div>
+      <div><label>Station</label><input id="filter-search" type="text" placeholder="Rechercher…" style="width:130px"></div>
+    </div>
+    <div id="grid"></div>
+    <div id="empty" style="display:none"><h2>Aucune donnée</h2><p>L'ingestion n'a pas encore produit de rapports, ou aucun filtre ne correspond.</p></div>
   </div>
-  <div>
-    <label>Variable</label>
-    <select id="filter-var">
-      <option value="">Toutes</option>
-    </select>
-  </div>
-  <div>
-    <label>Sévérité min</label>
-    <select id="filter-sev">
-      <option value="">Toutes</option>
-      <option value="high">Haute</option>
-      <option value="medium">Moyenne</option>
-      <option value="low">Basse</option>
-    </select>
-  </div>
-  <div>
-    <label>Recherche</label>
-    <input id="filter-search" type="text" placeholder="Station...">
-  </div>
-</div>
 
-<div id="grid"></div>
-<div id="empty" style="display:none">
-  <h2>Aucune donnée en direct</h2>
-  <p>L'ingestion n'a pas encore produit de rapports, ou aucun résultat ne correspond aux filtres.</p>
+  <div id="right">
+    <div id="right-tabs">
+      <div class="rtab active" onclick="switchTab('alerts')">Alertes ouvertes</div>
+      <div class="rtab" onclick="switchTab('sources')">Sources</div>
+      <div class="rtab" onclick="switchTab('top')">Top anomalies</div>
+    </div>
+    <div id="panel-alerts" class="rpanel active"></div>
+    <div id="panel-sources" class="rpanel"></div>
+    <div id="panel-top" class="rpanel"></div>
+  </div>
 </div>
 
 <div id="modal-overlay">
   <div id="modal">
     <button id="modal-close" onclick="closeModal()">Fermer</button>
     <h2 id="modal-title"></h2>
-    <div id="modal-interp" style="color:var(--muted);font-size:13px;margin-bottom:10px;"></div>
+    <div id="modal-interp" style="color:var(--muted);font-size:12px;margin-bottom:8px"></div>
     <div id="modal-chart-wrap"><canvas id="modal-chart"></canvas></div>
-    <div style="font-size:12px;color:var(--muted);margin-bottom:8px;">Signaux détecteurs</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:6px">Signaux détecteurs</div>
     <div id="modal-signals"></div>
+    <div id="modal-alerts" style="margin-top:12px"></div>
   </div>
 </div>
 
 <script>
-  const SEV_ORDER = {high:2, medium:1, low:0};
-  const REFRESH_S = 15;
-  let allData = [];
-  let charts = {};
-  let modalChart = null;
-  let countdown = REFRESH_S;
-  let selectedCard = null;
+const SEV={high:2,medium:1,low:0};
+const REFRESH_SIDEBAR=20000;
+let allData={};  // keyed by "sid:var"
+let charts={};
+let modalChart=null;
 
-  function sevClass(s){ return s==='high'?'sev-high':s==='medium'?'sev-medium':'sev-low'; }
-  function badgeClass(s){ return s==='high'?'badge-high':s==='medium'?'badge-medium':'badge-low'; }
-  function fillClass(s){ return s==='high'?'fill-high':s==='medium'?'fill-medium':'fill-low'; }
-  function sevLabel(s){ return s==='high'?'Alerte':s==='medium'?'Surveillance':'Stable'; }
+function sevClass(s){return s==='high'?'sev-high':s==='medium'?'sev-medium':'sev-low'}
+function badgeClass(s){return s==='high'?'badge-high':s==='medium'?'badge-medium':'badge-low'}
+function fillClass(s){return s==='high'?'fill-high':s==='medium'?'fill-medium':'fill-low'}
+function sevLabel(s){return s==='high'?'Alerte':s==='medium'?'Surveiller':'Stable'}
+function scoreColor(s){return s>=.7?'var(--high)':s>=.35?'var(--medium)':'var(--low)'}
 
-  function fmtTs(ts){
-    if(!ts) return '—';
-    const d = new Date(ts*1000);
-    return d.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  }
+function fmtTs(ts){
+  if(!ts)return'—';
+  return new Date(ts*1000).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+}
+function fmtAge(ts){
+  if(!ts)return'';
+  const age=Math.round(Date.now()/1000-ts);
+  if(age<90)return'à l'instant';
+  if(age<3600)return`il y a ${Math.round(age/60)} min`;
+  return`il y a ${Math.round(age/3600)} h`;
+}
+function freshClass(ts){
+  if(!ts)return'stale';
+  const age=Date.now()/1000-ts;
+  if(age<120)return'fresh';
+  if(age<600)return'aging';
+  return'stale';
+}
 
-  function scoreColor(s){
-    if(s>=0.7) return 'var(--high)';
-    if(s>=0.35) return 'var(--medium)';
-    return 'var(--low)';
-  }
+// ---------------------------------------------------------------------------
+// SSE
+// ---------------------------------------------------------------------------
+let sseConnected=false;
+function startSSE(){
+  const es=new EventSource('/events');
+  es.onopen=()=>{
+    sseConnected=true;
+    document.getElementById('sse-dot').className='dot dot-accent';
+    document.getElementById('sse-dot').id='sse-dot';
+    document.getElementById('sse-dot').classList.add('live');
+    document.getElementById('sse-label').textContent='Temps réel';
+  };
+  es.onmessage=(e)=>{
+    try{
+      const report=JSON.parse(e.data);
+      const key=`${report.station_id}:${report.variable}`;
+      allData[key]=report;
+      updateCard(report);
+      updateStatusBar();
+      document.getElementById('stat-time').textContent=new Date().toLocaleTimeString('fr-FR');
+    }catch(err){}
+  };
+  es.onerror=()=>{
+    sseConnected=false;
+    document.getElementById('sse-dot').classList.remove('live');
+    document.getElementById('sse-label').textContent='Reconnexion…';
+  };
+}
 
-  async function fetchAllLatest(){
-    const resp = await fetch('/stations');
-    const data = await resp.json();
-    const stMap = data.stations || {};
-    const promises = [];
-    for(const [sid, vars] of Object.entries(stMap)){
+// ---------------------------------------------------------------------------
+// Initial REST load
+// ---------------------------------------------------------------------------
+async function initialLoad(){
+  try{
+    const resp=await fetch('/stations');
+    const data=await resp.json();
+    const stMap=data.stations||{};
+    const promises=[];
+    for(const[sid,vars]of Object.entries(stMap)){
       for(const v of vars){
         promises.push(
           fetch(`/latest?station_id=${encodeURIComponent(sid)}&variable=${encodeURIComponent(v)}`)
-            .then(r=>r.json())
-            .catch(()=>null)
+            .then(r=>r.json()).catch(()=>null)
         );
       }
     }
-    const results = await Promise.all(promises);
-    return results.filter(r=>r && r.station_id);
-  }
-
-  async function fetchHistory(sid, variable){
-    try{
-      const r = await fetch(`/stations/${encodeURIComponent(sid)}/history?variable=${encodeURIComponent(variable)}&limit=40&source=stream`);
-      return await r.json();
-    }catch(e){ return null; }
-  }
-
-  function buildMiniChart(canvasId, histItems){
-    if(charts[canvasId]){ charts[canvasId].destroy(); }
-    const canvas = document.getElementById(canvasId);
-    if(!canvas) return;
-    const labels = histItems.map(i=>fmtTs(i.ts));
-    const scores = histItems.map(i=>+(i.score||0).toFixed(3));
-    charts[canvasId] = new Chart(canvas, {
-      type:'line',
-      data:{
-        labels,
-        datasets:[{
-          data: scores,
-          borderColor:'#6366f1',
-          backgroundColor:'rgba(99,102,241,.08)',
-          borderWidth:1.5,
-          pointRadius:0,
-          fill:true,
-          tension:0.3
-        }]
-      },
-      options:{
-        animation:false,
-        plugins:{legend:{display:false},tooltip:{enabled:false}},
-        scales:{
-          x:{display:false},
-          y:{display:false,min:0,max:1}
-        },
-        responsive:true,
-        maintainAspectRatio:false
+    const results=await Promise.all(promises);
+    for(const r of results){
+      if(r&&r.station_id){
+        allData[`${r.station_id}:${r.variable}`]=r;
       }
-    });
+    }
+    populateFilters();
+    renderAll();
+    updateStatusBar();
+  }catch(e){console.error('initialLoad',e)}
+}
+
+// ---------------------------------------------------------------------------
+// Card rendering
+// ---------------------------------------------------------------------------
+function getFilters(){
+  return{
+    region:document.getElementById('filter-region').value,
+    variable:document.getElementById('filter-var').value,
+    sev:document.getElementById('filter-sev').value,
+    search:document.getElementById('filter-search').value.toLowerCase().trim()
+  };
+}
+
+function filteredData(){
+  const f=getFilters();
+  return Object.values(allData).filter(item=>{
+    const sid=(item.station_id||'').toLowerCase();
+    const variable=(item.variable||'').toLowerCase();
+    const sev=(item.meteo||{}).severity||'low';
+    const region=(item.station_id||'').split('_')[0].toLowerCase();
+    if(f.region&&region!==f.region)return false;
+    if(f.variable&&variable!==f.variable)return false;
+    if(f.sev&&sev!==f.sev)return false;
+    if(f.search&&!sid.includes(f.search)&&!variable.includes(f.search))return false;
+    return true;
+  }).sort((a,b)=>{
+    const sa=(a.meteo||{}).severity||'low', sb=(b.meteo||{}).severity||'low';
+    const d=(SEV[sb]||0)-(SEV[sa]||0);
+    return d!==0?d:(b.score||0)-(a.score||0);
+  });
+}
+
+function populateFilters(){
+  const all=Object.values(allData);
+  const regions=[...new Set(all.map(d=>(d.station_id||'').split('_')[0].toLowerCase()))].sort();
+  const variables=[...new Set(all.map(d=>d.variable||''))].sort();
+  const rSel=document.getElementById('filter-region');
+  const vSel=document.getElementById('filter-var');
+  const cr=rSel.value,cv=vSel.value;
+  rSel.innerHTML='<option value="">Toutes</option>'+regions.map(r=>`<option value="${r}">${r.toUpperCase()}</option>`).join('');
+  vSel.innerHTML='<option value="">Toutes</option>'+variables.map(v=>`<option value="${v}">${v}</option>`).join('');
+  if(cr)rSel.value=cr;
+  if(cv)vSel.value=cv;
+}
+
+function renderAll(){
+  const filtered=filteredData();
+  const grid=document.getElementById('grid');
+  const empty=document.getElementById('empty');
+  for(const id in charts){try{charts[id].destroy()}catch(e){}}
+  charts={};
+  grid.innerHTML='';
+  if(!filtered.length){empty.style.display='block';return}
+  empty.style.display='none';
+  for(const item of filtered) renderCardInto(item,grid);
+}
+
+function renderCardInto(item,container){
+  const sid=item.station_id||'';
+  const variable=item.variable||'';
+  const meteo=item.meteo||{};
+  const sev=meteo.severity||'low';
+  const score=+(item.score||0);
+  const flags=meteo.flags||[];
+  const interp=meteo.interpretation||'';
+  const cardId=`card-${sid}-${variable}`.replace(/[^a-zA-Z0-9-]/g,'_');
+  const chartId=`chart-${cardId}`;
+  const tsIngest=+(item.ts_ingest||item.ts||0);
+  const fc=freshClass(tsIngest);
+
+  const div=document.createElement('div');
+  div.className=`card ${sevClass(sev)}`;
+  div.id=cardId;
+  div.dataset.sid=sid;
+  div.dataset.var=variable;
+  div.innerHTML=`
+    <div class="card-header">
+      <div><div class="card-title">${sid}</div><div class="card-var">${variable}</div></div>
+      <span class="badge ${badgeClass(sev)}">${sevLabel(sev)}</span>
+    </div>
+    <div class="score-bar-bg"><div class="score-bar-fill ${fillClass(sev)}" id="bar-${cardId}" style="width:${Math.round(score*100)}%"></div></div>
+    <div style="font-size:11px;color:var(--muted);margin-top:2px">Score&thinsp;<strong style="color:${scoreColor(score)}">${score.toFixed(3)}</strong></div>
+    <div class="interp">${interp||'—'}</div>
+    <div class="flags">${flags.map(f=>`<span class="flag-chip">${f}</span>`).join('')}</div>
+    <div class="chart-wrap"><canvas id="${chartId}"></canvas></div>
+    <div class="card-foot">
+      <span>${fmtTs(item.ts)}</span>
+      <span class="freshness ${fc}">${fmtAge(tsIngest)}</span>
+    </div>`;
+  div.addEventListener('click',()=>openModal(item));
+  container.appendChild(div);
+}
+
+function updateCard(item){
+  const sid=item.station_id||'';
+  const variable=item.variable||'';
+  const cardId=`card-${sid}-${variable}`.replace(/[^a-zA-Z0-9-]/g,'_');
+  const existing=document.getElementById(cardId);
+  const meteo=item.meteo||{};
+  const sev=meteo.severity||'low';
+  const score=+(item.score||0);
+  const tsIngest=+(item.ts_ingest||item.ts||0);
+
+  // If card is visible, update it in place; otherwise re-render grid
+  if(existing){
+    existing.className=`card ${sevClass(sev)}`;
+    const bar=document.getElementById(`bar-${cardId}`);
+    if(bar){bar.style.width=`${Math.round(score*100)}%`; bar.className=`score-bar-fill ${fillClass(sev)}`}
+    const interp=existing.querySelector('.interp');
+    if(interp) interp.textContent=(meteo.interpretation||'—');
+    const flags=existing.querySelector('.flags');
+    if(flags) flags.innerHTML=(meteo.flags||[]).map(f=>`<span class="flag-chip">${f}</span>`).join('');
+    const foot=existing.querySelectorAll('.card-foot span');
+    if(foot[0]) foot[0].textContent=fmtTs(item.ts);
+    if(foot[1]){foot[1].textContent=fmtAge(tsIngest);foot[1].className=`freshness ${freshClass(tsIngest)}`}
+    const badge=existing.querySelector('.badge');
+    if(badge){badge.textContent=sevLabel(sev);badge.className=`badge ${badgeClass(sev)}`}
+    const scoreEl=existing.querySelector('strong');
+    if(scoreEl){scoreEl.textContent=score.toFixed(3);scoreEl.style.color=scoreColor(score)}
+  } else {
+    // Card not visible — may need to add it (filter might now match)
+    populateFilters();
+    renderAll();
   }
+}
 
-  async function renderCard(item, container){
-    const sid = item.station_id || '';
-    const variable = item.variable || '';
-    const meteo = item.meteo || {};
-    const sev = meteo.severity || 'low';
-    const score = +(item.score||0);
-    const flags = meteo.flags || [];
-    const interp = meteo.interpretation || '';
-    const cardId = `card-${sid}-${variable}`.replace(/[^a-zA-Z0-9-]/g,'_');
-    const chartId = `chart-${cardId}`;
+function updateStatusBar(){
+  const all=Object.values(allData);
+  const high=all.filter(d=>(d.meteo||{}).severity==='high').length;
+  const medium=all.filter(d=>(d.meteo||{}).severity==='medium').length;
+  const low=all.filter(d=>(d.meteo||{}).severity==='low').length;
+  document.getElementById('stat-stations').textContent=`${all.length} station${all.length>1?'s':''}`;
+  document.getElementById('stat-high').textContent=`${high} alerte haute`;
+  document.getElementById('stat-medium').textContent=`${medium} surveillance`;
+  document.getElementById('stat-low').textContent=`${low} stable${low>1?'s':''}`;
+}
 
-    const flagsHtml = flags.map(f=>`<span class="flag-chip">${f}</span>`).join('');
+// ---------------------------------------------------------------------------
+// Right panel
+// ---------------------------------------------------------------------------
+function switchTab(name){
+  document.querySelectorAll('.rtab').forEach((t,i)=>{
+    const names=['alerts','sources','top'];
+    t.classList.toggle('active',names[i]===name);
+  });
+  document.querySelectorAll('.rpanel').forEach(p=>p.classList.remove('active'));
+  document.getElementById(`panel-${name}`).classList.add('active');
+  if(name==='alerts')loadOpenAlerts();
+  else if(name==='sources')loadSources();
+  else loadTopAnomalies();
+}
 
-    const div = document.createElement('div');
-    div.className = `card ${sevClass(sev)}`;
-    div.id = cardId;
-    div.dataset.sid = sid;
-    div.dataset.var = variable;
-    div.dataset.sev = sev;
-    div.dataset.region = (sid.split('_')[0]||'').toLowerCase();
-    div.innerHTML = `
-      <div class="card-header">
-        <div>
-          <div class="card-title">${sid}</div>
-          <div class="card-var">${variable}</div>
+async function loadOpenAlerts(){
+  const panel=document.getElementById('panel-alerts');
+  try{
+    const r=await fetch('/alerts?status=open&limit=30');
+    const data=await r.json();
+    const items=data.items||[];
+    document.getElementById('stat-open-alerts').textContent=`${items.length} alerte${items.length>1?'s':''} ouverte${items.length>1?'s':''}`;
+    if(!items.length){panel.innerHTML='<p style="color:var(--muted);font-size:12px;padding:10px">Aucune alerte ouverte.</p>';return}
+    panel.innerHTML='<div class="section-title">Alertes ouvertes</div>'+items.map(a=>`
+      <div class="alert-item sev-${a.severity}" id="alert-item-${a.id}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <strong style="font-size:12px">${a.station_id} — ${a.variable}</strong>
+          <span class="badge badge-${a.severity}" style="margin-left:6px">${a.severity==='high'?'Alerte':'Surveiller'}</span>
         </div>
-        <span class="badge ${badgeClass(sev)}">${sevLabel(sev)}</span>
-      </div>
-      <div class="score-bar-bg">
-        <div class="score-bar-fill ${fillClass(sev)}" style="width:${Math.round(score*100)}%"></div>
-      </div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px;">Score : <strong style="color:${scoreColor(score)}">${score.toFixed(3)}</strong></div>
-      <div class="interp">${interp || '—'}</div>
-      <div class="flags">${flagsHtml}</div>
-      <div class="chart-wrap"><canvas id="${chartId}"></canvas></div>
-      <div class="card-foot">
-        <span>${fmtTs(item.ts)}</span>
-        <span>${item.state||'—'}</span>
-      </div>
-    `;
-    div.addEventListener('click', ()=>openModal(item));
-    container.appendChild(div);
+        <div class="alert-interp">${a.interpretation||'—'}</div>
+        <div class="alert-meta">
+          <span>Score ${(a.score||0).toFixed(3)}</span>
+          <span>${fmtTs(a.ts)}</span>
+        </div>
+        <div class="alert-actions">
+          <button class="btn-sm btn-ack" onclick="alertAction(${a.id},'ack')">Acquitter</button>
+          <button class="btn-sm btn-resolve" onclick="alertAction(${a.id},'resolve')">Résoudre</button>
+          <button class="btn-sm btn-ignore" onclick="alertAction(${a.id},'ignore')">Ignorer</button>
+        </div>
+      </div>`).join('');
+  }catch(e){panel.innerHTML=`<p style="color:var(--muted);font-size:12px;padding:10px">Erreur: ${e}</p>`}
+}
 
-    // Mini history chart
-    const hist = await fetchHistory(sid, variable);
-    const histItems = (hist && hist.items) ? hist.items : [];
-    if(histItems.length > 1){
-      buildMiniChart(chartId, histItems);
+async function alertAction(id,action){
+  const ep=action==='ack'?'ack':action==='resolve'?'resolve':'ignore';
+  try{
+    const r=await fetch(`/alerts/${id}/${ep}`,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    const data=await r.json();
+    if(data.status==='ok'){
+      const el=document.getElementById(`alert-item-${id}`);
+      if(el)el.remove();
     }
-  }
+  }catch(e){}
+}
 
-  function getFilters(){
-    return {
-      region: document.getElementById('filter-region').value,
-      variable: document.getElementById('filter-var').value,
-      sev: document.getElementById('filter-sev').value,
-      search: document.getElementById('filter-search').value.toLowerCase().trim()
-    };
-  }
+async function loadSources(){
+  const panel=document.getElementById('panel-sources');
+  try{
+    const r=await fetch('/sources/health');
+    const data=await r.json();
+    const items=data.items||[];
+    const silent=items.filter(i=>i.is_silent).length;
+    document.getElementById('stat-silent').textContent=`${silent} silencieuse${silent>1?'s':''}`;
+    if(!items.length){panel.innerHTML='<p style="color:var(--muted);font-size:12px;padding:10px">Aucune donnée d'ingestion.</p>';return}
+    panel.innerHTML='<div class="section-title">Santé des sources</div>'+items.map(s=>{
+      const stClass=s.is_silent?'src-silent':s.status==='failing'?'src-fail':'src-ok';
+      const stLabel=s.is_silent?'Silencieuse':s.status==='failing'?'Erreur':'OK';
+      const age=s.age_s!=null?`${Math.round(s.age_s)}s`:'—';
+      return`<div class="src-item">
+        <div><div style="font-size:12px;font-weight:600">${s.station_id}</div><div style="font-size:11px;color:var(--muted)">Dernière: ${age} ago</div></div>
+        <span class="src-status ${stClass}">${stLabel}</span>
+      </div>`;
+    }).join('');
+  }catch(e){panel.innerHTML=`<p style="color:var(--muted);font-size:12px;padding:10px">Erreur: ${e}</p>`}
+}
 
-  function applyFilters(data){
-    const f = getFilters();
-    return data.filter(item=>{
-      const sid = (item.station_id||'').toLowerCase();
-      const variable = (item.variable||'').toLowerCase();
-      const sev = (item.meteo||{}).severity||'low';
-      const region = (sid.split('_')[0]||'');
-      if(f.region && region !== f.region) return false;
-      if(f.variable && variable !== f.variable) return false;
-      if(f.sev && sev !== f.sev) return false;
-      if(f.search && !sid.includes(f.search) && !variable.includes(f.search)) return false;
-      return true;
-    });
-  }
+async function loadTopAnomalies(){
+  const panel=document.getElementById('panel-top');
+  try{
+    const r=await fetch('/top_anomalies?limit=15&hours=1');
+    const data=await r.json();
+    const items=data.items||[];
+    if(!items.length){panel.innerHTML='<p style="color:var(--muted);font-size:12px;padding:10px">Aucune anomalie dans la dernière heure.</p>';return}
+    panel.innerHTML='<div class="section-title">Top anomalies (1h)</div>'+items.map(i=>`
+      <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:12px">
+        <div>
+          <div style="font-weight:600">${i.station_id}</div>
+          <div style="color:var(--muted);font-size:11px">${i.variable}</div>
+          <div style="color:var(--muted);font-size:11px;margin-top:2px">${(i.interpretation||'').substring(0,60)}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;margin-left:8px">
+          <div style="color:${scoreColor(i.score||0)};font-weight:700">${(i.score||0).toFixed(3)}</div>
+          <span class="badge badge-${i.severity||'low'}" style="font-size:9px">${i.severity||'low'}</span>
+        </div>
+      </div>`).join('');
+  }catch(e){panel.innerHTML=`<p style="color:var(--muted);font-size:12px;padding:10px">Erreur: ${e}</p>`}
+}
 
-  function populateFilters(data){
-    const regions = [...new Set(data.map(d=>(d.station_id||'').split('_')[0].toLowerCase()))].sort();
-    const variables = [...new Set(data.map(d=>d.variable||''))].sort();
-    const rSel = document.getElementById('filter-region');
-    const vSel = document.getElementById('filter-var');
-    const curR = rSel.value; const curV = vSel.value;
-    rSel.innerHTML = '<option value="">Toutes</option>' + regions.map(r=>`<option value="${r}">${r}</option>`).join('');
-    vSel.innerHTML = '<option value="">Toutes</option>' + variables.map(v=>`<option value="${v}">${v}</option>`).join('');
-    if(curR) rSel.value = curR;
-    if(curV) vSel.value = curV;
-  }
+// ---------------------------------------------------------------------------
+// Modal
+// ---------------------------------------------------------------------------
+async function openModal(item){
+  const sid=item.station_id||'';
+  const variable=item.variable||'';
+  const meteo=item.meteo||{};
+  const signals=item.signals||{};
+  document.getElementById('modal-title').textContent=`${sid} — ${variable}`;
+  document.getElementById('modal-interp').textContent=meteo.interpretation||'';
+  document.getElementById('modal-overlay').classList.add('open');
 
-  async function render(data){
-    const filtered = applyFilters(data);
-    filtered.sort((a,b)=>{
-      const sa = (a.meteo||{}).severity||'low';
-      const sb = (b.meteo||{}).severity||'low';
-      const diff = (SEV_ORDER[sb]||0)-(SEV_ORDER[sa]||0);
-      if(diff!==0) return diff;
-      return (b.score||0)-(a.score||0);
-    });
-
-    const grid = document.getElementById('grid');
-    const empty = document.getElementById('empty');
-    grid.innerHTML = '';
-    // Destroy all old mini charts
-    for(const id in charts){ try{ charts[id].destroy(); }catch(e){} }
-    charts = {};
-
-    if(filtered.length === 0){
-      empty.style.display = 'block';
-      return;
-    }
-    empty.style.display = 'none';
-
-    const frag = document.createDocumentFragment();
-    const tempDiv = document.createElement('div');
-    // Render cards one by one (async for charts)
-    const renderPromises = filtered.map(item=>renderCard(item, grid));
-    await Promise.all(renderPromises);
-
-    updateStatusBar(data);
-  }
-
-  function updateStatusBar(data){
-    const high = data.filter(d=>(d.meteo||{}).severity==='high').length;
-    const medium = data.filter(d=>(d.meteo||{}).severity==='medium').length;
-    const low = data.filter(d=>(d.meteo||{}).severity==='low').length;
-    document.getElementById('stat-stations').textContent = `${data.length} station${data.length>1?'s':''}`;
-    document.getElementById('stat-high').textContent = `${high} alerte haute`;
-    document.getElementById('stat-medium').textContent = `${medium} surveillance`;
-    document.getElementById('stat-low').textContent = `${low} stable${low>1?'s':''}`;
-    document.getElementById('stat-time').textContent = new Date().toLocaleTimeString('fr-FR');
-  }
-
-  async function refresh(){
-    try{
-      allData = await fetchAllLatest();
-      populateFilters(allData);
-      await render(allData);
-    }catch(e){
-      console.error('refresh error', e);
-    }
-  }
-
-  // Countdown timer
-  setInterval(()=>{
-    countdown--;
-    if(countdown <= 0){
-      countdown = REFRESH_S;
-      refresh();
-    }
-    document.getElementById('countdown').textContent = countdown;
-  }, 1000);
-
-  // Filter change -> re-render from cached data (no new fetch)
-  ['filter-region','filter-var','filter-sev','filter-search'].forEach(id=>{
-    document.getElementById(id).addEventListener('change', ()=>render(allData));
-    if(id==='filter-search'){
-      document.getElementById(id).addEventListener('input', ()=>render(allData));
-    }
+  // Signals
+  const sigDiv=document.getElementById('modal-signals');
+  sigDiv.innerHTML='';
+  ['gap','volatility','outlier','flatline','spike','drift','spatial','multivar'].forEach(sig=>{
+    const val=+(signals[sig]||0);
+    const d=document.createElement('div');
+    d.className='sig-item';
+    d.innerHTML=`<div class="sig-label">${sig}</div><div class="sig-val" style="color:${scoreColor(val)}">${val.toFixed(3)}</div>`;
+    sigDiv.appendChild(d);
   });
 
-  // Modal
-  async function openModal(item){
-    selectedCard = item;
-    const sid = item.station_id||'';
-    const variable = item.variable||'';
-    const meteo = item.meteo||{};
-    const signals = item.signals||{};
-    document.getElementById('modal-title').textContent = `${sid} — ${variable}`;
-    document.getElementById('modal-interp').textContent = meteo.interpretation||'';
-    document.getElementById('modal-overlay').classList.add('open');
-
-    // Signals
-    const sigDiv = document.getElementById('modal-signals');
-    sigDiv.innerHTML = '';
-    const sigOrder = ['gap','volatility','outlier','flatline','spike','drift','spatial','multivar'];
-    for(const sig of sigOrder){
-      const val = +(signals[sig]||0);
-      const item2 = document.createElement('div');
-      item2.className = 'sig-item';
-      item2.innerHTML = `<div class="sig-label">${sig}</div><div class="sig-val" style="color:${scoreColor(val)}">${val.toFixed(3)}</div>`;
-      sigDiv.appendChild(item2);
-    }
-
-    // History chart in modal
-    if(modalChart){ modalChart.destroy(); modalChart=null; }
-    const hist = await fetchHistory(sid, variable);
-    const histItems = (hist && hist.items) ? [...hist.items].reverse() : [];
-    const canvas = document.getElementById('modal-chart');
-    if(histItems.length > 1 && canvas){
-      modalChart = new Chart(canvas, {
+  // Timeseries chart
+  if(modalChart){modalChart.destroy();modalChart=null}
+  const canvas=document.getElementById('modal-chart');
+  try{
+    const tr=await fetch(`/stations/${encodeURIComponent(sid)}/timeseries?variable=${encodeURIComponent(variable)}&hours=6&limit=300`);
+    const td=await tr.json();
+    const pts=(td.items||[]);
+    if(pts.length>1&&canvas){
+      modalChart=new Chart(canvas,{
         type:'line',
         data:{
-          labels: histItems.map(i=>fmtTs(i.ts)),
+          labels:pts.map(p=>fmtTs(p.ts)),
           datasets:[{
             label:'Score',
-            data: histItems.map(i=>+(i.score||0).toFixed(3)),
-            borderColor:'#6366f1',
-            backgroundColor:'rgba(99,102,241,.1)',
-            borderWidth:2,
-            pointRadius:2,
-            fill:true,
-            tension:0.3
+            data:pts.map(p=>+(p.score||0).toFixed(4)),
+            borderColor:'#6366f1',backgroundColor:'rgba(99,102,241,.1)',
+            borderWidth:2,pointRadius:1,fill:true,tension:.3
           }]
         },
         options:{
           animation:false,
           plugins:{legend:{display:false}},
           scales:{
-            x:{ticks:{color:'#6b7194',maxTicksLimit:8},grid:{color:'rgba(255,255,255,.05)'}},
+            x:{ticks:{color:'#6b7194',maxTicksLimit:6},grid:{color:'rgba(255,255,255,.05)'}},
             y:{min:0,max:1,ticks:{color:'#6b7194'},grid:{color:'rgba(255,255,255,.05)'}}
           },
-          responsive:true,
-          maintainAspectRatio:false
+          responsive:true,maintainAspectRatio:false
         }
       });
     }
-  }
+  }catch(e){}
 
-  function closeModal(){
-    document.getElementById('modal-overlay').classList.remove('open');
-    if(modalChart){ modalChart.destroy(); modalChart=null; }
-  }
-  document.getElementById('modal-overlay').addEventListener('click',e=>{
-    if(e.target===document.getElementById('modal-overlay')) closeModal();
-  });
+  // Open alerts for this station
+  const alertsDiv=document.getElementById('modal-alerts');
+  try{
+    const ar=await fetch(`/stations/${encodeURIComponent(sid)}/status`);
+    const ad=await ar.json();
+    const openAlerts=(ad.open_alerts||[]);
+    if(openAlerts.length){
+      alertsDiv.innerHTML=`<div style="font-size:11px;color:var(--muted);margin-bottom:6px">Alertes ouvertes (${openAlerts.length})</div>`
+        +openAlerts.map(a=>`<div class="alert-item sev-${a.severity}" style="margin-bottom:6px">
+          <strong style="font-size:11px">${a.variable}</strong> — ${a.interpretation||''}
+          <div style="font-size:10px;color:var(--muted);margin-top:3px">Score ${(a.score||0).toFixed(3)} · ${fmtTs(a.ts)}</div>
+        </div>`).join('');
+    } else {
+      alertsDiv.innerHTML='';
+    }
+  }catch(e){}
+}
 
-  // Initial load
-  refresh();
+function closeModal(){
+  document.getElementById('modal-overlay').classList.remove('open');
+  if(modalChart){modalChart.destroy();modalChart=null}
+}
+document.getElementById('modal-overlay').addEventListener('click',e=>{
+  if(e.target===document.getElementById('modal-overlay'))closeModal();
+});
+
+// ---------------------------------------------------------------------------
+// Filter listeners
+// ---------------------------------------------------------------------------
+['filter-region','filter-var','filter-sev'].forEach(id=>{
+  document.getElementById(id).addEventListener('change',()=>{renderAll()})
+});
+document.getElementById('filter-search').addEventListener('input',()=>{renderAll()});
+
+// ---------------------------------------------------------------------------
+// Sidebar refresh (alerts, sources, top) — independent of SSE
+// ---------------------------------------------------------------------------
+setInterval(()=>{
+  const active=document.querySelector('.rtab.active');
+  if(active){
+    const panels=['alerts','sources','top'];
+    const idx=[...document.querySelectorAll('.rtab')].indexOf(active);
+    if(idx>=0)switchTab(panels[idx]);
+  }
+},REFRESH_SIDEBAR);
+
+// ---------------------------------------------------------------------------
+// Start
+// ---------------------------------------------------------------------------
+startSSE();
+initialLoad();
+loadOpenAlerts();
 </script>
 </body>
 </html>"""
