@@ -13,12 +13,12 @@ Usage::
     log.warning("station.silent", station_id="BE_UCCLE", silence_s=700)
     log.error("db.write_failed", exc=str(e), station_id="BE_UCCLE")
 """
+
 from __future__ import annotations
 
 import json
 import logging
 import os
-import sys
 import time
 from typing import Any
 

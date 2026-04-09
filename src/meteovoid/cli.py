@@ -79,16 +79,22 @@ def ingest(
     out_stream: str = typer.Option("meteovoid:observations", "--out-stream"),
     poll_seconds: int = typer.Option(60, "--poll-seconds", help="Polling interval in seconds."),
     once: bool = typer.Option(False, "--once", help="Fetch once and exit."),
-    per_stream: bool = typer.Option(False, "--per-stream", help="Also write per-station/variable stream."),
+    per_stream: bool = typer.Option(
+        False, "--per-stream", help="Also write per-station/variable stream."
+    ),
 ) -> None:
     """Ingest live weather observations from Open-Meteo into Redis Streams (production mode)."""
     from .ingest_europe import main as _ingest_main
 
     argv = [
-        "--config", str(config),
-        "--redis-url", redis_url,
-        "--out-stream", out_stream,
-        "--poll-seconds", str(poll_seconds),
+        "--config",
+        str(config),
+        "--redis-url",
+        redis_url,
+        "--out-stream",
+        out_stream,
+        "--poll-seconds",
+        str(poll_seconds),
     ]
     if once:
         argv.append("--once")

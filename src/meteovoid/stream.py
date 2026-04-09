@@ -9,9 +9,9 @@ from typing import Any, cast
 
 from redis.typing import EncodableT
 
+from . import db as _db
 from .alerts import maybe_send_alert
 from .config import StationConfig, env_config_path, load_station_config, resolve_variable_overrides
-from . import db as _db
 from .live import LiveConfig, RollingWindow, State, analyze_window
 from .log import get_logger
 from .scoring import compute_composite_score
@@ -217,12 +217,16 @@ def _meteo_interpretation(
 
     # Multi-variable
     if "multivar" in flags:
-        phrases.append("Incohérence multi-variables : les grandeurs mesurées sur ce site sont décorrélées.")
+        phrases.append(
+            "Incohérence multi-variables : les grandeurs mesurées sur ce site sont décorrélées."
+        )
 
     # Imputation warning
     if "imputation_high" in flags:
         pct = int(imputed_frac * 100)
-        phrases.append(f"Imputation élevée ({pct} % des points) — score à interpréter avec prudence.")
+        phrases.append(
+            f"Imputation élevée ({pct} % des points) — score à interpréter avec prudence."
+        )
 
     return {
         "interpretation": " ".join(phrases).strip(),

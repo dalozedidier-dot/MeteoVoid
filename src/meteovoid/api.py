@@ -359,6 +359,7 @@ def history_http(
 # New API endpoints — Étape 3
 # ---------------------------------------------------------------------------
 
+
 @app.get("/alerts")
 def alerts_http(
     limit: int = Query(50, ge=1, le=500),
@@ -408,7 +409,13 @@ def station_history_http(
     if source == "stream" and variable:
         return history(station_id=sid, variable=variable, limit=limit, redis_url=REDIS_URL)
     items = _db.query_station_history(station_id=sid, variable=variable, limit=limit)
-    return {"status": "ok", "station_id": sid, "variable": variable, "count": len(items), "items": items}
+    return {
+        "status": "ok",
+        "station_id": sid,
+        "variable": variable,
+        "count": len(items),
+        "items": items,
+    }
 
 
 @app.get("/regions")
@@ -510,6 +517,7 @@ def top_anomalies_http(
 # SSE — real-time stream of reports
 # ---------------------------------------------------------------------------
 
+
 @app.get("/events")
 def events_sse() -> StreamingResponse:  # pragma: no cover
     """Server-Sent Events: pushes every new report as it's computed by the worker.
@@ -518,6 +526,7 @@ def events_sse() -> StreamingResponse:  # pragma: no cover
     Each event is a JSON-encoded report followed by two newlines.
     A keepalive comment (': keepalive') is emitted every 2 s when idle.
     """
+
     def _generate() -> Any:
         r = make_redis(REDIS_URL)
         xread = getattr(r, "xread", None)
@@ -534,9 +543,7 @@ def events_sse() -> StreamingResponse:  # pragma: no cover
                 for _stream, messages in resp_any:
                     for msg_id, fields in messages:
                         last_id = msg_id
-                        payload_raw = (
-                            fields.get(b"payload") or fields.get("payload")
-                        )
+                        payload_raw = fields.get(b"payload") or fields.get("payload")
                         if payload_raw is None:
                             continue
                         try:
@@ -564,6 +571,7 @@ def events_sse() -> StreamingResponse:  # pragma: no cover
 # Alert lifecycle endpoints
 # ---------------------------------------------------------------------------
 
+
 @app.get("/alerts/{alert_id}")
 def alert_detail_http(
     alert_id: int = Path(..., description="Alert ID"),
@@ -575,7 +583,9 @@ def alert_detail_http(
     return {"status": "ok", "alert": detail}
 
 
-def _alert_action(alert_id: int, status: str, comment: str | None) -> dict[str, Any]:  # pragma: no cover
+def _alert_action(
+    alert_id: int, status: str, comment: str | None
+) -> dict[str, Any]:  # pragma: no cover
     ok = _db.update_alert_status(alert_id, status, comment)
     if not ok:
         return {"status": "not_found_or_invalid", "alert_id": alert_id}
@@ -612,6 +622,7 @@ def alert_ignore_http(
 # ---------------------------------------------------------------------------
 # Station enriched endpoints
 # ---------------------------------------------------------------------------
+
 
 @app.get("/stations/{sid}/status")
 def station_status_http(
@@ -690,9 +701,7 @@ def station_timeseries_http(
 ) -> dict[str, Any]:  # pragma: no cover
     """Score timeseries for a station/variable. Suitable for charting."""
     since = time.time() - hours * 3600
-    items = _db.query_timeseries(
-        station_id=sid, variable=variable, since=since, limit=limit
-    )
+    items = _db.query_timeseries(station_id=sid, variable=variable, since=since, limit=limit)
     return {
         "status": "ok",
         "station_id": sid,
@@ -707,6 +716,7 @@ def station_timeseries_http(
 # Region summary
 # ---------------------------------------------------------------------------
 
+
 @app.get("/regions/{region}/summary")
 def region_summary_http(
     region: str = Path(..., description="Region prefix (e.g. BE, FR, DE)"),
@@ -718,6 +728,7 @@ def region_summary_http(
 # ---------------------------------------------------------------------------
 # Thresholds
 # ---------------------------------------------------------------------------
+
 
 @app.get("/thresholds")
 def thresholds_http(
@@ -749,6 +760,7 @@ def thresholds_upsert_http(
 # ---------------------------------------------------------------------------
 # Sources health
 # ---------------------------------------------------------------------------
+
 
 @app.get("/sources/health")
 def sources_health_http() -> dict[str, Any]:  # pragma: no cover
