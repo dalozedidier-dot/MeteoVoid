@@ -11,6 +11,7 @@ from redis.typing import EncodableT
 
 from .alerts import maybe_send_alert
 from .config import StationConfig, env_config_path, load_station_config, resolve_variable_overrides
+from . import db as _db
 from .live import LiveConfig, RollingWindow, State, analyze_window
 from .scoring import compute_composite_score
 from .utils import make_redis
@@ -89,11 +90,13 @@ def _meteo_interpretation(
     n_points: int,
     missing_time_frac: float,
     gap_count: int,
+    gap_max_s: float = 0.0,
     watch_threshold: float,
     alert_threshold: float,
     imputed_frac: float,
     max_imputed_frac: float,
     signals: dict[str, float] | None = None,
+    variable: str = "",
 ) -> dict[str, Any]:
     signals = signals or {}
 
@@ -126,20 +129,32 @@ def _meteo_interpretation(
             severity = "high"
 
     # Explainability flags (soft)
-    def _flag_if(name: str, thr: float = 0.45) -> None:
+    def _sig(name: str) -> float:
         try:
-            v = float(signals.get(name, 0.0))
+            return float(signals.get(name, 0.0))
         except (TypeError, ValueError):
-            v = 0.0
-        if v >= thr:
+            return 0.0
+
+    def _flag_if(name: str, thr: float = 0.45) -> None:
+        if _sig(name) >= thr:
             flags.append(name)
 
     for nm in ("outlier", "flatline", "spike", "drift", "spatial", "multivar"):
         _flag_if(nm)
 
+    # --- Variable context (wind / temperature / pressure) ---
+    var_lower = variable.lower()
+    is_wind = "wind" in var_lower or "gust" in var_lower
+    is_temp = "temp" in var_lower
+    is_pressure = "pressure" in var_lower
+
+    # --- Build human phrases ---
     phrases: list[str] = []
+
     if n_points < 20:
         phrases.append("Peu de points dans la fenêtre, confiance limitée.")
+
+    # Primary state phrase
     if "alert" in flags:
         phrases.append("Instabilité forte, alerte.")
     elif "watch" in flags:
@@ -147,22 +162,64 @@ def _meteo_interpretation(
     else:
         phrases.append("Signal stable.")
 
+    # Data continuity
     if "data_hole" in flags:
-        phrases.append("Présence de trous de données dans la fenêtre.")
-    if "outlier" in flags:
-        phrases.append("Valeurs aberrantes détectées.")
-    if "flatline" in flags:
-        phrases.append("Plateau anormal possible.")
-    if "spike" in flags:
-        phrases.append("Sauts brusques détectés.")
-    if "drift" in flags:
-        phrases.append("Dérive lente détectée.")
+        if gap_max_s > 1800:
+            minutes = int(gap_max_s // 60)
+            phrases.append(f"Trou de données prolongé (> {minutes} min) — lacune inhabituelle.")
+        elif gap_max_s > 300:
+            phrases.append("Trou de données prolongé dans la fenêtre.")
+        else:
+            phrases.append("Présence de trous de données dans la fenêtre.")
+
+    # Spatial coherence
     if "spatial" in flags:
-        phrases.append("Incohérence spatiale possible.")
+        if is_wind:
+            phrases.append("Rafales incohérentes avec les stations voisines.")
+        elif is_temp:
+            phrases.append("Température incohérente par rapport aux stations voisines.")
+        elif is_pressure:
+            phrases.append("Pression incohérente avec le champ spatial attendu.")
+        else:
+            phrases.append("Incohérence spatiale avec les stations voisines.")
+
+    # Spike
+    if "spike" in flags:
+        if is_wind:
+            phrases.append("Saut brusque sur le vent — potentiellement non météorologique.")
+        elif is_temp:
+            phrases.append("Saut brusque de température — potentiellement non météorologique.")
+        else:
+            phrases.append("Saut brusque potentiellement non météorologique.")
+
+    # Drift
+    if "drift" in flags:
+        drift_score = _sig("drift")
+        if drift_score > 0.7:
+            phrases.append("Dérive lente inhabituelle et soutenue sur la fenêtre.")
+        else:
+            phrases.append("Dérive lente inhabituelle détectée.")
+
+    # Outlier
+    if "outlier" in flags:
+        outlier_score = _sig("outlier")
+        if outlier_score > 0.7:
+            phrases.append("Valeurs fortement aberrantes — signal suspect.")
+        else:
+            phrases.append("Valeurs aberrantes détectées.")
+
+    # Flatline
+    if "flatline" in flags:
+        phrases.append("Plateau anormal — le capteur pourrait être bloqué ou déconnecté.")
+
+    # Multi-variable
     if "multivar" in flags:
-        phrases.append("Incohérence multi-variables possible.")
+        phrases.append("Incohérence multi-variables : les grandeurs mesurées sur ce site sont décorrélées.")
+
+    # Imputation warning
     if "imputation_high" in flags:
-        phrases.append("Imputation trop importante, prudence sur le score.")
+        pct = int(imputed_frac * 100)
+        phrases.append(f"Imputation élevée ({pct} % des points) — score à interpréter avec prudence.")
 
     return {
         "interpretation": " ".join(phrases).strip(),
@@ -394,11 +451,13 @@ def process_observation(
         n_points=n,
         missing_time_frac=missing_time_frac,
         gap_count=gap_count,
+        gap_max_s=gap_max,
         watch_threshold=watch_threshold,
         alert_threshold=alert_threshold,
         imputed_frac=imputed_frac,
         max_imputed_frac=max_imputed_frac,
         signals=comp.signals,
+        variable=variable,
     )
 
     report: dict[str, Any] = {}
@@ -450,6 +509,9 @@ def run_live_worker(
 ) -> None:
     r = make_redis(redis_url)
     cfg = cfg or LiveConfig()
+
+    # Initialise DB schema (no-op if DATABASE_URL is unset)
+    _db.ensure_schema()
 
     station_cfg = load_station_config(env_config_path())
 
@@ -516,6 +578,9 @@ def run_live_worker(
                 r.xadd(out_stream, out_fields)
 
                 _ = maybe_send_alert(report)
+
+                # Persist to PostgreSQL (no-op when DATABASE_URL unset)
+                _db.insert_report(report)
 
                 if max_messages is not None and processed >= int(max_messages):
                     return
