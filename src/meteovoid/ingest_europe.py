@@ -49,8 +49,14 @@ def _http_json_with_retry(
         except (URLError, TimeoutError, OSError, ValueError) as exc:
             last_exc = exc
             if attempt < max_attempts - 1:
-                sleep_s = base_backoff_s * (2 ** attempt)
-                _log.warning("ingest.http_retry", attempt=attempt + 1, max=max_attempts, sleep=sleep_s, exc=str(exc))
+                sleep_s = base_backoff_s * (2**attempt)
+                _log.warning(
+                    "ingest.http_retry",
+                    attempt=attempt + 1,
+                    max=max_attempts,
+                    sleep=sleep_s,
+                    exc=str(exc),
+                )
                 time.sleep(sleep_s)
     raise last_exc
 
@@ -254,8 +260,14 @@ def main(argv: list[str] | None = None) -> int:
         # Silence check after publishing
         try:
             for st in stations:
-                if check_station_silence(r, st.station_id, silence_threshold_s=args.silence_threshold_s):
-                    _log.warning("ingest.station_silent", station_id=st.station_id, threshold_s=args.silence_threshold_s)
+                if check_station_silence(
+                    r, st.station_id, silence_threshold_s=args.silence_threshold_s
+                ):
+                    _log.warning(
+                        "ingest.station_silent",
+                        station_id=st.station_id,
+                        threshold_s=args.silence_threshold_s,
+                    )
         except Exception:
             pass
 

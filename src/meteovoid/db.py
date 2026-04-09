@@ -16,6 +16,7 @@ Design principles
 * All public functions are silent no-ops when DATABASE_URL is unset.
 * All DB errors are caught, logged, and swallowed so they never crash workers.
 """
+
 from __future__ import annotations
 
 import json
@@ -30,6 +31,7 @@ _log = get_logger(__name__)
 # ---------------------------------------------------------------------------
 # Connection
 # ---------------------------------------------------------------------------
+
 
 def _get_db_url() -> str:
     return os.getenv("DATABASE_URL", "")
@@ -164,6 +166,7 @@ def ensure_schema() -> None:
 # Writes — reports
 # ---------------------------------------------------------------------------
 
+
 def insert_report(report: dict[str, Any]) -> None:
     """Persist a full anomaly report and manage the alert lifecycle."""
     if not _get_db_url():
@@ -191,13 +194,22 @@ def insert_report(report: dict[str, Any]) -> None:
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
-                        station_id, variable, ts, ts_ingest, score, state,
-                        severity, flags, interpretation,
+                        station_id,
+                        variable,
+                        ts,
+                        ts_ingest,
+                        score,
+                        state,
+                        severity,
+                        flags,
+                        interpretation,
                         json.dumps(report, separators=(",", ":")),
                         time.time(),
                     ),
                 )
-                _manage_alert_lifecycle(cur, station_id, variable, ts, severity, flags, interpretation, score)
+                _manage_alert_lifecycle(
+                    cur, station_id, variable, ts, severity, flags, interpretation, score
+                )
             conn.commit()
         finally:
             conn.close()
@@ -276,6 +288,7 @@ def _manage_alert_lifecycle(
 # Alert lifecycle — operator actions
 # ---------------------------------------------------------------------------
 
+
 def update_alert_status(
     alert_id: int,
     status: str,
@@ -338,12 +351,18 @@ def get_alert_detail(alert_id: int) -> dict[str, Any] | None:
                 if not row:
                     return None
                 alert = {
-                    "id": row[0], "station_id": row[1], "variable": row[2],
-                    "ts": row[3], "severity": row[4],
+                    "id": row[0],
+                    "station_id": row[1],
+                    "variable": row[2],
+                    "ts": row[3],
+                    "severity": row[4],
                     "flags": json.loads(row[5]) if row[5] else [],
-                    "interpretation": row[6], "score": row[7],
-                    "status": row[8], "operator_comment": row[9],
-                    "status_changed_at": row[10], "inserted_at": row[11],
+                    "interpretation": row[6],
+                    "score": row[7],
+                    "status": row[8],
+                    "operator_comment": row[9],
+                    "status_changed_at": row[10],
+                    "inserted_at": row[11],
                 }
                 cur.execute(
                     """
@@ -353,8 +372,7 @@ def get_alert_detail(alert_id: int) -> dict[str, Any] | None:
                     (alert_id,),
                 )
                 alert["lifecycle"] = [
-                    {"status": r[0], "comment": r[1], "changed_at": r[2]}
-                    for r in cur.fetchall()
+                    {"status": r[0], "comment": r[1], "changed_at": r[2]} for r in cur.fetchall()
                 ]
             return alert
         finally:
@@ -367,6 +385,7 @@ def get_alert_detail(alert_id: int) -> dict[str, Any] | None:
 # ---------------------------------------------------------------------------
 # Ingest failure journal
 # ---------------------------------------------------------------------------
+
 
 def log_ingest_failure(
     *,
@@ -407,25 +426,24 @@ def query_ingest_health(*, limit_per_station: int = 1) -> list[dict[str, Any]]:
         try:
             with conn.cursor() as cur:
                 # Most recent successful report per station
-                cur.execute(
-                    """
+                cur.execute("""
                     SELECT DISTINCT ON (station_id)
                            station_id, ts_ingest, 'ok' AS status, NULL AS error
                     FROM reports
                     ORDER BY station_id, ts_ingest DESC
-                    """
-                )
-                success_rows = {r[0]: {"station_id": r[0], "last_success": r[1], "status": "ok"} for r in cur.fetchall()}
+                    """)
+                success_rows = {
+                    r[0]: {"station_id": r[0], "last_success": r[1], "status": "ok"}
+                    for r in cur.fetchall()
+                }
 
                 # Most recent failure per station
-                cur.execute(
-                    """
+                cur.execute("""
                     SELECT DISTINCT ON (station_id)
                            station_id, ts, error
                     FROM ingest_failures
                     ORDER BY station_id, ts DESC
-                    """
-                )
+                    """)
                 for r in cur.fetchall():
                     sid = r[0]
                     entry = success_rows.setdefault(sid, {"station_id": sid, "last_success": None})
@@ -449,6 +467,7 @@ def query_ingest_health(*, limit_per_station: int = 1) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # Thresholds
 # ---------------------------------------------------------------------------
+
 
 def get_thresholds(
     station_id: str | None = None,
@@ -476,8 +495,11 @@ def get_thresholds(
                 )
                 return [
                     {
-                        "id": r[0], "station_id": r[1], "variable": r[2],
-                        "watch_threshold": r[3], "alert_threshold": r[4],
+                        "id": r[0],
+                        "station_id": r[1],
+                        "variable": r[2],
+                        "watch_threshold": r[3],
+                        "alert_threshold": r[4],
                         "updated_at": r[5],
                     }
                     for r in cur.fetchall()
@@ -529,6 +551,7 @@ def upsert_threshold(
 # Retention
 # ---------------------------------------------------------------------------
 
+
 def apply_retention(*, retention_days: int = 30) -> dict[str, int]:
     """Delete old rows from reports, observations, ingest_failures.
     Returns counts of deleted rows. No-op if DATABASE_URL unset."""
@@ -541,7 +564,7 @@ def apply_retention(*, retention_days: int = 30) -> dict[str, int]:
         try:
             with conn.cursor() as cur:
                 for table in ("reports", "observations", "ingest_failures"):
-                    cur.execute(f"DELETE FROM {table} WHERE inserted_at < %s", (cutoff,))  # noqa: S608
+                    cur.execute(f"DELETE FROM {table} WHERE inserted_at < %s", (cutoff,))
                     deleted[table] = cur.rowcount
             conn.commit()
             _log.info("db.retention_applied", cutoff=cutoff, deleted=deleted)
@@ -555,6 +578,7 @@ def apply_retention(*, retention_days: int = 30) -> dict[str, int]:
 # ---------------------------------------------------------------------------
 # Timeseries
 # ---------------------------------------------------------------------------
+
 
 def query_timeseries(
     *,
@@ -600,6 +624,7 @@ def query_timeseries(
 # Read helpers (used by API)
 # ---------------------------------------------------------------------------
 
+
 def query_alerts(
     *,
     limit: int = 50,
@@ -639,12 +664,18 @@ def query_alerts(
                 )
                 return [
                     {
-                        "id": r[0], "station_id": r[1], "variable": r[2],
-                        "ts": r[3], "severity": r[4],
+                        "id": r[0],
+                        "station_id": r[1],
+                        "variable": r[2],
+                        "ts": r[3],
+                        "severity": r[4],
                         "flags": json.loads(r[5]) if r[5] else [],
-                        "interpretation": r[6], "score": r[7],
-                        "status": r[8], "operator_comment": r[9],
-                        "status_changed_at": r[10], "inserted_at": r[11],
+                        "interpretation": r[6],
+                        "score": r[7],
+                        "status": r[8],
+                        "operator_comment": r[9],
+                        "status_changed_at": r[10],
+                        "inserted_at": r[11],
                     }
                     for r in cur.fetchall()
                 ]
@@ -686,8 +717,12 @@ def query_station_history(
                 )
                 return [
                     {
-                        "station_id": r[0], "variable": r[1], "ts": r[2],
-                        "score": r[3], "state": r[4], "severity": r[5],
+                        "station_id": r[0],
+                        "variable": r[1],
+                        "ts": r[2],
+                        "score": r[3],
+                        "state": r[4],
+                        "severity": r[5],
                         "flags": json.loads(r[6]) if r[6] else [],
                         "interpretation": r[7],
                     }
@@ -721,8 +756,12 @@ def query_top_anomalies(*, limit: int = 10, hours: float = 1.0) -> list[dict[str
                 )
                 return [
                     {
-                        "station_id": r[0], "variable": r[1], "ts": r[2],
-                        "score": r[3], "state": r[4], "severity": r[5],
+                        "station_id": r[0],
+                        "variable": r[1],
+                        "ts": r[2],
+                        "score": r[3],
+                        "state": r[4],
+                        "severity": r[5],
                         "flags": json.loads(r[6]) if r[6] else [],
                         "interpretation": r[7],
                     }
@@ -746,9 +785,14 @@ def query_summary() -> dict[str, Any]:
             with conn.cursor() as cur:
                 cur.execute("SELECT COUNT(*) FROM reports")
                 total_reports = (cur.fetchone() or [0])[0]
-                cur.execute("SELECT COUNT(*) FROM reports WHERE ts >= %s AND severity = 'high'", (since_1h,))
+                cur.execute(
+                    "SELECT COUNT(*) FROM reports WHERE ts >= %s AND severity = 'high'", (since_1h,)
+                )
                 high_1h = (cur.fetchone() or [0])[0]
-                cur.execute("SELECT COUNT(*) FROM reports WHERE ts >= %s AND severity = 'medium'", (since_1h,))
+                cur.execute(
+                    "SELECT COUNT(*) FROM reports WHERE ts >= %s AND severity = 'medium'",
+                    (since_1h,),
+                )
                 medium_1h = (cur.fetchone() or [0])[0]
                 cur.execute("SELECT COUNT(DISTINCT station_id) FROM reports")
                 stations_seen = (cur.fetchone() or [0])[0]
@@ -763,7 +807,9 @@ def query_summary() -> dict[str, Any]:
                 "last_1h": {
                     "high_alerts": int(high_1h),
                     "medium_alerts": int(medium_1h),
-                    "avg_score": round(float(avg_score_1h), 4) if avg_score_1h is not None else None,
+                    "avg_score": (
+                        round(float(avg_score_1h), 4) if avg_score_1h is not None else None
+                    ),
                 },
             }
         finally:
