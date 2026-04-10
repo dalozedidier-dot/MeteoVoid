@@ -146,7 +146,7 @@ def check_station_silence(
     if raw is None:
         return False  # Never seen — not yet considered silent (no baseline)
     try:
-        last_seen = int(raw)
+        last_seen = int(str(raw))
     except (TypeError, ValueError):
         return False
     silence_s = int(time.time()) - last_seen
