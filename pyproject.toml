@@ -12,7 +12,7 @@ license = {file = "LICENSE"}
 authors = [{name = "MeteoVoid contributors"}]
 dependencies = [
   "numpy>=1.24",
-  "pandas>=2.0",
+  "pandas>=3.0.2",
   "networkx>=3.2",
   "pydantic>=2.0",
   "typer>=0.12.0",
