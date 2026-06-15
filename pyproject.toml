@@ -34,7 +34,7 @@ live = [
 
 io = [
   "pyarrow>=15; python_version>='3.11'",
-  "xarray>=2024.1",
+  "xarray>=2026.2.0",
   "cfgrib>=0.9.10.4",
 ]
 
