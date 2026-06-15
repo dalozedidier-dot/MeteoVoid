@@ -29,6 +29,17 @@ on:
         default: "none"
         type: choice
         options: [none, yellow, orange, red]
+      official_forecast_signal:
+        description: "Official IRM/KMI forecast signal from the textual bulletin"
+        required: false
+        default: "none"
+        type: choice
+        options: [none, heat, instability, thunderstorms, severe_thunderstorms]
+      heat_warning_active:
+        description: "Official Belgian heat warning or heat phase active"
+        required: false
+        default: false
+        type: boolean
       metealarm_level:
         description: "Manual MeteoAlarm level if known"
         required: false
@@ -114,6 +125,8 @@ jobs:
           MIN_SEVERITY="${{ inputs.min_severity || 'medium' }}"
           OFFLINE_DEMO="${{ inputs.offline_demo || 'false' }}"
           IRM_WARNING_LEVEL="${{ inputs.irm_warning_level || 'none' }}"
+          OFFICIAL_FORECAST_SIGNAL="${{ inputs.official_forecast_signal || 'none' }}"
+          HEAT_WARNING_ACTIVE="${{ inputs.heat_warning_active || 'false' }}"
           METEOALARM_LEVEL="${{ inputs.meteoalarm_level || 'none' }}"
           ESTOFEX_LEVEL="${{ inputs.estofex_level || 'none' }}"
           RADAR_CONFIRMATION="${{ inputs.radar_confirmation || 'none' }}"
@@ -130,6 +143,7 @@ jobs:
             --webhook-url "$METEOVOID_ALERT_WEBHOOK_URL"
             --min-severity "$MIN_SEVERITY"
             --irm-warning-level "$IRM_WARNING_LEVEL"
+            --official-forecast-signal "$OFFICIAL_FORECAST_SIGNAL"
             --metealarm-level "$METEOALARM_LEVEL"
             --estofex-level "$ESTOFEX_LEVEL"
             --radar-confirmation "$RADAR_CONFIRMATION"
@@ -139,6 +153,9 @@ jobs:
 
           if [ "$OFFLINE_DEMO" = "true" ]; then
             cmd+=(--offline-demo)
+          fi
+          if [ "$HEAT_WARNING_ACTIVE" = "true" ]; then
+            cmd+=(--heat-warning-active)
           fi
 
           "${cmd[@]}"

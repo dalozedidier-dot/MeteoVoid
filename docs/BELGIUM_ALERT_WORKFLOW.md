@@ -50,11 +50,15 @@ Même en `alert_confirmed`, le rapport reste non officiel. Le texte public doit 
 Le workflow manuel permet de renseigner des confirmations externes sans coder de connecteur immédiat :
 
 - `irm_warning_level` : `none`, `yellow`, `orange`, `red`
+- `official_forecast_signal` : `none`, `heat`, `instability`, `thunderstorms`, `severe_thunderstorms`
+- `heat_warning_active` : `true` ou `false`
 - `metealarm_level` : `none`, `yellow`, `orange`, `red`
 - `estofex_level` : `none`, `level1`, `level2`, `level3`
 - `radar_confirmation` : `none`, `weak`, `moderate`, `strong`
 - `lightning_confirmation` : `none`, `nearby`, `confirmed`
 - `external_note` : note libre
+
+Correction importante : un bulletin texte de l’IRM/KMI peut confirmer un risque sans qu’un avertissement couleur soit encore publié. Le champ `official_forecast_signal` sert précisément à éviter que `external_confirmation_score` reste à zéro dans ce cas. Si ce champ reste à `none`, MeteoVoid tente aussi d’inférer un signal officiel depuis `external_note`, uniquement quand la note mentionne explicitement IRM/KMI/meteo.be ou une prévision officielle.
 
 Exemple :
 
@@ -64,7 +68,9 @@ python tools/generate_belgium_alert_report.py \
   --target-date 2026-06-19 \
   --out-dir _ci_out/belgium_alert \
   --history-dir .meteovoid_history/belgium_alert \
-  --irm-warning-level orange \
+  --irm-warning-level yellow \
+  --official-forecast-signal severe_thunderstorms \
+  --heat-warning-active \
   --metealarm-level yellow \
   --estofex-level level1 \
   --radar-confirmation weak \

@@ -823,7 +823,13 @@ def _render_markdown(report: dict[str, Any]) -> str:
     lines.append("")
     lines.append("Intégrations externes actuellement actives :")
     lines.append(
-        f"- Avertissements officiels IRM/KMI : `{bool(integrations.get('official_warning_integrated', False))}`"
+        f"- Signal officiel IRM/KMI renseigné : `{bool(integrations.get('official_warning_integrated', False))}`"
+    )
+    lines.append(
+        f"- Prévision texte IRM/KMI intégrée : `{bool(integrations.get('official_forecast_integrated', False))}`"
+    )
+    lines.append(
+        f"- Avertissement chaleur intégré : `{bool(integrations.get('heat_warning_integrated', False))}`"
     )
     lines.append(f"- MeteoAlarm : `{bool(integrations.get('metealarm_integrated', False))}`")
     lines.append(f"- ESTOFEX : `{bool(integrations.get('estofex_integrated', False))}`")
@@ -1881,29 +1887,119 @@ def _level_score(value: str, mapping: dict[str, float]) -> float:
     return mapping.get(str(value).strip().lower(), 0.0)
 
 
+def _infer_official_forecast_signal(external_note: str) -> str:
+    note = external_note.strip().lower()
+    if not note:
+        return "none"
+    official_marker = any(
+        marker in note
+        for marker in (
+            "irm",
+            "kmi",
+            "meteo.be",
+            "météo.be",
+            "bulletin officiel",
+            "prévision officielle",
+            "avertissement officiel",
+        )
+    )
+    if not official_marker:
+        return "none"
+    severe_markers = ("violent", "violents", "grêle", "grele", "fortes rafales", "abondantes")
+    thunder_markers = ("orage", "orages", "orageux", "orageuse")
+    instability_markers = ("instable", "instabilité", "averses")
+    heat_markers = ("chaleur", "canicule", "très chaud", "tres chaud")
+    if any(marker in note for marker in thunder_markers) and any(
+        marker in note for marker in severe_markers
+    ):
+        return "severe_thunderstorms"
+    if any(marker in note for marker in thunder_markers):
+        return "thunderstorms"
+    if any(marker in note for marker in instability_markers):
+        return "instability"
+    if any(marker in note for marker in heat_markers):
+        return "heat"
+    return "none"
+
+
 def _external_confirmation_from_inputs(
     *,
     irm_warning_level: str,
+    official_forecast_signal: str,
+    heat_warning_active: bool,
     metealarm_level: str,
     estofex_level: str,
     radar_confirmation: str,
     lightning_confirmation: str,
     external_note: str,
 ) -> dict[str, Any]:
-    official_scores = [
-        _level_score(irm_warning_level, {"none": 0.0, "yellow": 0.35, "orange": 0.70, "red": 1.0}),
-        _level_score(metealarm_level, {"none": 0.0, "yellow": 0.35, "orange": 0.70, "red": 1.0}),
-        _level_score(estofex_level, {"none": 0.0, "level1": 0.45, "level2": 0.75, "level3": 1.0}),
-        _level_score(
-            radar_confirmation, {"none": 0.0, "weak": 0.25, "moderate": 0.60, "strong": 0.90}
-        ),
-        _level_score(lightning_confirmation, {"none": 0.0, "nearby": 0.45, "confirmed": 0.85}),
-    ]
-    weights = [0.24, 0.21, 0.20, 0.20, 0.15]
-    score = round(sum(s * w for s, w in zip(official_scores, weights, strict=False)), 6)
+    inferred_forecast_signal = "none"
+    if official_forecast_signal == "none":
+        inferred_forecast_signal = _infer_official_forecast_signal(external_note)
+    effective_forecast_signal = (
+        inferred_forecast_signal if inferred_forecast_signal != "none" else official_forecast_signal
+    )
+
+    warning_score = _level_score(
+        irm_warning_level, {"none": 0.0, "yellow": 0.35, "orange": 0.70, "red": 1.0}
+    )
+    forecast_score = _level_score(
+        effective_forecast_signal,
+        {
+            "none": 0.0,
+            "heat": 0.25,
+            "instability": 0.45,
+            "thunderstorms": 0.60,
+            "severe_thunderstorms": 0.78,
+        },
+    )
+    heat_score = 0.25 if heat_warning_active else 0.0
+    meteoalarm_score = _level_score(
+        metealarm_level, {"none": 0.0, "yellow": 0.35, "orange": 0.70, "red": 1.0}
+    )
+    estofex_score = _level_score(
+        estofex_level, {"none": 0.0, "level1": 0.45, "level2": 0.75, "level3": 1.0}
+    )
+    radar_score = _level_score(
+        radar_confirmation, {"none": 0.0, "weak": 0.25, "moderate": 0.60, "strong": 0.90}
+    )
+    lightning_score = _level_score(
+        lightning_confirmation, {"none": 0.0, "nearby": 0.45, "confirmed": 0.85}
+    )
+    weighted_score = (
+        warning_score * 0.20
+        + forecast_score * 0.38
+        + heat_score * 0.06
+        + meteoalarm_score * 0.12
+        + estofex_score * 0.12
+        + radar_score * 0.08
+        + lightning_score * 0.04
+    )
+    score_floors = [weighted_score]
+    if effective_forecast_signal == "thunderstorms":
+        score_floors.append(0.40)
+    elif effective_forecast_signal == "severe_thunderstorms":
+        score_floors.append(0.48)
+    if irm_warning_level == "orange":
+        score_floors.append(0.50)
+    elif irm_warning_level == "red":
+        score_floors.append(0.75)
+    if radar_confirmation == "moderate":
+        score_floors.append(0.45)
+    elif radar_confirmation == "strong":
+        score_floors.append(0.70)
+    if lightning_confirmation == "confirmed":
+        score_floors.append(0.55)
+    score = round(_clamp01(max(score_floors)), 6)
+
     active = []
     if irm_warning_level != "none":
-        active.append(f"IRM/KMI {irm_warning_level}")
+        active.append(f"avertissement IRM/KMI {irm_warning_level}")
+    if effective_forecast_signal != "none":
+        source = "déduit de la note externe" if inferred_forecast_signal != "none" else "renseigné"
+        active.append(f"prévision officielle IRM/KMI {effective_forecast_signal} ({source})")
+    if heat_warning_active:
+        active.append("avertissement chaleur actif")
     if metealarm_level != "none":
         active.append(f"MeteoAlarm {metealarm_level}")
     if estofex_level != "none":
@@ -1929,11 +2025,25 @@ def _external_confirmation_from_inputs(
         "summary": summary,
         "inputs": {
             "irm_warning_level": irm_warning_level,
+            "official_forecast_signal": official_forecast_signal,
+            "effective_official_forecast_signal": effective_forecast_signal,
+            "inferred_official_forecast_signal": inferred_forecast_signal,
+            "heat_warning_active": bool(heat_warning_active),
             "metealarm_level": metealarm_level,
             "estofex_level": estofex_level,
             "radar_confirmation": radar_confirmation,
             "lightning_confirmation": lightning_confirmation,
             "external_note": external_note.strip(),
+        },
+        "components": {
+            "irm_warning_score": round(warning_score, 6),
+            "official_forecast_score": round(forecast_score, 6),
+            "heat_warning_score": round(heat_score, 6),
+            "metealarm_score": round(meteoalarm_score, 6),
+            "estofex_score": round(estofex_score, 6),
+            "radar_score": round(radar_score, 6),
+            "lightning_score": round(lightning_score, 6),
+            "weighted_score": round(weighted_score, 6),
         },
     }
 
@@ -2199,7 +2309,13 @@ def _render_markdown(report: dict[str, Any]) -> str:
     lines.append("")
     lines.append("Intégrations externes actives ou renseignées dans ce run :")
     lines.append(
-        f"- Avertissements officiels IRM/KMI : `{bool(integrations.get('official_warning_integrated', False))}`"
+        f"- Signal officiel IRM/KMI renseigné : `{bool(integrations.get('official_warning_integrated', False))}`"
+    )
+    lines.append(
+        f"- Prévision texte IRM/KMI intégrée : `{bool(integrations.get('official_forecast_integrated', False))}`"
+    )
+    lines.append(
+        f"- Avertissement chaleur intégré : `{bool(integrations.get('heat_warning_integrated', False))}`"
     )
     lines.append(f"- MeteoAlarm : `{bool(integrations.get('metealarm_integrated', False))}`")
     lines.append(f"- ESTOFEX : `{bool(integrations.get('estofex_integrated', False))}`")
@@ -2422,8 +2538,16 @@ def _build_report(
             "label": target.label,
         },
         "integrations": {
-            "official_warning_integrated": external_inputs.get("irm_warning_level", "none")
+            "official_warning_integrated": (
+                external_inputs.get("irm_warning_level", "none") != "none"
+                or external_inputs.get("effective_official_forecast_signal", "none") != "none"
+                or bool(external_inputs.get("heat_warning_active", False))
+            ),
+            "official_forecast_integrated": external_inputs.get(
+                "effective_official_forecast_signal", "none"
+            )
             != "none",
+            "heat_warning_integrated": bool(external_inputs.get("heat_warning_active", False)),
             "metealarm_integrated": external_inputs.get("metealarm_level", "none") != "none",
             "estofex_integrated": external_inputs.get("estofex_level", "none") != "none",
             "radar_integrated": external_inputs.get("radar_confirmation", "none") != "none",
@@ -2495,6 +2619,20 @@ def main(argv: list[str] | None = None) -> int:
         help="Manual or future connector value for IRM/KMI warning level",
     )
     parser.add_argument(
+        "--official-forecast-signal",
+        default="none",
+        choices=["none", "heat", "instability", "thunderstorms", "severe_thunderstorms"],
+        help=(
+            "Official IRM/KMI forecast signal when the textual bulletin confirms risk "
+            "without a formal warning color"
+        ),
+    )
+    parser.add_argument(
+        "--heat-warning-active",
+        action="store_true",
+        help="Set when the official Belgian heat warning or heat phase is active",
+    )
+    parser.add_argument(
         "--metealarm-level",
         default="none",
         choices=["none", "yellow", "orange", "red"],
@@ -2527,6 +2665,8 @@ def main(argv: list[str] | None = None) -> int:
     run_id = args.run_id.strip() or datetime.now().astimezone().strftime("%Y%m%d_%H%M%S")
     external_confirmation = _external_confirmation_from_inputs(
         irm_warning_level=args.irm_warning_level,
+        official_forecast_signal=args.official_forecast_signal,
+        heat_warning_active=bool(args.heat_warning_active),
         metealarm_level=args.metealarm_level,
         estofex_level=args.estofex_level,
         radar_confirmation=args.radar_confirmation,
