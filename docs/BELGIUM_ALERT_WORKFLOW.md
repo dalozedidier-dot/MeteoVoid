@@ -1,103 +1,117 @@
 # MeteoVoid Belgium Alert Watch
 
-Ce workflow ajoute une couche de veille météo orientée Belgique au-dessus de MeteoVoid.
+Ce module génère une veille météo Belgique à partir des prévisions horaires Open-Meteo, puis produit un rapport JSON, Markdown, CSV, GeoJSON, une carte interactive Leaflet et un tableau de bord HTML.
 
-Il ne remplace pas les avertissements officiels. Il produit un rapport interne de surveillance qui doit être comparé avec l’IRM/KMI, MeteoAlarm, ESTOFEX, le radar et la foudre avant toute communication publique.
+Le système ne remplace pas l’IRM/KMI. Il sert à détecter un signal modèle, à suivre sa tendance, à conserver l’historique des runs, puis à comparer ce signal avec des confirmations externes.
 
-## Ce qui est récupéré en direct
+## Fichiers principaux
 
-En mode normal, le script interroge l’API Open-Meteo Forecast au moment de l’exécution.
+- `config/stations_belgium.yaml` : grille Belgique et approches frontalières.
+- `tools/generate_belgium_alert_report.py` : récupération, scoring, rapport, cartes, historique, manifeste.
+- `.github/workflows/belgium_alert_watch.yml` : workflow planifié et manuel.
 
-Le rapport indique explicitement :
+## Sorties générées
 
-- `data_mode`: `live_forecast_api` lorsque les prévisions sont récupérées en ligne.
-- `source_type`: `model_forecast` pour rappeler qu’il s’agit de prévisions modèle.
-- `source_detail`: `Open-Meteo Forecast API`.
-- `integrations`: état des sources externes non encore branchées.
+Le workflow écrit dans `_ci_out/belgium_alert/` :
 
-En mode `--offline-demo`, aucune donnée réelle n’est récupérée. Le rapport affiche alors :
+- `belgium_alert_report.json` : rapport complet machine.
+- `belgium_alert_report.md` : résumé humain.
+- `risk_by_station.csv` : stations, scores et composantes.
+- `risk_by_station.geojson` : données SIG.
+- `belgium_alert_map.html` : carte Leaflet principale.
+- `belgium_alert_map.svg` : fallback hors ligne.
+- `belgium_alert_dashboard.html` : tableau de bord professionnel.
+- `source_status.json` : état des sources et erreurs par station.
+- `alert_state.json` : niveau opérationnel calculé.
+- `history.csv` : historique append-only local ou restauré depuis cache GitHub Actions.
+- `manifest.json` : tailles et hashes SHA-256 des fichiers générés.
 
-- `data_mode`: `offline_demo`.
-- `source_type`: `synthetic_demo`.
+## Niveaux internes
 
-## Fichiers
+MeteoVoid distingue désormais trois couches :
 
-- `config/stations_belgium.yaml` : grille belge et frontalière.
-- `tools/generate_belgium_alert_report.py` : récupération des prévisions, scoring de risque et génération des cartes.
-- `.github/workflows/belgium_alert_watch.yml` : workflow GitHub Actions planifié.
+1. `aggregate.severity` : sévérité issue du modèle météo.
+2. `external_confirmation.score` : confirmation externe renseignée ou future intégration.
+3. `operational_state.level` : niveau final prudent pour la veille.
 
-## Sorties
+Niveaux opérationnels possibles :
 
-Le workflow écrit ces fichiers dans `_ci_out/belgium_alert/` :
+- `normal` : pas de signal notable.
+- `low_watch` : signal faible.
+- `watch` : signal à surveiller.
+- `watch_reinforced` : signal modèle élevé sans confirmation suffisante.
+- `pre_alert_confirmed` : signal modèle élevé et confirmation externe partielle.
+- `alert_confirmed` : signal modèle très élevé et confirmation externe partielle ou forte.
 
-- `belgium_alert_report.json`
-- `belgium_alert_report.md`
-- `risk_by_station.csv`
-- `risk_by_station.geojson`
-- `belgium_alert_map.svg`
-- `belgium_alert_map.html`
-- `belgium_alert_dashboard.html`
+Même en `alert_confirmed`, le rapport reste non officiel. Le texte public doit renvoyer vers l’IRM/KMI, MeteoAlarm, le radar et la foudre.
 
-`belgium_alert_map.html` est maintenant la carte principale. Elle utilise Leaflet avec un fond OpenStreetMap, un regroupement automatique des points proches et des détails au clic. Cette carte est plus lisible pour la Belgique réelle et évite les superpositions visibles dans la vue nationale.
+## Confirmation externe manuelle
 
-`belgium_alert_map.svg` reste un fallback hors ligne. Il ne dépend d’aucune tuile externe. Les points proches sont légèrement décalés avec une ligne de rappel vers leur position réelle.
+Le workflow manuel permet de renseigner des confirmations externes sans coder de connecteur immédiat :
 
-Le fichier `belgium_alert_dashboard.html` reprend ces mêmes données dans un tableau de bord plus professionnel : barre latérale, cartes KPI, carte interactive intégrée, panneau de lecture opérationnelle, tableau des stations et rappel des sources. Il est ouvrable directement depuis les artefacts GitHub Actions. Si l’environnement bloque les ressources externes, utiliser le SVG comme fallback.
+- `irm_warning_level` : `none`, `yellow`, `orange`, `red`
+- `metealarm_level` : `none`, `yellow`, `orange`, `red`
+- `estofex_level` : `none`, `level1`, `level2`, `level3`
+- `radar_confirmation` : `none`, `weak`, `moderate`, `strong`
+- `lightning_confirmation` : `none`, `nearby`, `confirmed`
+- `external_note` : note libre
 
-## Niveaux de sévérité
-
-- `normal` : aucun signal fort dans les variables disponibles.
-- `watch` : la configuration mérite une surveillance rapprochée.
-- `medium` : comparer avec les avertissements officiels et l’évolution radar.
-- `high` : préparer un message clair si les signaux officiels ou le nowcast confirment.
-- `alert` : publier seulement après confirmation externe.
-
-## Composantes du risque
-
-Le score combine actuellement :
-
-- chaleur
-- humidité et point de rosée
-- probabilité de précipitation ou précipitation horaire
-- rafales de vent
-- baisse de pression sur six heures
-- code météo Open-Meteo
-
-Le score reste volontairement prudent. Il sert à produire une veille, pas un avertissement officiel.
-
-## Lancement manuel
+Exemple :
 
 ```bash
 python tools/generate_belgium_alert_report.py \
   --stations config/stations_belgium.yaml \
-  --target-date next-friday \
-  --out-dir _ci_out/belgium_alert
-```
-
-Pour vérifier localement sans accès réseau :
-
-```bash
-python tools/generate_belgium_alert_report.py \
-  --stations config/stations_belgium.yaml \
-  --target-date next-friday \
+  --target-date 2026-06-19 \
   --out-dir _ci_out/belgium_alert \
-  --offline-demo
+  --history-dir .meteovoid_history/belgium_alert \
+  --irm-warning-level orange \
+  --metealarm-level yellow \
+  --estofex-level level1 \
+  --radar-confirmation weak \
+  --lightning-confirmation nearby \
+  --external-note "Bulletins consultés manuellement avant run"
 ```
+
+## Historique et tendance
+
+Chaque run ajoute une ligne à :
+
+```text
+.meteovoid_history/belgium_alert/belgium_alert_history.csv
+```
+
+Le fichier est recopié dans l’artefact sous le nom `history.csv`.
+
+En GitHub Actions, le workflow restaure et sauvegarde `.meteovoid_history` via `actions/cache`. Cela permet de comparer le score actuel au run précédent et de produire un état de tendance :
+
+- `no_history`
+- `stable`
+- `rising`
+- `rising_fast`
+- `falling`
+- `falling_fast`
+
+## Carte
+
+`belgium_alert_map.html` utilise Leaflet et OpenStreetMap. Les marqueurs sont regroupés automatiquement lorsque les points sont proches. Les labels ne sont plus affichés en permanence, ce qui évite les superpositions. Les détails apparaissent au clic.
+
+`belgium_alert_map.svg` reste disponible en fallback hors ligne. Il utilise une silhouette belge plus détaillée, décale légèrement les points proches et trace une ligne vers la position réelle.
 
 ## Webhook
 
-Créer un secret de dépôt nommé `METEOVOID_ALERT_WEBHOOK_URL` pour envoyer un payload JSON compact lorsque la sévérité atteint le minimum configuré.
+Le webhook générique utilise `METEOVOID_ALERT_WEBHOOK_URL`. Il envoie :
 
-Le workflow ne tombe pas en erreur si le webhook est absent.
+- score modèle
+- confirmation externe
+- niveau opérationnel
+- tendance
+- stations principales
 
-## Prochaine couche à brancher
+Pour éviter les alertes excessives, le workflow peut être lancé avec `min_severity`. Si le niveau opérationnel passe en `pre_alert_confirmed` ou `alert_confirmed`, la notification est traitée comme une alerte interne.
 
-La structure JSON est déjà prête pour ajouter les sources externes suivantes :
+## Limites
 
-- avertissements officiels IRM/KMI
-- MeteoAlarm
-- ESTOFEX
-- radar pluie
-- détection foudre
-
-Quand une source sera réellement intégrée, le champ correspondant dans `integrations` devra passer à `true`, et le calcul du score pourra intégrer une composante externe distincte du modèle Open-Meteo.
+- Open-Meteo reste une source de prévision modèle.
+- Le système ne fait pas encore de scraping ou ingestion automatique IRM/KMI, MeteoAlarm, ESTOFEX, radar ou foudre.
+- Les confirmations externes sont actuellement manuelles ou préparées pour de futurs connecteurs.
+- La convection peut évoluer très vite. Un run à J-3 n’a pas la même valeur qu’un run à H-3.

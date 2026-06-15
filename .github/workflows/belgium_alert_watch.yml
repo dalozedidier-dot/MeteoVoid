@@ -23,6 +23,40 @@ on:
         required: false
         default: false
         type: boolean
+      irm_warning_level:
+        description: "Manual IRM/KMI warning level if known"
+        required: false
+        default: "none"
+        type: choice
+        options: [none, yellow, orange, red]
+      metealarm_level:
+        description: "Manual MeteoAlarm level if known"
+        required: false
+        default: "none"
+        type: choice
+        options: [none, yellow, orange, red]
+      estofex_level:
+        description: "Manual ESTOFEX level if known"
+        required: false
+        default: "none"
+        type: choice
+        options: [none, level1, level2, level3]
+      radar_confirmation:
+        description: "Manual radar confirmation"
+        required: false
+        default: "none"
+        type: choice
+        options: [none, weak, moderate, strong]
+      lightning_confirmation:
+        description: "Manual lightning confirmation"
+        required: false
+        default: "none"
+        type: choice
+        options: [none, nearby, confirmed]
+      external_note:
+        description: "Optional external context note"
+        required: false
+        default: ""
   schedule:
     - cron: "15 */3 * * *"
 
@@ -36,11 +70,12 @@ concurrency:
 jobs:
   belgium-alert-watch:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
 
     env:
       PYTHONUNBUFFERED: "1"
       METEOVOID_ALERT_WEBHOOK_URL: ${{ secrets.METEOVOID_ALERT_WEBHOOK_URL }}
+      METEOVOID_HISTORY_DIR: .meteovoid_history/belgium_alert
 
     steps:
       - name: Checkout
@@ -52,6 +87,15 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Restore MeteoVoid history
+        uses: actions/cache/restore@v4
+        with:
+          path: .meteovoid_history
+          key: belgium-alert-history-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            belgium-alert-history-${{ github.ref_name }}-
+            belgium-alert-history-
+
       - name: Install
         run: |
           set -euo pipefail
@@ -61,7 +105,7 @@ jobs:
       - name: Prepare output
         run: |
           set -euo pipefail
-          mkdir -p _ci_out/belgium_alert
+          mkdir -p _ci_out/belgium_alert "$METEOVOID_HISTORY_DIR"
 
       - name: Generate Belgium alert report
         run: |
@@ -69,14 +113,28 @@ jobs:
           TARGET_DATE="${{ inputs.target_date || 'auto' }}"
           MIN_SEVERITY="${{ inputs.min_severity || 'medium' }}"
           OFFLINE_DEMO="${{ inputs.offline_demo || 'false' }}"
+          IRM_WARNING_LEVEL="${{ inputs.irm_warning_level || 'none' }}"
+          METEOALARM_LEVEL="${{ inputs.meteoalarm_level || 'none' }}"
+          ESTOFEX_LEVEL="${{ inputs.estofex_level || 'none' }}"
+          RADAR_CONFIRMATION="${{ inputs.radar_confirmation || 'none' }}"
+          LIGHTNING_CONFIRMATION="${{ inputs.lightning_confirmation || 'none' }}"
+          EXTERNAL_NOTE="${{ inputs.external_note || '' }}"
 
           cmd=(
             python tools/generate_belgium_alert_report.py
             --stations config/stations_belgium.yaml
             --target-date "$TARGET_DATE"
             --out-dir _ci_out/belgium_alert
+            --history-dir "$METEOVOID_HISTORY_DIR"
+            --run-id "gha_${{ github.run_id }}_${{ github.run_attempt }}"
             --webhook-url "$METEOVOID_ALERT_WEBHOOK_URL"
             --min-severity "$MIN_SEVERITY"
+            --irm-warning-level "$IRM_WARNING_LEVEL"
+            --metealarm-level "$METEOALARM_LEVEL"
+            --estofex-level "$ESTOFEX_LEVEL"
+            --radar-confirmation "$RADAR_CONFIRMATION"
+            --lightning-confirmation "$LIGHTNING_CONFIRMATION"
+            --external-note "$EXTERNAL_NOTE"
           )
 
           if [ "$OFFLINE_DEMO" = "true" ]; then
@@ -95,6 +153,13 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Generated files:" >> "$GITHUB_STEP_SUMMARY"
           find _ci_out/belgium_alert -maxdepth 1 -type f -printf "- %f\n" | sort >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save MeteoVoid history
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .meteovoid_history
+          key: belgium-alert-history-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Upload Belgium alert artifact
         if: always()

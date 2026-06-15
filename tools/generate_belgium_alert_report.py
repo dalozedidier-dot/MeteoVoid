@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import html
 import json
+import shutil
 import sys
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
@@ -929,7 +931,11 @@ def _dashboard_insights(report: dict[str, Any]) -> list[tuple[str, str, str]]:
     max_temp = _max_number([r.get("max_temperature_c") for r in rows])
     max_dew = _max_number([r.get("max_dew_point_c") for r in rows])
     max_precip = _max_number([r.get("max_precip_probability_pct") for r in rows])
-    return [
+    external = report.get("external_confirmation", {})
+    operational = report.get("operational_state", {})
+    trend = report.get("trend", {})
+
+    insights = [
         (
             "Zones les plus sensibles",
             _dominant_corridor(rows),
@@ -946,6 +952,31 @@ def _dashboard_insights(report: dict[str, Any]) -> list[tuple[str, str, str]]:
             "rain",
         ),
     ]
+    if isinstance(external, dict):
+        insights.append(
+            (
+                "Confirmation externe",
+                f"Score externe : {float(external.get('score') or 0.0):.3f}. Statut : {external.get('status', 'non_confirmed')}. {external.get('summary', '')}",
+                "storm",
+            )
+        )
+    if isinstance(operational, dict):
+        insights.append(
+            (
+                "Niveau opérationnel",
+                f"{operational.get('level', 'watch')} : {operational.get('reason', 'surveillance en cours')}",
+                "rain",
+            )
+        )
+    if isinstance(trend, dict) and trend.get("status") != "no_history":
+        insights.append(
+            (
+                "Tendance",
+                f"{trend.get('status', 'unknown')} sur {trend.get('comparison_runs', 0)} run(s). Écart score : {float(trend.get('delta_score') or 0.0):+.3f}.",
+                "heat",
+            )
+        )
+    return insights
 
 
 def _render_dashboard_map_svg(report: dict[str, Any]) -> str:
@@ -1834,13 +1865,429 @@ def _render_dashboard_html(report: dict[str, Any]) -> str:
 """
 
 
+def _json_dumps(data: Any) -> str:
+    return json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _level_score(value: str, mapping: dict[str, float]) -> float:
+    return mapping.get(str(value).strip().lower(), 0.0)
+
+
+def _external_confirmation_from_inputs(
+    *,
+    irm_warning_level: str,
+    metealarm_level: str,
+    estofex_level: str,
+    radar_confirmation: str,
+    lightning_confirmation: str,
+    external_note: str,
+) -> dict[str, Any]:
+    official_scores = [
+        _level_score(irm_warning_level, {"none": 0.0, "yellow": 0.35, "orange": 0.70, "red": 1.0}),
+        _level_score(metealarm_level, {"none": 0.0, "yellow": 0.35, "orange": 0.70, "red": 1.0}),
+        _level_score(estofex_level, {"none": 0.0, "level1": 0.45, "level2": 0.75, "level3": 1.0}),
+        _level_score(
+            radar_confirmation, {"none": 0.0, "weak": 0.25, "moderate": 0.60, "strong": 0.90}
+        ),
+        _level_score(lightning_confirmation, {"none": 0.0, "nearby": 0.45, "confirmed": 0.85}),
+    ]
+    weights = [0.24, 0.21, 0.20, 0.20, 0.15]
+    score = round(sum(s * w for s, w in zip(official_scores, weights, strict=False)), 6)
+    active = []
+    if irm_warning_level != "none":
+        active.append(f"IRM/KMI {irm_warning_level}")
+    if metealarm_level != "none":
+        active.append(f"MeteoAlarm {metealarm_level}")
+    if estofex_level != "none":
+        active.append(f"ESTOFEX {estofex_level}")
+    if radar_confirmation != "none":
+        active.append(f"radar {radar_confirmation}")
+    if lightning_confirmation != "none":
+        active.append(f"foudre {lightning_confirmation}")
+    if score >= 0.75:
+        status = "confirmed_high"
+    elif score >= 0.40:
+        status = "partially_confirmed"
+    elif score > 0.0:
+        status = "weak_confirmation"
+    else:
+        status = "not_integrated_or_not_confirmed"
+    summary = "; ".join(active) if active else "Aucune confirmation externe renseignée dans ce run."
+    if external_note.strip():
+        summary = f"{summary} Note : {external_note.strip()}"
+    return {
+        "score": score,
+        "status": status,
+        "summary": summary,
+        "inputs": {
+            "irm_warning_level": irm_warning_level,
+            "metealarm_level": metealarm_level,
+            "estofex_level": estofex_level,
+            "radar_confirmation": radar_confirmation,
+            "lightning_confirmation": lightning_confirmation,
+            "external_note": external_note.strip(),
+        },
+    }
+
+
+def _components_summary(stations: list[dict[str, Any]]) -> dict[str, Any]:
+    keys = ["heat", "moisture", "precipitation", "wind_gust", "pressure_drop", "weather_code"]
+    ok = [s for s in stations if s.get("source_ok")]
+    summary: dict[str, Any] = {}
+    for key in keys:
+        vals = []
+        for station in ok:
+            comps = station.get("components", {})
+            if isinstance(comps, dict):
+                val = _safe_float(comps.get(key))
+                if val is not None:
+                    vals.append(val)
+        summary[key] = {
+            "mean": round(sum(vals) / len(vals), 6) if vals else 0.0,
+            "max": round(max(vals), 6) if vals else 0.0,
+        }
+    return summary
+
+
+def _source_status(report: dict[str, Any]) -> dict[str, Any]:
+    stations = [s for s in report.get("stations", []) if isinstance(s, dict)]
+    total = len(stations)
+    ok = [s for s in stations if s.get("source_ok")]
+    errors = [s for s in stations if not s.get("source_ok")]
+    health = (len(ok) / total) if total else 0.0
+    ext = report.get("external_confirmation", {})
+    integrations = report.get("integrations", {})
+    return {
+        "generated_at": report.get("generated_at"),
+        "primary_source": report.get("source_detail"),
+        "data_mode": report.get("data_mode"),
+        "source_type": report.get("source_type"),
+        "source_health_score": round(health, 6),
+        "source_ok_count": len(ok),
+        "source_error_count": len(errors),
+        "station_errors": [
+            {
+                "station_id": s.get("station_id"),
+                "name": s.get("name"),
+                "error": s.get("error"),
+            }
+            for s in errors
+        ],
+        "external_confirmation": ext,
+        "integrations": integrations,
+        "limits": report.get("limits", []),
+    }
+
+
+def _read_last_history_row(history_csv: Path) -> dict[str, str] | None:
+    if not history_csv.exists():
+        return None
+    try:
+        with history_csv.open("r", encoding="utf-8", newline="") as fh:
+            rows = list(csv.DictReader(fh))
+    except OSError:
+        return None
+    if not rows:
+        return None
+    return rows[-1]
+
+
+def _trend_from_history(report: dict[str, Any], history_dir: Path) -> dict[str, Any]:
+    previous = _read_last_history_row(history_dir / "belgium_alert_history.csv")
+    if not previous:
+        return {
+            "status": "no_history",
+            "comparison_runs": 0,
+            "delta_score": 0.0,
+            "previous_score": None,
+            "current_score": float(report.get("aggregate", {}).get("score") or 0.0),
+            "summary": "Aucun historique local disponible pour comparer ce run.",
+        }
+    current = float(report.get("aggregate", {}).get("score") or 0.0)
+    prev = _safe_float(previous.get("national_score")) or 0.0
+    delta = round(current - prev, 6)
+    if delta >= 0.08:
+        status = "rising_fast"
+    elif delta >= 0.025:
+        status = "rising"
+    elif delta <= -0.08:
+        status = "falling_fast"
+    elif delta <= -0.025:
+        status = "falling"
+    else:
+        status = "stable"
+    return {
+        "status": status,
+        "comparison_runs": 1,
+        "delta_score": delta,
+        "previous_score": prev,
+        "previous_generated_at": previous.get("generated_at"),
+        "current_score": current,
+        "summary": f"Score précédent {prev:.3f}, score actuel {current:.3f}, écart {delta:+.3f}.",
+    }
+
+
+def _operational_state(report: dict[str, Any]) -> dict[str, Any]:
+    aggregate = report.get("aggregate", {})
+    model_score = float(aggregate.get("score") or 0.0)
+    model_severity = str(aggregate.get("severity", "normal"))
+    external = report.get("external_confirmation", {})
+    external_score = float(external.get("score") or 0.0) if isinstance(external, dict) else 0.0
+    trend = report.get("trend", {})
+    trend_status = (
+        str(trend.get("status", "no_history")) if isinstance(trend, dict) else "no_history"
+    )
+    source_health = _source_status(report).get("source_health_score", 0.0)
+
+    if model_score >= 0.78 and external_score >= 0.40:
+        level = "alert_confirmed"
+        reason = "signal modèle très élevé et confirmation externe partielle ou forte"
+    elif model_score >= 0.65 and external_score >= 0.40:
+        level = "pre_alert_confirmed"
+        reason = "signal modèle élevé et confirmation externe partielle"
+    elif model_score >= 0.65:
+        level = "watch_reinforced"
+        reason = "signal modèle élevé, confirmation externe encore absente ou insuffisante"
+    elif model_score >= 0.50 or external_score >= 0.40:
+        level = "watch"
+        reason = "signal à surveiller, sans convergence suffisante pour alerte"
+    elif model_score >= 0.35:
+        level = "low_watch"
+        reason = "signal faible à modéré"
+    else:
+        level = "normal"
+        reason = "pas de signal notable dans la grille suivie"
+
+    if source_health < 0.75:
+        reason = f"{reason}. Attention : qualité source dégradée"
+    if trend_status in {"rising", "rising_fast"} and level in {"watch", "watch_reinforced"}:
+        reason = f"{reason}. Tendance en hausse"
+    return {
+        "level": level,
+        "reason": reason,
+        "model_score": round(model_score, 6),
+        "model_severity": model_severity,
+        "external_confirmation_score": round(external_score, 6),
+        "source_health_score": round(float(source_health), 6),
+        "trend_status": trend_status,
+        "public_alert_allowed": level in {"pre_alert_confirmed", "alert_confirmed"},
+        "public_alert_caution": "Ne jamais publier comme alerte officielle. Comparer avec IRM/KMI, MeteoAlarm, radar et foudre.",
+    }
+
+
+def _history_row(report: dict[str, Any], run_id: str) -> dict[str, Any]:
+    stations = [s for s in report.get("stations", []) if isinstance(s, dict)]
+    rows = _station_rows(report)
+    top = rows[0] if rows else {}
+    aggregate = report.get("aggregate", {})
+    external = report.get("external_confirmation", {})
+    operational = report.get("operational_state", {})
+    return {
+        "run_id": run_id,
+        "generated_at": report.get("generated_at"),
+        "target_start": report.get("target_window", {}).get("start"),
+        "target_end": report.get("target_window", {}).get("end"),
+        "national_score": float(aggregate.get("score") or 0.0),
+        "severity": aggregate.get("severity"),
+        "operational_level": operational.get("level"),
+        "external_confirmation_score": (
+            float(external.get("score") or 0.0) if isinstance(external, dict) else 0.0
+        ),
+        "source_ok_count": aggregate.get("source_ok_count"),
+        "source_error_count": aggregate.get("source_error_count"),
+        "top_station_id": top.get("station_id"),
+        "top_station_name": top.get("name"),
+        "top_station_score": float(top.get("score") or 0.0),
+        "nb_high": sum(1 for s in stations if str(s.get("severity")) == "high"),
+        "nb_alert": sum(1 for s in stations if str(s.get("severity")) == "alert"),
+        "trend_status": report.get("trend", {}).get("status"),
+    }
+
+
+def _append_history(report: dict[str, Any], history_dir: Path, run_id: str) -> Path:
+    history_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = history_dir / "belgium_alert_history.csv"
+    row = _history_row(report, run_id)
+    fieldnames = list(row.keys())
+    write_header = not csv_path.exists()
+    with csv_path.open("a", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames)
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
+    return csv_path
+
+
+def _write_manifest(out_dir: Path, run_id: str) -> Path:
+    files = []
+    for path in sorted(out_dir.iterdir()):
+        if path.is_file() and path.name != "manifest.json":
+            files.append(
+                {
+                    "path": path.name,
+                    "bytes": path.stat().st_size,
+                    "sha256": _sha256_file(path),
+                }
+            )
+    manifest = {
+        "run_id": run_id,
+        "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "files": files,
+    }
+    path = out_dir / "manifest.json"
+    path.write_text(_json_dumps(manifest), encoding="utf-8")
+    return path
+
+
+def _snapshot_run(out_dir: Path, history_dir: Path, run_id: str) -> None:
+    run_dir = history_dir / "runs" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    for path in out_dir.iterdir():
+        if path.is_file():
+            shutil.copy2(path, run_dir / path.name)
+
+
+def _render_markdown(report: dict[str, Any]) -> str:
+    aggregate = report["aggregate"]
+    stations = report["stations"]
+    data_mode = report.get("data_mode", "unknown")
+    source_type = report.get("source_type", "unknown")
+    source_detail = report.get("source_detail", report.get("source", "unknown"))
+    integrations = report.get("integrations", {})
+    external = report.get("external_confirmation", {})
+    operational = report.get("operational_state", {})
+    trend = report.get("trend", {})
+    components_summary = report.get("components_summary", {})
+
+    lines: list[str] = []
+    lines.append("# MeteoVoid Belgium Alert Watch")
+    lines.append("")
+    lines.append(f"Généré le : `{report['generated_at']}`")
+    lines.append(
+        f"Fenêtre analysée : `{report['target_window']['start']}` à "
+        f"`{report['target_window']['end']}`"
+    )
+    lines.append(f"Score national : `{aggregate['score']:.3f}`")
+    lines.append(f"Sévérité modèle : `{aggregate['severity']}`")
+    lines.append(f"Niveau opérationnel : `{operational.get('level', 'n/a')}`")
+    lines.append(f"Raison : {operational.get('reason', 'n/a')}")
+    lines.append("")
+    lines.append("## Source et limites")
+    lines.append("")
+    lines.append(f"Source principale : `{source_detail}`")
+    lines.append(f"Mode de données : `{data_mode}`")
+    lines.append(f"Type de source : `{source_type}`")
+    lines.append(
+        "Données récupérées au moment de l’exécution"
+        if data_mode == "live_forecast_api"
+        else "Données de démonstration déterministes, sans accès réseau"
+    )
+    lines.append("")
+    lines.append("## Confirmation externe")
+    lines.append("")
+    lines.append(f"Score de confirmation externe : `{float(external.get('score') or 0.0):.3f}`")
+    lines.append(f"Statut : `{external.get('status', 'n/a')}`")
+    lines.append(f"Synthèse : {external.get('summary', 'n/a')}")
+    lines.append("")
+    lines.append("Intégrations externes actives ou renseignées dans ce run :")
+    lines.append(
+        f"- Avertissements officiels IRM/KMI : `{bool(integrations.get('official_warning_integrated', False))}`"
+    )
+    lines.append(f"- MeteoAlarm : `{bool(integrations.get('metealarm_integrated', False))}`")
+    lines.append(f"- ESTOFEX : `{bool(integrations.get('estofex_integrated', False))}`")
+    lines.append(f"- Radar : `{bool(integrations.get('radar_integrated', False))}`")
+    lines.append(f"- Foudre : `{bool(integrations.get('lightning_integrated', False))}`")
+    lines.append("")
+    lines.append("## Tendance")
+    lines.append("")
+    lines.append(f"Statut : `{trend.get('status', 'no_history')}`")
+    lines.append(f"Résumé : {trend.get('summary', 'n/a')}")
+    lines.append("")
+    lines.append("## Résumé des composantes modèle")
+    lines.append("")
+    lines.append("| Composante | Moyenne | Maximum |")
+    lines.append("|---|---:|---:|")
+    for key, value in components_summary.items() if isinstance(components_summary, dict) else []:
+        if isinstance(value, dict):
+            lines.append(
+                f"| {key} | {float(value.get('mean') or 0.0):.3f} | {float(value.get('max') or 0.0):.3f} |"
+            )
+    lines.append("")
+    lines.append(
+        "Ce rapport est une veille basée sur modèle. Ce n’est pas une alerte officielle. "
+        "Pour la sécurité publique, il doit toujours être comparé avec l’IRM/KMI, "
+        "MeteoAlarm, le radar et le nowcast foudre."
+    )
+    lines.append("")
+    lines.append("## Fichiers générés")
+    lines.append("")
+    lines.append("- `belgium_alert_dashboard.html`")
+    lines.append("- `belgium_alert_map.html`")
+    lines.append("- `belgium_alert_map.svg`")
+    lines.append("- `belgium_alert_report.json`")
+    lines.append("- `risk_by_station.csv`")
+    lines.append("- `risk_by_station.geojson`")
+    lines.append("- `source_status.json`")
+    lines.append("- `alert_state.json`")
+    lines.append("- `history.csv`")
+    lines.append("- `manifest.json`")
+    lines.append("")
+    lines.append("## Stations les plus sensibles")
+    lines.append("")
+    lines.append(
+        "| Station | Région | Sévérité | Score | Heure sensible | Tmax °C | Point de rosée °C | "
+        "Précip % | Précip mm/h | Rafales m/s | Baisse hPa/6h | Signaux |"
+    )
+    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|")
+    ordered = sorted(stations, key=lambda x: float(x["score"]), reverse=True)
+    for item in ordered[:12]:
+        signals = "; ".join(item.get("signals", []))
+        lines.append(
+            "| "
+            + " | ".join(
+                [
+                    str(item["name"]),
+                    str(item["region"]),
+                    str(item["severity"]),
+                    f"{float(item['score']):.3f}",
+                    str(item.get("worst_time") or "n/a"),
+                    _fmt(item.get("max_temperature_c")),
+                    _fmt(item.get("max_dew_point_c")),
+                    _fmt(item.get("max_precip_probability_pct"), 0),
+                    _fmt(item.get("max_precipitation_mm_h")),
+                    _fmt(item.get("max_wind_gust_ms")),
+                    _fmt(item.get("max_pressure_drop_6h_hpa")),
+                    signals.replace("|", "/"),
+                ]
+            )
+            + " |"
+        )
+    lines.append("")
+    lines.append("## Notes opérationnelles")
+    lines.append("")
+    lines.append("- `normal` : pas de signal notable.")
+    lines.append("- `low_watch` ou `watch` : garder la situation sous surveillance.")
+    lines.append("- `watch_reinforced` : surveillance rapprochée, comparaison externe nécessaire.")
+    lines.append("- `pre_alert_confirmed` : signal modèle et confirmation externe convergents.")
+    lines.append(
+        "- `alert_confirmed` : publier seulement avec formulation prudente et renvoi vers sources officielles."
+    )
+    lines.append("")
+    return "\n".join(lines)
+
+
 def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     report_path = out_dir / "belgium_alert_report.json"
-    report_path.write_text(
-        json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    report_path.write_text(_json_dumps(report), encoding="utf-8")
     (out_dir / "belgium_alert_report.md").write_text(_render_markdown(report), encoding="utf-8")
     (out_dir / "belgium_alert_map.svg").write_text(_render_map_svg(report), encoding="utf-8")
     (out_dir / "belgium_alert_map.html").write_text(_render_map_html(report), encoding="utf-8")
@@ -1848,8 +2295,14 @@ def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
         _render_dashboard_html(report), encoding="utf-8"
     )
     (out_dir / "risk_by_station.geojson").write_text(
-        json.dumps(_render_geojson(report), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        _json_dumps(_render_geojson(report)),
         encoding="utf-8",
+    )
+    (out_dir / "source_status.json").write_text(
+        _json_dumps(_source_status(report)), encoding="utf-8"
+    )
+    (out_dir / "alert_state.json").write_text(
+        _json_dumps(report.get("operational_state", {})), encoding="utf-8"
     )
 
     rows = report["stations"]
@@ -1868,16 +2321,35 @@ def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
         "max_precipitation_mm_h",
         "max_wind_gust_ms",
         "max_pressure_drop_6h_hpa",
+        "component_heat",
+        "component_moisture",
+        "component_precipitation",
+        "component_wind_gust",
+        "component_pressure_drop",
+        "component_weather_code",
         "thunderstorm_code_seen",
         "shower_code_seen",
         "source_ok",
         "error",
+        "signals",
     ]
     with csv_path.open("w", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
         writer.writeheader()
         for row in rows:
-            writer.writerow({k: row.get(k) for k in fieldnames})
+            comps = row.get("components", {}) if isinstance(row.get("components"), dict) else {}
+            writer.writerow(
+                {
+                    **{k: row.get(k) for k in fieldnames if not k.startswith("component_")},
+                    "component_heat": comps.get("heat"),
+                    "component_moisture": comps.get("moisture"),
+                    "component_precipitation": comps.get("precipitation"),
+                    "component_wind_gust": comps.get("wind_gust"),
+                    "component_pressure_drop": comps.get("pressure_drop"),
+                    "component_weather_code": comps.get("weather_code"),
+                    "signals": "; ".join(row.get("signals", [])),
+                }
+            )
 
 
 def _should_send_webhook(severity: str, min_severity: str) -> bool:
@@ -1890,6 +2362,9 @@ def _send_webhook(url: str, report: dict[str, Any], *, timeout_s: float) -> None
         "generated_at": report["generated_at"],
         "target_window": report["target_window"],
         "aggregate": report["aggregate"],
+        "external_confirmation": report.get("external_confirmation"),
+        "operational_state": report.get("operational_state"),
+        "trend": report.get("trend"),
         "top_stations": report["aggregate"].get("top_stations", []),
     }
     data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -1905,6 +2380,7 @@ def _build_report(
     timezone: str,
     timeout_s: float,
     offline_demo: bool,
+    external_confirmation: dict[str, Any],
 ) -> dict[str, Any]:
     config = load_stations_config(stations_path)
     risks: list[StationRisk] = []
@@ -1930,6 +2406,9 @@ def _build_report(
     source_detail = (
         "Open-Meteo Forecast API" if not offline_demo else "Deterministic offline demo payload"
     )
+    external_inputs = (
+        external_confirmation.get("inputs", {}) if isinstance(external_confirmation, dict) else {}
+    )
     return {
         "generated_at": generated,
         "source": source,
@@ -1943,12 +2422,14 @@ def _build_report(
             "label": target.label,
         },
         "integrations": {
-            "official_warning_integrated": False,
-            "metealarm_integrated": False,
-            "estofex_integrated": False,
-            "radar_integrated": False,
-            "lightning_integrated": False,
+            "official_warning_integrated": external_inputs.get("irm_warning_level", "none")
+            != "none",
+            "metealarm_integrated": external_inputs.get("metealarm_level", "none") != "none",
+            "estofex_integrated": external_inputs.get("estofex_level", "none") != "none",
+            "radar_integrated": external_inputs.get("radar_confirmation", "none") != "none",
+            "lightning_integrated": external_inputs.get("lightning_confirmation", "none") != "none",
         },
+        "external_confirmation": external_confirmation,
         "outputs": {
             "json": "belgium_alert_report.json",
             "markdown": "belgium_alert_report.md",
@@ -1957,8 +2438,13 @@ def _build_report(
             "map_svg": "belgium_alert_map.svg",
             "map_html": "belgium_alert_map.html",
             "dashboard_html": "belgium_alert_dashboard.html",
+            "source_status": "source_status.json",
+            "alert_state": "alert_state.json",
+            "history": "history.csv",
+            "manifest": "manifest.json",
         },
         "aggregate": aggregate,
+        "components_summary": _components_summary(stations),
         "stations": stations,
         "limits": [
             "Ce rapport n’est pas un avertissement météorologique officiel.",
@@ -1966,6 +2452,15 @@ def _build_report(
             "Les codes météo Open-Meteo et les prévisions horaires peuvent évoluer rapidement en contexte convectif.",
         ],
     }
+
+
+def _sync_history_outputs(
+    report: dict[str, Any], out_dir: Path, history_dir: Path, run_id: str
+) -> None:
+    history_csv = _append_history(report, history_dir, run_id)
+    shutil.copy2(history_csv, out_dir / "history.csv")
+    _write_manifest(out_dir, run_id)
+    _snapshot_run(out_dir, history_dir, run_id)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1990,21 +2485,81 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--webhook-url", default="", help="URL webhook JSON générique optionnelle")
     parser.add_argument("--min-severity", default="medium", choices=sorted(SEVERITY_RANK))
     parser.add_argument("--fail-on-webhook-error", action="store_true")
+    parser.add_argument("--history-dir", default="", help="Persistent history directory")
+    parser.add_argument("--no-history", action="store_true", help="Do not append local history")
+    parser.add_argument("--run-id", default="", help="Optional run id for reproducible snapshots")
+    parser.add_argument(
+        "--irm-warning-level",
+        default="none",
+        choices=["none", "yellow", "orange", "red"],
+        help="Manual or future connector value for IRM/KMI warning level",
+    )
+    parser.add_argument(
+        "--metealarm-level",
+        default="none",
+        choices=["none", "yellow", "orange", "red"],
+        help="Manual or future connector value for MeteoAlarm level",
+    )
+    parser.add_argument(
+        "--estofex-level",
+        default="none",
+        choices=["none", "level1", "level2", "level3"],
+        help="Manual or future connector value for ESTOFEX level",
+    )
+    parser.add_argument(
+        "--radar-confirmation",
+        default="none",
+        choices=["none", "weak", "moderate", "strong"],
+        help="Manual radar confirmation state",
+    )
+    parser.add_argument(
+        "--lightning-confirmation",
+        default="none",
+        choices=["none", "nearby", "confirmed"],
+        help="Manual lightning confirmation state",
+    )
+    parser.add_argument("--external-note", default="", help="Free-text external context note")
     args = parser.parse_args(argv)
 
     target = _parse_target_window(args.target_date, horizon_days=args.horizon_days)
+    out_dir = Path(args.out_dir)
+    history_dir = Path(args.history_dir) if args.history_dir.strip() else (out_dir / "history")
+    run_id = args.run_id.strip() or datetime.now().astimezone().strftime("%Y%m%d_%H%M%S")
+    external_confirmation = _external_confirmation_from_inputs(
+        irm_warning_level=args.irm_warning_level,
+        metealarm_level=args.metealarm_level,
+        estofex_level=args.estofex_level,
+        radar_confirmation=args.radar_confirmation,
+        lightning_confirmation=args.lightning_confirmation,
+        external_note=args.external_note,
+    )
     report = _build_report(
         stations_path=Path(args.stations),
         target=target,
         timezone=args.timezone,
         timeout_s=float(args.timeout_s),
         offline_demo=bool(args.offline_demo),
+        external_confirmation=external_confirmation,
     )
-    out_dir = Path(args.out_dir)
+    report["run_id"] = run_id
+    report["trend"] = _trend_from_history(report, history_dir)
+    report["operational_state"] = _operational_state(report)
     _write_outputs(report, out_dir)
 
+    if not args.no_history:
+        _sync_history_outputs(report, out_dir, history_dir, run_id)
+    else:
+        _write_manifest(out_dir, run_id)
+
     webhook_url = args.webhook_url.strip()
-    if webhook_url and _should_send_webhook(report["aggregate"]["severity"], args.min_severity):
+    min_severity = args.min_severity
+    notification_severity = report["aggregate"]["severity"]
+    if report.get("operational_state", {}).get("level") in {
+        "pre_alert_confirmed",
+        "alert_confirmed",
+    }:
+        notification_severity = "alert"
+    if webhook_url and _should_send_webhook(notification_severity, min_severity):
         try:
             _send_webhook(webhook_url, report, timeout_s=float(args.timeout_s))
         except (OSError, URLError, TimeoutError, ValueError) as exc:
@@ -2013,12 +2568,22 @@ def main(argv: list[str] | None = None) -> int:
                 raise SystemExit(message) from exc
             print(message, file=sys.stderr)
 
-    print(out_dir / "belgium_alert_report.json")
-    print(out_dir / "belgium_alert_report.md")
-    print(out_dir / "belgium_alert_map.svg")
-    print(out_dir / "belgium_alert_map.html")
-    print(out_dir / "belgium_alert_dashboard.html")
-    print(out_dir / "risk_by_station.geojson")
+    for name in [
+        "belgium_alert_report.json",
+        "belgium_alert_report.md",
+        "belgium_alert_map.svg",
+        "belgium_alert_map.html",
+        "belgium_alert_dashboard.html",
+        "risk_by_station.geojson",
+        "risk_by_station.csv",
+        "source_status.json",
+        "alert_state.json",
+        "history.csv",
+        "manifest.json",
+    ]:
+        path = out_dir / name
+        if path.exists():
+            print(path)
     return 0
 
 
