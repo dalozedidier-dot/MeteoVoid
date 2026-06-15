@@ -1,0 +1,12 @@
+# MeteoVoid Belgium external source connectors.
+# All connectors are fail-safe: a timeout or format change records an error in
+# official_sources_status.json without failing the report generation.
+rmi_warning_page_url: "https://www.meteo.be/en/weather/warnings/overview-belgium"
+rmi_forecast_page_url: "https://www.meteo.be/fr/meteo/previsions/meteo-pour-les-prochains-jours"
+metealarm_atom_url: "https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-belgium"
+estofex_text_url: "https://www.estofex.org/cgi-bin/polygon/showforecast.cgi?text=yes"
+# Optional private or local nowcast endpoints. Expected minimal JSON examples:
+# {"confirmation":"moderate"} for radar: none, weak, moderate, strong
+# {"confirmation":"confirmed"} for lightning: none, nearby, confirmed
+radar_json_url: ""
+lightning_json_url: ""

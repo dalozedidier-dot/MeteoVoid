@@ -202,3 +202,31 @@ Ce qui reste volontairement préparé mais non branché automatiquement :
 - validation replay sur épisodes historiques observés.
 
 Le principe retenu reste conservateur : mieux vaut une intégration déclarative fiable qu’un scraping fragile qui casse la CI ou donne une fausse confirmation.
+
+## Extension opérationnelle installée : palier multi-sources
+
+La version étendue ajoute les six blocs du prochain palier directement dans MeteoVoid :
+
+1. **IRM/KMI automatique** : option `--auto-external` avec récupération fail-safe de la page d'avertissements IRM/KMI et de la prévision texte. Les erreurs réseau ou changements HTML sont consignés dans `official_sources_status.json` sans casser le run.
+2. **MeteoAlarm + ESTOFEX** : connecteurs fail-safe vers le flux Atom Belgique de MeteoAlarm et le bulletin texte ESTOFEX. Les niveaux détectés alimentent `external_confirmation.score`.
+3. **Radar & foudre** : endpoints configurables `--radar-json-url` et `--lightning-json-url`, ou secrets GitHub `METEOVOID_RADAR_JSON_URL` et `METEOVOID_LIGHTNING_JSON_URL`. Les confirmations sont résumées dans `nowcast_status.json`.
+4. **Carte provinces + heatmap** : génération de `belgium_province_map.html` à partir de `config/belgium_provinces_simplified.geojson`, en plus de `belgium_alert_heatmap.html` et de la carte stations Leaflet.
+5. **Replay historique** : génération de `replay_validation.json` et ajout du script `tools/replay_belgium_alert_history.py` pour comparer l'historique MeteoVoid à un registre d'épisodes connus.
+6. **Calibration du scoring** : configuration `config/belgium_scoring_calibration.yaml`, sortie `calibration_report.json`, seuils et pondérations modifiables sans toucher au code.
+
+Commande complète type :
+
+```bash
+python tools/generate_belgium_alert_report.py \
+  --stations config/stations_belgium.yaml \
+  --target-date auto \
+  --out-dir _ci_out/belgium_alert \
+  --history-dir .meteovoid_history/belgium_alert \
+  --auto-external \
+  --external-sources-config config/external_sources_belgium.yaml \
+  --calibration-config config/belgium_scoring_calibration.yaml \
+  --province-geojson config/belgium_provinces_simplified.geojson \
+  --replay-events config/belgium_replay_events.example.csv
+```
+
+Les connecteurs externes restent volontairement prudents : ils renforcent le score de confirmation quand les sources convergent, mais MeteoVoid continue d'indiquer que seul l'IRM/KMI et les autorités compétentes publient des avertissements officiels.

@@ -1,0 +1,3 @@
+event_id,start_date,end_date,expected,phenomenon,notes
+example_stable_day,2026-01-15,2026-01-15,negative,stable,Example placeholder: replace with a verified stable day.
+example_thunderstorm_day,2026-06-19,2026-06-19,event,thunderstorm,Example placeholder: replace with verified observations/warnings.

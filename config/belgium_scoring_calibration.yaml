@@ -1,0 +1,33 @@
+version: belgium_alert_calibration_v1
+severity_thresholds:
+  watch: 0.35
+  medium: 0.50
+  high: 0.65
+  alert: 0.78
+station_weights:
+  heat: 0.18
+  moisture: 0.17
+  precipitation: 0.20
+  wind_gust: 0.15
+  pressure_drop: 0.15
+  weather_code: 0.15
+thresholds:
+  heat_watch_c: 28.0
+  heat_alert_c: 34.0
+  dew_watch_c: 16.0
+  dew_alert_c: 21.0
+  humidity_watch_pct: 65.0
+  humidity_alert_pct: 90.0
+  precip_probability_watch_pct: 35.0
+  precip_probability_alert_pct: 75.0
+  precip_mm_watch: 4.0
+  precip_mm_alert: 18.0
+  wind_gust_watch_ms: 15.0
+  wind_gust_alert_ms: 25.0
+  pressure_drop_watch_hpa_6h: 3.0
+  pressure_drop_alert_hpa_6h: 8.0
+operational_thresholds:
+  model_high: 0.65
+  model_alert: 0.78
+  external_partial: 0.40
+  external_strong: 0.75

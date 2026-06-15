@@ -1,0 +1,21 @@
+{
+  "type": "FeatureCollection",
+  "name": "MeteoVoid Belgium simplified province layer",
+  "features": [
+    {"type":"Feature","properties":{"province":"Flandre occidentale"},"geometry":{"type":"Polygon","coordinates":[[[2.55,50.72],[3.18,50.72],[3.32,51.12],[2.85,51.38],[2.55,51.15],[2.55,50.72]]]}},
+    {"type":"Feature","properties":{"province":"Flandre orientale"},"geometry":{"type":"Polygon","coordinates":[[[3.18,50.72],[4.05,50.78],[4.18,51.25],[3.32,51.42],[3.18,50.72]]]}},
+    {"type":"Feature","properties":{"province":"Anvers"},"geometry":{"type":"Polygon","coordinates":[[[4.05,51.02],[5.15,51.05],[5.35,51.48],[4.25,51.52],[4.05,51.02]]]}},
+    {"type":"Feature","properties":{"province":"Limbourg"},"geometry":{"type":"Polygon","coordinates":[[[5.15,50.72],[5.98,50.74],[6.20,51.28],[5.35,51.48],[5.15,50.72]]]}},
+    {"type":"Feature","properties":{"province":"Brabant flamand"},"geometry":{"type":"Polygon","coordinates":[[[4.05,50.72],[5.15,50.72],[5.15,51.05],[4.05,51.02],[4.05,50.72]]]}},
+    {"type":"Feature","properties":{"province":"Bruxelles"},"geometry":{"type":"Polygon","coordinates":[[[4.25,50.77],[4.47,50.77],[4.47,50.93],[4.25,50.93],[4.25,50.77]]]}},
+    {"type":"Feature","properties":{"province":"Brabant wallon"},"geometry":{"type":"Polygon","coordinates":[[[4.15,50.55],[4.90,50.55],[5.00,50.75],[4.15,50.75],[4.15,50.55]]]}},
+    {"type":"Feature","properties":{"province":"Hainaut"},"geometry":{"type":"Polygon","coordinates":[[[2.85,49.88],[4.35,49.88],[4.45,50.55],[3.20,50.72],[2.75,50.35],[2.85,49.88]]]}},
+    {"type":"Feature","properties":{"province":"Namur"},"geometry":{"type":"Polygon","coordinates":[[[4.35,49.88],[5.35,49.85],[5.45,50.55],[4.90,50.55],[4.15,50.55],[4.35,49.88]]]}},
+    {"type":"Feature","properties":{"province":"Liège"},"geometry":{"type":"Polygon","coordinates":[[[5.35,49.98],[6.42,50.05],[6.22,50.78],[5.45,50.80],[5.35,49.98]]]}},
+    {"type":"Feature","properties":{"province":"Luxembourg belge"},"geometry":{"type":"Polygon","coordinates":[[[4.98,49.45],[6.18,49.45],[6.42,50.05],[5.35,49.98],[4.98,49.45]]]}},
+    {"type":"Feature","properties":{"province":"Approche France"},"geometry":{"type":"Polygon","coordinates":[[[2.45,49.90],[2.85,49.90],[2.85,50.55],[2.45,50.55],[2.45,49.90]]]}},
+    {"type":"Feature","properties":{"province":"Approche Pays-Bas"},"geometry":{"type":"Polygon","coordinates":[[[5.55,50.78],[6.10,50.78],[6.10,51.12],[5.55,51.12],[5.55,50.78]]]}},
+    {"type":"Feature","properties":{"province":"Approche Allemagne"},"geometry":{"type":"Polygon","coordinates":[[[5.90,50.45],[6.35,50.45],[6.35,50.85],[5.90,50.85],[5.90,50.45]]]}},
+    {"type":"Feature","properties":{"province":"Approche Luxembourg"},"geometry":{"type":"Polygon","coordinates":[[[5.85,49.42],[6.35,49.42],[6.35,49.85],[5.85,49.85],[5.85,49.42]]]}}
+  ]
+}

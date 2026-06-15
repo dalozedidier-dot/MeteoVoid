@@ -5,8 +5,10 @@ import csv
 import hashlib
 import html
 import json
+import re
 import shutil
 import sys
+import xml.etree.ElementTree as ET
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -14,6 +16,11 @@ from typing import Any
 from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+
+try:
+    import yaml
+except ModuleNotFoundError:  # pragma: no cover - dependency is declared but keep CLI graceful
+    yaml = None
 
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT / "src") if (_ROOT / "src").exists() else str(_ROOT))
@@ -57,6 +64,97 @@ BE_OUTLINE_LON_LAT = [
     (3.20, 49.95),
     (2.55, 50.73),
 ]
+
+
+DEFAULT_CALIBRATION: dict[str, Any] = {
+    "version": "belgium_alert_calibration_v1",
+    "severity_thresholds": {"watch": 0.35, "medium": 0.50, "high": 0.65, "alert": 0.78},
+    "station_weights": {
+        "heat": 0.18,
+        "moisture": 0.17,
+        "precipitation": 0.20,
+        "wind_gust": 0.15,
+        "pressure_drop": 0.15,
+        "weather_code": 0.15,
+    },
+    "thresholds": {
+        "heat_watch_c": 28.0,
+        "heat_alert_c": 34.0,
+        "dew_watch_c": 16.0,
+        "dew_alert_c": 21.0,
+        "humidity_watch_pct": 65.0,
+        "humidity_alert_pct": 90.0,
+        "precip_probability_watch_pct": 35.0,
+        "precip_probability_alert_pct": 75.0,
+        "precip_mm_watch": 4.0,
+        "precip_mm_alert": 18.0,
+        "wind_gust_watch_ms": 15.0,
+        "wind_gust_alert_ms": 25.0,
+        "pressure_drop_watch_hpa_6h": 3.0,
+        "pressure_drop_alert_hpa_6h": 8.0,
+    },
+    "operational_thresholds": {
+        "model_high": 0.65,
+        "model_alert": 0.78,
+        "external_partial": 0.40,
+        "external_strong": 0.75,
+    },
+}
+_ACTIVE_CALIBRATION: dict[str, Any] = dict(DEFAULT_CALIBRATION)
+
+
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base)
+    for key, value in override.items():
+        if isinstance(value, dict) and isinstance(merged.get(key), dict):
+            merged[key] = _deep_merge(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _read_structured_file(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    text = path.read_text(encoding="utf-8")
+    if not text.strip():
+        return {}
+    if path.suffix.lower() in {".yaml", ".yml"}:
+        if yaml is None:
+            raise SystemExit("PyYAML is required to read YAML configuration files")
+        data = yaml.safe_load(text)
+    else:
+        data = json.loads(text)
+    return data if isinstance(data, dict) else {}
+
+
+def _load_calibration(path: Path | None) -> dict[str, Any]:
+    if path is None or not str(path).strip() or not path.exists():
+        return dict(DEFAULT_CALIBRATION)
+    custom = _read_structured_file(path)
+    return _deep_merge(DEFAULT_CALIBRATION, custom)
+
+
+def _set_active_calibration(calibration: dict[str, Any]) -> None:
+    global _ACTIVE_CALIBRATION
+    _ACTIVE_CALIBRATION = _deep_merge(DEFAULT_CALIBRATION, calibration)
+
+
+def _calib_threshold(name: str) -> float:
+    thresholds = _ACTIVE_CALIBRATION.get("thresholds", {})
+    value = thresholds.get(name, DEFAULT_CALIBRATION["thresholds"].get(name, 0.0))
+    return float(value)
+
+
+def _station_weight(name: str) -> float:
+    weights = _ACTIVE_CALIBRATION.get("station_weights", {})
+    value = weights.get(name, DEFAULT_CALIBRATION["station_weights"].get(name, 0.0))
+    return float(value)
+
+
+def _severity_threshold(name: str) -> float:
+    thresholds = _ACTIVE_CALIBRATION.get("severity_thresholds", {})
+    return float(thresholds.get(name, DEFAULT_CALIBRATION["severity_thresholds"].get(name, 0.0)))
 
 
 @dataclass(frozen=True)
@@ -293,10 +391,18 @@ def _hourly_risk_points(
         thunderstorm = code in THUNDERSTORM_CODES
         showers_seen = code in SHOWER_CODES
         components = {
-            "heat": _ramp(temp, 28.0, 34.0),
-            "moisture": _ramp(dew, 16.0, 21.0),
-            "precipitation": _ramp(prob, 35.0, 75.0),
-            "wind_gust": _ramp(gust, 15.0, 25.0),
+            "heat": _ramp(temp, _calib_threshold("heat_watch_c"), _calib_threshold("heat_alert_c")),
+            "moisture": _ramp(
+                dew, _calib_threshold("dew_watch_c"), _calib_threshold("dew_alert_c")
+            ),
+            "precipitation": _ramp(
+                prob,
+                _calib_threshold("precip_probability_watch_pct"),
+                _calib_threshold("precip_probability_alert_pct"),
+            ),
+            "wind_gust": _ramp(
+                gust, _calib_threshold("wind_gust_watch_ms"), _calib_threshold("wind_gust_alert_ms")
+            ),
             "weather_code": 1.0 if thunderstorm else (0.45 if showers_seen else 0.0),
         }
         score = (
@@ -362,22 +468,42 @@ def _station_risk_from_payload(station: StationSpec, payload: dict[str, Any]) ->
     showers_seen = bool(codes & SHOWER_CODES)
 
     components = {
-        "heat": _ramp(max_temp, 28.0, 34.0),
-        "moisture": max(_ramp(max_dew, 16.0, 21.0), _ramp(max_humidity, 65.0, 90.0) * 0.75),
-        "precipitation": max(_ramp(max_precip_prob, 35.0, 75.0), _ramp(max_precip, 4.0, 18.0)),
-        "wind_gust": _ramp(max_gust, 15.0, 25.0),
-        "pressure_drop": _ramp(pressure_drop, 3.0, 8.0),
+        "heat": _ramp(max_temp, _calib_threshold("heat_watch_c"), _calib_threshold("heat_alert_c")),
+        "moisture": max(
+            _ramp(max_dew, _calib_threshold("dew_watch_c"), _calib_threshold("dew_alert_c")),
+            _ramp(
+                max_humidity,
+                _calib_threshold("humidity_watch_pct"),
+                _calib_threshold("humidity_alert_pct"),
+            )
+            * 0.75,
+        ),
+        "precipitation": max(
+            _ramp(
+                max_precip_prob,
+                _calib_threshold("precip_probability_watch_pct"),
+                _calib_threshold("precip_probability_alert_pct"),
+            ),
+            _ramp(
+                max_precip, _calib_threshold("precip_mm_watch"), _calib_threshold("precip_mm_alert")
+            ),
+        ),
+        "wind_gust": _ramp(
+            max_gust, _calib_threshold("wind_gust_watch_ms"), _calib_threshold("wind_gust_alert_ms")
+        ),
+        "pressure_drop": _ramp(
+            pressure_drop,
+            _calib_threshold("pressure_drop_watch_hpa_6h"),
+            _calib_threshold("pressure_drop_alert_hpa_6h"),
+        ),
         "weather_code": 1.0 if thunderstorm else (0.45 if showers_seen else 0.0),
     }
     weights = {
-        "heat": 0.18,
-        "moisture": 0.17,
-        "precipitation": 0.20,
-        "wind_gust": 0.15,
-        "pressure_drop": 0.15,
-        "weather_code": 0.15,
+        k: _station_weight(k)
+        for k in ["heat", "moisture", "precipitation", "wind_gust", "pressure_drop", "weather_code"]
     }
-    score = sum(components[k] * weights[k] for k in weights)
+    weight_sum = sum(max(0.0, float(v)) for v in weights.values()) or 1.0
+    score = sum(components[k] * max(0.0, float(weights[k])) for k in weights) / weight_sum
     score = round(_clamp01(score), 6)
     severity = _severity_from_score(score)
     signals = _signals_from_components(
@@ -443,13 +569,13 @@ def _station_risk_from_payload(station: StationSpec, payload: dict[str, Any]) ->
 
 
 def _severity_from_score(score: float) -> str:
-    if score >= 0.78:
+    if score >= _severity_threshold("alert"):
         return "alert"
-    if score >= 0.65:
+    if score >= _severity_threshold("high"):
         return "high"
-    if score >= 0.50:
+    if score >= _severity_threshold("medium"):
         return "medium"
-    if score >= 0.35:
+    if score >= _severity_threshold("watch"):
         return "watch"
     return "normal"
 
@@ -522,10 +648,18 @@ def _worst_time(
         gust = _safe_float(wind_gusts[i]) if i < len(wind_gusts) else None
         code = _safe_int(weather_codes[i]) if i < len(weather_codes) else None
         score = (
-            _ramp(temp, 28.0, 34.0) * 0.20
-            + _ramp(dew, 16.0, 21.0) * 0.20
-            + _ramp(prob, 35.0, 75.0) * 0.25
-            + _ramp(gust, 15.0, 25.0) * 0.15
+            _ramp(temp, _calib_threshold("heat_watch_c"), _calib_threshold("heat_alert_c")) * 0.20
+            + _ramp(dew, _calib_threshold("dew_watch_c"), _calib_threshold("dew_alert_c")) * 0.20
+            + _ramp(
+                prob,
+                _calib_threshold("precip_probability_watch_pct"),
+                _calib_threshold("precip_probability_alert_pct"),
+            )
+            * 0.25
+            + _ramp(
+                gust, _calib_threshold("wind_gust_watch_ms"), _calib_threshold("wind_gust_alert_ms")
+            )
+            * 0.15
             + (1.0 if code in THUNDERSTORM_CODES else 0.0) * 0.20
         )
         if score > best_score:
@@ -2010,6 +2144,364 @@ def _infer_official_forecast_signal(external_note: str) -> str:
     return "none"
 
 
+def _infer_weather_signal_from_text(text: str) -> str:
+    note = text.strip().lower()
+    if not note:
+        return "none"
+    severe_markers = (
+        "violent",
+        "violents",
+        "severe",
+        "grêle",
+        "grele",
+        "hail",
+        "fortes rafales",
+        "abondantes",
+    )
+    thunder_markers = ("orage", "orages", "orageux", "orageuse", "thunder", "lightning")
+    instability_markers = ("instable", "instabilité", "unstable", "averses", "showers")
+    heat_markers = ("chaleur", "canicule", "très chaud", "tres chaud", "heat", "hot")
+    if any(marker in note for marker in thunder_markers) and any(
+        marker in note for marker in severe_markers
+    ):
+        return "severe_thunderstorms"
+    if any(marker in note for marker in thunder_markers):
+        return "thunderstorms"
+    if any(marker in note for marker in instability_markers):
+        return "instability"
+    if any(marker in note for marker in heat_markers):
+        return "heat"
+    return "none"
+
+
+def _fetch_text(url: str, *, timeout_s: float, accept: str = "text/plain,text/html,*/*") -> str:
+    req = Request(url, headers={"Accept": accept, "User-Agent": "MeteoVoid/BelgiumAlert"})
+    with urlopen(req, timeout=timeout_s) as response:  # noqa: S310
+        raw = response.read()
+    return raw.decode("utf-8", errors="replace")
+
+
+def _strip_markup(text: str) -> str:
+    text = re.sub(r"<script[\s\S]*?</script>", " ", text, flags=re.I)
+    text = re.sub(r"<style[\s\S]*?</style>", " ", text, flags=re.I)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = html.unescape(text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _max_color_level_from_text(text: str) -> str:
+    low = text.lower()
+    if any(
+        x in low
+        for x in [
+            "red warning",
+            "warning red",
+            "alerte rouge",
+            "code rouge",
+            "niveau rouge",
+            "extreme",
+            " rood",
+        ]
+    ):
+        return "red"
+    if any(
+        x in low
+        for x in [
+            "orange warning",
+            "warning orange",
+            "alerte orange",
+            "code orange",
+            "niveau orange",
+            "severe",
+            " oranje",
+        ]
+    ):
+        return "orange"
+    if any(
+        x in low
+        for x in [
+            "yellow warning",
+            "warning yellow",
+            "alerte jaune",
+            "code jaune",
+            "niveau jaune",
+            "moderate",
+            "minor",
+            " geel",
+        ]
+    ):
+        return "yellow"
+    return "none"
+
+
+def _max_estofex_level_from_text(text: str) -> str:
+    low = text.lower()
+    belgium_context = any(
+        token in low
+        for token in [
+            "belgium",
+            "belgique",
+            "belgië",
+            "benelux",
+            "netherlands",
+            "luxembourg",
+            "n france",
+            "nw france",
+            "w germany",
+            "western germany",
+        ]
+    )
+    if not belgium_context:
+        return "none"
+    levels = [int(x) for x in re.findall(r"level\s*([123])", low)]
+    if not levels:
+        return "none"
+    level = max(levels)
+    return {1: "level1", 2: "level2", 3: "level3"}.get(level, "none")
+
+
+def _parse_meteoalarm_atom(text: str) -> dict[str, Any]:
+    cleaned = text.strip()
+    entries: list[dict[str, Any]] = []
+    level = "none"
+    forecast_signal = "none"
+    try:
+        root = ET.fromstring(cleaned)
+        ns = {"atom": "http://www.w3.org/2005/Atom", "cap": "urn:oasis:names:tc:emergency:cap:1.2"}
+        raw_entries = root.findall(".//atom:entry", ns) or root.findall(".//entry")
+        for entry in raw_entries:
+            title = "".join(entry.itertext())[:2000]
+            entry_level = _max_color_level_from_text(title)
+            if _color_rank(entry_level) > _color_rank(level):
+                level = entry_level
+            signal = _infer_weather_signal_from_text(title)
+            if _forecast_signal_rank(signal) > _forecast_signal_rank(forecast_signal):
+                forecast_signal = signal
+            entries.append({"level": entry_level, "signal": signal, "text_excerpt": title[:260]})
+    except ET.ParseError:
+        plain = _strip_markup(cleaned)
+        level = _max_color_level_from_text(plain)
+        forecast_signal = _infer_weather_signal_from_text(plain)
+        entries.append({"level": level, "signal": forecast_signal, "text_excerpt": plain[:260]})
+    return {"level": level, "forecast_signal": forecast_signal, "entries": entries[:10]}
+
+
+def _forecast_signal_rank(signal: str) -> int:
+    return {
+        "none": 0,
+        "heat": 1,
+        "instability": 2,
+        "thunderstorms": 3,
+        "severe_thunderstorms": 4,
+    }.get(signal, 0)
+
+
+def _color_rank(level: str) -> int:
+    return {"none": 0, "yellow": 1, "orange": 2, "red": 3}.get(level, 0)
+
+
+def _estofex_rank(level: str) -> int:
+    return {"none": 0, "level1": 1, "level2": 2, "level3": 3}.get(level, 0)
+
+
+def _pick_stronger_color(a: str, b: str) -> str:
+    return a if _color_rank(a) >= _color_rank(b) else b
+
+
+def _pick_stronger_signal(a: str, b: str) -> str:
+    return a if _forecast_signal_rank(a) >= _forecast_signal_rank(b) else b
+
+
+def _parse_simple_json_confirmation(text: str, *, kind: str) -> str:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        low = text.lower()
+        if kind == "radar":
+            if any(x in low for x in ["strong", "fort", "intense", "red"]):
+                return "strong"
+            if any(x in low for x in ["moderate", "modéré", "orange"]):
+                return "moderate"
+            if any(x in low for x in ["weak", "faible", "rain", "pluie"]):
+                return "weak"
+            return "none"
+        if any(x in low for x in ["confirmed", "confirmé", "lightning", "foudre"]):
+            return "confirmed"
+        if any(x in low for x in ["nearby", "proche"]):
+            return "nearby"
+        return "none"
+    if not isinstance(payload, dict):
+        return "none"
+    value = str(
+        payload.get("confirmation") or payload.get("level") or payload.get("status") or "none"
+    ).lower()
+    if kind == "radar" and value in {"none", "weak", "moderate", "strong"}:
+        return value
+    if kind == "lightning" and value in {"none", "nearby", "confirmed"}:
+        return value
+    return "none"
+
+
+def _load_external_sources_config(path: Path | None) -> dict[str, Any]:
+    defaults: dict[str, Any] = {
+        "rmi_warning_page_url": "https://www.meteo.be/en/weather/warnings/overview-belgium",
+        "rmi_forecast_page_url": "https://www.meteo.be/fr/meteo/previsions/meteo-pour-les-prochains-jours",
+        "metealarm_atom_url": "https://feeds.meteoalarm.org/feeds/meteoalarm-legacy-atom-belgium",
+        "estofex_text_url": "https://www.estofex.org/cgi-bin/polygon/showforecast.cgi?text=yes",
+        "radar_json_url": "",
+        "lightning_json_url": "",
+    }
+    if path is not None and str(path).strip() and path.exists():
+        return _deep_merge(defaults, _read_structured_file(path))
+    return defaults
+
+
+def _auto_external_confirmation_from_sources(
+    *,
+    timeout_s: float,
+    config_path: Path | None,
+    base_irm_warning_level: str,
+    base_official_forecast_signal: str,
+    base_heat_warning_active: bool,
+    base_metealarm_level: str,
+    base_estofex_level: str,
+    base_radar_confirmation: str,
+    base_lightning_confirmation: str,
+    base_external_note: str,
+    radar_json_url: str = "",
+    lightning_json_url: str = "",
+) -> dict[str, Any]:
+    cfg = _load_external_sources_config(config_path)
+    source_status: list[dict[str, Any]] = []
+    note_parts: list[str] = [base_external_note.strip()] if base_external_note.strip() else []
+    irm_warning_level = base_irm_warning_level
+    official_signal = base_official_forecast_signal
+    heat_warning_active = bool(base_heat_warning_active)
+    metealarm_level = base_metealarm_level
+    estofex_level = base_estofex_level
+    radar_confirmation = base_radar_confirmation
+    lightning_confirmation = base_lightning_confirmation
+
+    def status(name: str, ok: bool, value: str, detail: str) -> None:
+        source_status.append({"name": name, "ok": ok, "value": value, "detail": detail[:500]})
+
+    rmi_warning_url = str(cfg.get("rmi_warning_page_url") or "").strip()
+    if rmi_warning_url:
+        try:
+            text = _strip_markup(
+                _fetch_text(rmi_warning_url, timeout_s=timeout_s, accept="text/html,*/*")
+            )
+            parsed_level = _max_color_level_from_text(text)
+            parsed_signal = _infer_weather_signal_from_text(text)
+            irm_warning_level = _pick_stronger_color(irm_warning_level, parsed_level)
+            official_signal = _pick_stronger_signal(official_signal, parsed_signal)
+            if any(x in text.lower() for x in ["chaleur", "heat", "warmte", "canicule"]):
+                heat_warning_active = True
+            status("rmi_warning_page", True, irm_warning_level, text[:300])
+        except Exception as exc:  # noqa: BLE001 - connector must be fail-safe
+            status("rmi_warning_page", False, "error", str(exc))
+
+    rmi_forecast_url = str(cfg.get("rmi_forecast_page_url") or "").strip()
+    if rmi_forecast_url:
+        try:
+            text = _strip_markup(
+                _fetch_text(rmi_forecast_url, timeout_s=timeout_s, accept="text/html,*/*")
+            )
+            parsed_signal = _infer_weather_signal_from_text(text)
+            official_signal = _pick_stronger_signal(official_signal, parsed_signal)
+            if parsed_signal != "none":
+                note_parts.append(f"IRM/KMI forecast page detected {parsed_signal}")
+            status("rmi_forecast_page", True, parsed_signal, text[:300])
+        except Exception as exc:  # noqa: BLE001
+            status("rmi_forecast_page", False, "error", str(exc))
+
+    meteoalarm_url = str(cfg.get("metealarm_atom_url") or "").strip()
+    if meteoalarm_url:
+        try:
+            text = _fetch_text(
+                meteoalarm_url, timeout_s=timeout_s, accept="application/atom+xml,text/xml,*/*"
+            )
+            parsed = _parse_meteoalarm_atom(text)
+            metealarm_level = _pick_stronger_color(
+                metealarm_level, str(parsed.get("level", "none"))
+            )
+            official_signal = _pick_stronger_signal(
+                official_signal, str(parsed.get("forecast_signal", "none"))
+            )
+            status(
+                "metealarm_atom_belgium",
+                True,
+                metealarm_level,
+                json.dumps(parsed, ensure_ascii=False)[:500],
+            )
+        except Exception as exc:  # noqa: BLE001
+            status("metealarm_atom_belgium", False, "error", str(exc))
+
+    estofex_url = str(cfg.get("estofex_text_url") or "").strip()
+    if estofex_url:
+        try:
+            text = _strip_markup(
+                _fetch_text(estofex_url, timeout_s=timeout_s, accept="text/html,*/*")
+            )
+            parsed_level = _max_estofex_level_from_text(text)
+            if _estofex_rank(parsed_level) > _estofex_rank(estofex_level):
+                estofex_level = parsed_level
+            status("estofex_text", True, estofex_level, text[:420])
+        except Exception as exc:  # noqa: BLE001
+            status("estofex_text", False, "error", str(exc))
+
+    radar_url = radar_json_url.strip() or str(cfg.get("radar_json_url") or "").strip()
+    if radar_url:
+        try:
+            text = _fetch_text(
+                radar_url, timeout_s=timeout_s, accept="application/json,text/plain,*/*"
+            )
+            parsed = _parse_simple_json_confirmation(text, kind="radar")
+            if _level_score(
+                parsed, {"none": 0, "weak": 1, "moderate": 2, "strong": 3}
+            ) > _level_score(
+                radar_confirmation, {"none": 0, "weak": 1, "moderate": 2, "strong": 3}
+            ):
+                radar_confirmation = parsed
+            status("radar_json", True, radar_confirmation, text[:300])
+        except Exception as exc:  # noqa: BLE001
+            status("radar_json", False, "error", str(exc))
+
+    lightning_url = lightning_json_url.strip() or str(cfg.get("lightning_json_url") or "").strip()
+    if lightning_url:
+        try:
+            text = _fetch_text(
+                lightning_url, timeout_s=timeout_s, accept="application/json,text/plain,*/*"
+            )
+            parsed = _parse_simple_json_confirmation(text, kind="lightning")
+            if _level_score(parsed, {"none": 0, "nearby": 1, "confirmed": 2}) > _level_score(
+                lightning_confirmation, {"none": 0, "nearby": 1, "confirmed": 2}
+            ):
+                lightning_confirmation = parsed
+            status("lightning_json", True, lightning_confirmation, text[:300])
+        except Exception as exc:  # noqa: BLE001
+            status("lightning_json", False, "error", str(exc))
+
+    confirmation = _external_confirmation_from_inputs(
+        irm_warning_level=irm_warning_level,
+        official_forecast_signal=official_signal,
+        heat_warning_active=heat_warning_active,
+        metealarm_level=metealarm_level,
+        estofex_level=estofex_level,
+        radar_confirmation=radar_confirmation,
+        lightning_confirmation=lightning_confirmation,
+        external_note=" | ".join(x for x in note_parts if x),
+    )
+    confirmation["auto_sources"] = {
+        "enabled": True,
+        "config": cfg,
+        "status": source_status,
+        "ok_count": sum(1 for item in source_status if item.get("ok")),
+        "error_count": sum(1 for item in source_status if not item.get("ok")),
+    }
+    return confirmation
+
+
 def _external_confirmation_from_inputs(
     *,
     irm_warning_level: str,
@@ -2245,19 +2737,24 @@ def _operational_state(report: dict[str, Any]) -> dict[str, Any]:
     )
     source_health = _source_status(report).get("source_health_score", 0.0)
 
-    if model_score >= 0.78 and external_score >= 0.40:
+    op_thresholds = _ACTIVE_CALIBRATION.get("operational_thresholds", {})
+    model_high = float(op_thresholds.get("model_high", 0.65))
+    model_alert = float(op_thresholds.get("model_alert", 0.78))
+    external_partial = float(op_thresholds.get("external_partial", 0.40))
+
+    if model_score >= model_alert and external_score >= external_partial:
         level = "alert_confirmed"
         reason = "signal modèle très élevé et confirmation externe partielle ou forte"
-    elif model_score >= 0.65 and external_score >= 0.40:
+    elif model_score >= model_high and external_score >= external_partial:
         level = "pre_alert_confirmed"
         reason = "signal modèle élevé et confirmation externe partielle"
-    elif model_score >= 0.65:
+    elif model_score >= model_high:
         level = "watch_reinforced"
         reason = "signal modèle élevé, confirmation externe encore absente ou insuffisante"
-    elif model_score >= 0.50 or external_score >= 0.40:
+    elif model_score >= _severity_threshold("medium") or external_score >= external_partial:
         level = "watch"
         reason = "signal à surveiller, sans convergence suffisante pour alerte"
-    elif model_score >= 0.35:
+    elif model_score >= _severity_threshold("watch"):
         level = "low_watch"
         reason = "signal faible à modéré"
     else:
@@ -2464,6 +2961,11 @@ def _render_markdown(report: dict[str, Any]) -> str:
     lines.append("- `province_summary.json`")
     lines.append("- `province_summary.csv`")
     lines.append("- `belgium_alert_heatmap.html`")
+    lines.append("- `belgium_province_map.html`")
+    lines.append("- `official_sources_status.json`")
+    lines.append("- `nowcast_status.json`")
+    lines.append("- `calibration_report.json`")
+    lines.append("- `replay_validation.json`")
     lines.append("- `notification_state.json`")
     lines.append("- `replay_metrics.json`")
     lines.append("- `manifest.json`")
@@ -2776,6 +3278,227 @@ if (stations.length) map.fitBounds(L.latLngBounds(stations.map(s => [s.lat, s.lo
 """
 
 
+def _load_geojson_layer(path_value: str) -> dict[str, Any]:
+    path = Path(path_value) if path_value else Path("config/belgium_provinces_simplified.geojson")
+    if not path.exists():
+        return {"type": "FeatureCollection", "features": []}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"type": "FeatureCollection", "features": []}
+    return payload if isinstance(payload, dict) else {"type": "FeatureCollection", "features": []}
+
+
+def _province_name_from_feature(feature: dict[str, Any]) -> str:
+    props = feature.get("properties", {}) if isinstance(feature.get("properties"), dict) else {}
+    for key in ["province", "name_fr", "name", "NAME_2", "prov_name"]:
+        if props.get(key):
+            return str(props[key])
+    return "inconnu"
+
+
+def _province_map_payload(report: dict[str, Any]) -> str:
+    geo = _load_geojson_layer(str(report.get("province_geojson") or ""))
+    summaries = {
+        str(row.get("province")): row
+        for row in report.get("province_summary", [])
+        if isinstance(row, dict)
+    }
+    features = []
+    for feature in geo.get("features", []) if isinstance(geo.get("features"), list) else []:
+        if not isinstance(feature, dict):
+            continue
+        name = _province_name_from_feature(feature)
+        props = dict(
+            feature.get("properties", {}) if isinstance(feature.get("properties"), dict) else {}
+        )
+        summary = summaries.get(name, {})
+        props.update(
+            {
+                "province": name,
+                "meteovoid_score": float(summary.get("max_score") or 0.0),
+                "meteovoid_mean_score": float(summary.get("mean_score") or 0.0),
+                "meteovoid_severity": summary.get("severity", "normal"),
+                "meteovoid_top_station": summary.get("top_station"),
+            }
+        )
+        features.append(
+            {"type": "Feature", "geometry": feature.get("geometry"), "properties": props}
+        )
+    return json.dumps(
+        {"type": "FeatureCollection", "features": features}, ensure_ascii=False
+    ).replace("</", "<\\/")
+
+
+def _render_province_map_html(report: dict[str, Any]) -> str:
+    provinces_json = _province_map_payload(report)
+    stations_json = _leaflet_station_payload(report)
+    aggregate = report.get("aggregate", {})
+    return f"""<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MeteoVoid Belgique, carte provinces</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    html, body, #map {{ height:100%; margin:0; }}
+    body {{ font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+    .panel {{ position:absolute; top:14px; left:14px; z-index:800; width:360px; max-width:calc(100% - 28px); background:#fff; border:1px solid #dfe7f0; border-radius:16px; padding:14px 16px; box-shadow:0 12px 30px rgba(15,33,63,.15); color:#0f213f; }}
+    .panel h1 {{ margin:0 0 6px; font-size:18px; }}
+    .panel p {{ margin:4px 0; color:#607089; font-size:13px; }}
+    .legend {{ position:absolute; right:14px; bottom:14px; z-index:800; background:#fff; border:1px solid #dfe7f0; border-radius:14px; padding:12px 14px; box-shadow:0 12px 30px rgba(15,33,63,.15); color:#0f213f; }}
+    .legend div {{ display:flex; gap:8px; align-items:center; margin:6px 0; font-size:13px; }}
+    .sw {{ width:14px; height:14px; border-radius:4px; display:inline-block; }}
+    .dot {{ border-radius:50%; border:3px solid #fff; box-shadow:0 4px 12px rgba(15,33,63,.25); }}
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<div class="panel">
+  <h1>Carte administrative MeteoVoid</h1>
+  <p>Score national : <strong>{float(aggregate.get('score') or 0.0):.3f}</strong> — sévérité : <strong>{html.escape(str(aggregate.get('severity', 'n/a')))}</strong></p>
+  <p>Couche provinces/approches + stations. Le fond administratif est un GeoJSON simplifié embarqué, remplaçable par un jeu officiel.</p>
+</div>
+<div class="legend" id="legend"></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const severityColors = {{normal:"{SEVERITY_COLORS['normal']}", watch:"{SEVERITY_COLORS['watch']}", medium:"{SEVERITY_COLORS['medium']}", high:"{SEVERITY_COLORS['high']}", alert:"{SEVERITY_COLORS['alert']}"}};
+const provinces = {provinces_json};
+const stations = {stations_json};
+const map = L.map('map').setView([50.64, 4.65], 8);
+L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{ maxZoom: 12, attribution: '&copy; OpenStreetMap contributors' }}).addTo(map);
+function esc(value) {{ return String(value ?? '').replace(/[&<>"']/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}}[ch])); }}
+function color(sev) {{ return severityColors[sev || 'normal'] || '#94a3b8'; }}
+function styleFeature(feature) {{ const sev = feature.properties?.meteovoid_severity || 'normal'; return {{ color:'#334155', weight:1, fillColor:color(sev), fillOpacity:0.28 }}; }}
+const provinceLayer = L.geoJSON(provinces, {{ style: styleFeature, onEachFeature: (feature, layer) => {{
+  const p = feature.properties || {{}};
+  layer.bindPopup(`<strong>${{esc(p.province)}}</strong><br>Score max : ${{Number(p.meteovoid_score || 0).toFixed(3)}}<br>Sévérité : ${{esc(p.meteovoid_severity || 'normal')}}<br>Station dominante : ${{esc(p.meteovoid_top_station || 'n/a')}}`);
+}} }}).addTo(map);
+for (const st of stations) {{
+  const size = 10 + Math.max(0, Math.min(1, Number(st.score || 0))) * 20;
+  L.marker([st.lat, st.lon], {{ icon:L.divIcon({{ className:'', html:`<div class="dot" style="width:${{size}}px;height:${{size}}px;background:${{color(st.severity)}}"></div>`, iconSize:[size,size], iconAnchor:[size/2,size/2] }}) }})
+    .bindPopup(`<strong>${{esc(st.name)}}</strong><br>Score : ${{Number(st.score || 0).toFixed(3)}}<br>Sévérité : ${{esc(st.severity)}}<br>${{esc(st.worst_time || 'n/a')}}`).addTo(map);
+}}
+const bounds = provinceLayer.getBounds();
+if (bounds.isValid()) map.fitBounds(bounds.pad(.08));
+document.getElementById('legend').innerHTML = '<strong>Sévérité</strong>' + ['normal','watch','medium','high','alert'].map(s => `<div><span class="sw" style="background:${{color(s)}}"></span>${{s}}</div>`).join('');
+</script>
+</body>
+</html>
+"""
+
+
+def _official_sources_status(report: dict[str, Any]) -> dict[str, Any]:
+    ext = (
+        report.get("external_confirmation", {})
+        if isinstance(report.get("external_confirmation"), dict)
+        else {}
+    )
+    auto = ext.get("auto_sources", {}) if isinstance(ext.get("auto_sources"), dict) else {}
+    inputs = ext.get("inputs", {}) if isinstance(ext.get("inputs"), dict) else {}
+    return {
+        "generated_at": report.get("generated_at"),
+        "auto_external_enabled": bool(auto.get("enabled")),
+        "ok_count": int(auto.get("ok_count") or 0),
+        "error_count": int(auto.get("error_count") or 0),
+        "sources": auto.get("status", []),
+        "effective_inputs": inputs,
+        "external_confirmation_score": float(ext.get("score") or 0.0),
+        "external_confirmation_status": ext.get("status"),
+        "summary": ext.get("summary"),
+    }
+
+
+def _nowcast_status(report: dict[str, Any]) -> dict[str, Any]:
+    ext = (
+        report.get("external_confirmation", {})
+        if isinstance(report.get("external_confirmation"), dict)
+        else {}
+    )
+    inputs = ext.get("inputs", {}) if isinstance(ext.get("inputs"), dict) else {}
+    radar = str(inputs.get("radar_confirmation", "none"))
+    lightning = str(inputs.get("lightning_confirmation", "none"))
+    score = max(
+        _level_score(radar, {"none": 0.0, "weak": 0.25, "moderate": 0.6, "strong": 0.9}),
+        _level_score(lightning, {"none": 0.0, "nearby": 0.45, "confirmed": 0.85}),
+    )
+    return {
+        "generated_at": report.get("generated_at"),
+        "radar_confirmation": radar,
+        "lightning_confirmation": lightning,
+        "nowcast_score": round(score, 6),
+        "nowcast_ready": radar != "none" or lightning != "none",
+        "meaning": (
+            "confirmation temps réel" if score else "aucune confirmation radar/foudre intégrée"
+        ),
+    }
+
+
+def _calibration_report(report: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "generated_at": report.get("generated_at"),
+        "active_calibration": report.get("calibration", _ACTIVE_CALIBRATION),
+        "components_summary": report.get("components_summary", {}),
+        "severity_thresholds": _ACTIVE_CALIBRATION.get("severity_thresholds", {}),
+        "station_weights": _ACTIVE_CALIBRATION.get("station_weights", {}),
+    }
+
+
+def _read_replay_events(path_value: str) -> list[dict[str, str]]:
+    path = Path(path_value) if path_value else Path()
+    if not path.exists():
+        return []
+    try:
+        with path.open("r", encoding="utf-8", newline="") as fh:
+            return list(csv.DictReader(fh))
+    except OSError:
+        return []
+
+
+def _replay_validation(report: dict[str, Any]) -> dict[str, Any]:
+    events = _read_replay_events(str(report.get("replay_events") or ""))
+    target_start = str(report.get("target_window", {}).get("start") or "")
+    target_end = str(report.get("target_window", {}).get("end") or "")
+    model_score = float(report.get("aggregate", {}).get("score") or 0.0)
+    op_level = str(report.get("operational_state", {}).get("level") or "normal")
+    matched: list[dict[str, Any]] = []
+    for event in events:
+        start = str(event.get("start_date") or "")
+        end = str(event.get("end_date") or start)
+        if start <= target_end and end >= target_start:
+            expected = str(event.get("expected") or "unknown")
+            detected = op_level in {"watch_reinforced", "pre_alert_confirmed", "alert_confirmed"}
+            expected_event = expected in {"event", "alert", "severe", "positive"}
+            if detected and expected_event:
+                verdict = "true_positive"
+            elif detected and not expected_event:
+                verdict = "false_positive_candidate"
+            elif not detected and expected_event:
+                verdict = "false_negative_candidate"
+            else:
+                verdict = "true_negative"
+            matched.append(
+                {
+                    **event,
+                    "model_score": model_score,
+                    "operational_level": op_level,
+                    "verdict": verdict,
+                }
+            )
+    return {
+        "generated_at": report.get("generated_at"),
+        "mode": "event_window_validation",
+        "event_file": report.get("replay_events"),
+        "matched_event_count": len(matched),
+        "matched_events": matched,
+        "notes": [
+            "Ce module installe le replay historique : il compare le run à un registre d'épisodes connus.",
+            "Renseigner config/belgium_replay_events.example.csv avec des épisodes vérifiés pour mesurer faux positifs, faux négatifs et délai de détection.",
+        ],
+    }
+
+
 def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     report_path = out_dir / "belgium_alert_report.json"
@@ -2802,6 +3525,21 @@ def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
     _write_province_csv(report, out_dir / "province_summary.csv")
     (out_dir / "belgium_alert_heatmap.html").write_text(
         _render_heatmap_html(report), encoding="utf-8"
+    )
+    (out_dir / "belgium_province_map.html").write_text(
+        _render_province_map_html(report), encoding="utf-8"
+    )
+    (out_dir / "official_sources_status.json").write_text(
+        _json_dumps(_official_sources_status(report)), encoding="utf-8"
+    )
+    (out_dir / "nowcast_status.json").write_text(
+        _json_dumps(_nowcast_status(report)), encoding="utf-8"
+    )
+    (out_dir / "calibration_report.json").write_text(
+        _json_dumps(_calibration_report(report)), encoding="utf-8"
+    )
+    (out_dir / "replay_validation.json").write_text(
+        _json_dumps(_replay_validation(report)), encoding="utf-8"
     )
     (out_dir / "notification_state.json").write_text(
         _json_dumps(_notification_state(report)), encoding="utf-8"
@@ -2965,6 +3703,11 @@ def _build_report(
             "province_summary_json": "province_summary.json",
             "province_summary_csv": "province_summary.csv",
             "heatmap_html": "belgium_alert_heatmap.html",
+            "province_map_html": "belgium_province_map.html",
+            "official_sources_status": "official_sources_status.json",
+            "nowcast_status": "nowcast_status.json",
+            "calibration_report": "calibration_report.json",
+            "replay_validation": "replay_validation.json",
             "notification_state": "notification_state.json",
             "replay_metrics": "replay_metrics.json",
             "manifest": "manifest.json",
@@ -3061,22 +3804,80 @@ def main(argv: list[str] | None = None) -> int:
         help="Manual lightning confirmation state",
     )
     parser.add_argument("--external-note", default="", help="Free-text external context note")
+    parser.add_argument(
+        "--auto-external",
+        action="store_true",
+        help="Fetch fail-safe external confirmations from configured IRM/KMI, MeteoAlarm and ESTOFEX sources",
+    )
+    parser.add_argument(
+        "--external-sources-config",
+        default="config/external_sources_belgium.yaml",
+        help="YAML/JSON config for external source URLs",
+    )
+    parser.add_argument(
+        "--radar-json-url",
+        default="",
+        help="Optional radar/nowcast JSON endpoint returning confirmation/status/level",
+    )
+    parser.add_argument(
+        "--lightning-json-url",
+        default="",
+        help="Optional lightning JSON endpoint returning confirmation/status/level",
+    )
+    parser.add_argument(
+        "--calibration-config",
+        default="config/belgium_scoring_calibration.yaml",
+        help="YAML/JSON scoring calibration profile",
+    )
+    parser.add_argument(
+        "--province-geojson",
+        default="config/belgium_provinces_simplified.geojson",
+        help="GeoJSON provinces/regions layer used by the province choropleth map",
+    )
+    parser.add_argument(
+        "--replay-events",
+        default="config/belgium_replay_events.example.csv",
+        help="CSV of known events used for replay validation when history is present",
+    )
     args = parser.parse_args(argv)
+
+    calibration_path = Path(args.calibration_config) if args.calibration_config.strip() else None
+    calibration = _load_calibration(calibration_path)
+    _set_active_calibration(calibration)
 
     target = _parse_target_window(args.target_date, horizon_days=args.horizon_days)
     out_dir = Path(args.out_dir)
     history_dir = Path(args.history_dir) if args.history_dir.strip() else (out_dir / "history")
     run_id = args.run_id.strip() or datetime.now().astimezone().strftime("%Y%m%d_%H%M%S")
-    external_confirmation = _external_confirmation_from_inputs(
-        irm_warning_level=args.irm_warning_level,
-        official_forecast_signal=args.official_forecast_signal,
-        heat_warning_active=bool(args.heat_warning_active),
-        metealarm_level=args.metealarm_level,
-        estofex_level=args.estofex_level,
-        radar_confirmation=args.radar_confirmation,
-        lightning_confirmation=args.lightning_confirmation,
-        external_note=args.external_note,
-    )
+    if args.auto_external:
+        external_confirmation = _auto_external_confirmation_from_sources(
+            timeout_s=float(args.timeout_s),
+            config_path=(
+                Path(args.external_sources_config) if args.external_sources_config.strip() else None
+            ),
+            base_irm_warning_level=args.irm_warning_level,
+            base_official_forecast_signal=args.official_forecast_signal,
+            base_heat_warning_active=bool(args.heat_warning_active),
+            base_metealarm_level=args.metealarm_level,
+            base_estofex_level=args.estofex_level,
+            base_radar_confirmation=args.radar_confirmation,
+            base_lightning_confirmation=args.lightning_confirmation,
+            base_external_note=args.external_note,
+            radar_json_url=args.radar_json_url,
+            lightning_json_url=args.lightning_json_url,
+        )
+    else:
+        external_confirmation = _external_confirmation_from_inputs(
+            irm_warning_level=args.irm_warning_level,
+            official_forecast_signal=args.official_forecast_signal,
+            heat_warning_active=bool(args.heat_warning_active),
+            metealarm_level=args.metealarm_level,
+            estofex_level=args.estofex_level,
+            radar_confirmation=args.radar_confirmation,
+            lightning_confirmation=args.lightning_confirmation,
+            external_note=args.external_note,
+        )
+        external_confirmation["auto_sources"] = {"enabled": False, "status": []}
     report = _build_report(
         stations_path=Path(args.stations),
         target=target,
@@ -3086,6 +3887,11 @@ def main(argv: list[str] | None = None) -> int:
         external_confirmation=external_confirmation,
     )
     report["run_id"] = run_id
+    report["calibration"] = calibration
+    report["province_geojson"] = (
+        str(Path(args.province_geojson)) if args.province_geojson.strip() else ""
+    )
+    report["replay_events"] = str(Path(args.replay_events)) if args.replay_events.strip() else ""
     report["trend"] = _trend_from_history(report, history_dir)
     report["operational_state"] = _operational_state(report)
     _write_outputs(report, out_dir)
@@ -3128,6 +3934,11 @@ def main(argv: list[str] | None = None) -> int:
         "province_summary.json",
         "province_summary.csv",
         "belgium_alert_heatmap.html",
+        "belgium_province_map.html",
+        "official_sources_status.json",
+        "nowcast_status.json",
+        "calibration_report.json",
+        "replay_validation.json",
         "notification_state.json",
         "replay_metrics.json",
         "manifest.json",

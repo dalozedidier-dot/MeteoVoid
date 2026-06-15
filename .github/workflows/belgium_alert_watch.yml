@@ -68,6 +68,11 @@ on:
         description: "Optional external context note"
         required: false
         default: ""
+      auto_external:
+        description: "Fetch fail-safe IRM/KMI, MeteoAlarm and ESTOFEX confirmations"
+        required: false
+        default: true
+        type: boolean
   schedule:
     - cron: "15 */3 * * *"
 
@@ -86,6 +91,8 @@ jobs:
     env:
       PYTHONUNBUFFERED: "1"
       METEOVOID_ALERT_WEBHOOK_URL: ${{ secrets.METEOVOID_ALERT_WEBHOOK_URL }}
+      METEOVOID_RADAR_JSON_URL: ${{ secrets.METEOVOID_RADAR_JSON_URL }}
+      METEOVOID_LIGHTNING_JSON_URL: ${{ secrets.METEOVOID_LIGHTNING_JSON_URL }}
       METEOVOID_HISTORY_DIR: .meteovoid_history/belgium_alert
 
     steps:
@@ -132,6 +139,7 @@ jobs:
           RADAR_CONFIRMATION="${{ inputs.radar_confirmation || 'none' }}"
           LIGHTNING_CONFIRMATION="${{ inputs.lightning_confirmation || 'none' }}"
           EXTERNAL_NOTE="${{ inputs.external_note || '' }}"
+          AUTO_EXTERNAL="${{ inputs.auto_external || 'true' }}"
 
           cmd=(
             python tools/generate_belgium_alert_report.py
@@ -149,8 +157,21 @@ jobs:
             --radar-confirmation "$RADAR_CONFIRMATION"
             --lightning-confirmation "$LIGHTNING_CONFIRMATION"
             --external-note "$EXTERNAL_NOTE"
+            --external-sources-config config/external_sources_belgium.yaml
+            --calibration-config config/belgium_scoring_calibration.yaml
+            --province-geojson config/belgium_provinces_simplified.geojson
+            --replay-events config/belgium_replay_events.example.csv
           )
 
+          if [ -n "$METEOVOID_RADAR_JSON_URL" ]; then
+            cmd+=(--radar-json-url "$METEOVOID_RADAR_JSON_URL")
+          fi
+          if [ -n "$METEOVOID_LIGHTNING_JSON_URL" ]; then
+            cmd+=(--lightning-json-url "$METEOVOID_LIGHTNING_JSON_URL")
+          fi
+          if [ "$AUTO_EXTERNAL" = "true" ]; then
+            cmd+=(--auto-external)
+          fi
           if [ "$OFFLINE_DEMO" = "true" ]; then
             cmd+=(--offline-demo)
           fi
