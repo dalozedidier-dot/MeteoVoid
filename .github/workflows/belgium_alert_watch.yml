@@ -134,7 +134,7 @@ jobs:
           IRM_WARNING_LEVEL="${{ inputs.irm_warning_level || 'none' }}"
           OFFICIAL_FORECAST_SIGNAL="${{ inputs.official_forecast_signal || 'none' }}"
           HEAT_WARNING_ACTIVE="${{ inputs.heat_warning_active || 'false' }}"
-          METEOALARM_LEVEL="${{ inputs.metealarm_level || 'none' }}"
+          METEOALARM_LEVEL="${{ inputs.meteoalarm_level || 'none' }}"
           ESTOFEX_LEVEL="${{ inputs.estofex_level || 'none' }}"
           RADAR_CONFIRMATION="${{ inputs.radar_confirmation || 'none' }}"
           LIGHTNING_CONFIRMATION="${{ inputs.lightning_confirmation || 'none' }}"
