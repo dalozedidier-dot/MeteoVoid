@@ -92,6 +92,9 @@ jobs:
           if [ -f _ci_out/belgium_alert/belgium_alert_report.md ]; then
             cat _ci_out/belgium_alert/belgium_alert_report.md >> "$GITHUB_STEP_SUMMARY"
           fi
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Generated files:" >> "$GITHUB_STEP_SUMMARY"
+          find _ci_out/belgium_alert -maxdepth 1 -type f -printf "- %f\n" | sort >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Belgium alert artifact
         if: always()

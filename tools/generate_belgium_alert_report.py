@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import html
 import json
 import sys
 from dataclasses import asdict, dataclass
@@ -35,6 +36,25 @@ HOURLY_VARIABLES = [
 THUNDERSTORM_CODES = {95, 96, 99}
 SHOWER_CODES = {51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82}
 SEVERITY_RANK = {"normal": 0, "watch": 1, "medium": 2, "high": 3, "alert": 4}
+SEVERITY_COLORS = {
+    "normal": "#6BA36B",
+    "watch": "#C4B54B",
+    "medium": "#E5933A",
+    "high": "#D85646",
+    "alert": "#6E3FA0",
+}
+BE_OUTLINE_LON_LAT = [
+    (2.56, 51.09),
+    (3.25, 51.37),
+    (4.25, 51.50),
+    (5.25, 51.34),
+    (6.42, 50.75),
+    (6.13, 49.50),
+    (5.10, 49.48),
+    (4.15, 49.77),
+    (3.20, 49.95),
+    (2.55, 50.73),
+]
 
 
 @dataclass(frozen=True)
@@ -488,9 +508,244 @@ def _fmt(value: Any, digits: int = 1) -> str:
     return f"{number:.{digits}f}"
 
 
+
+def _severity_color(severity: str) -> str:
+    return SEVERITY_COLORS.get(str(severity), "#999999")
+
+
+def _map_bounds(stations: list[dict[str, Any]]) -> tuple[float, float, float, float]:
+    lons = [_safe_float(s.get("lon")) for s in stations]
+    lats = [_safe_float(s.get("lat")) for s in stations]
+    finite_lons = [x for x in lons if x is not None]
+    finite_lats = [x for x in lats if x is not None]
+    if not finite_lons or not finite_lats:
+        return (2.4, 6.3, 49.4, 51.6)
+    min_lon = min(finite_lons)
+    max_lon = max(finite_lons)
+    min_lat = min(finite_lats)
+    max_lat = max(finite_lats)
+    lon_pad = max(0.25, (max_lon - min_lon) * 0.10)
+    lat_pad = max(0.18, (max_lat - min_lat) * 0.10)
+    return (min_lon - lon_pad, max_lon + lon_pad, min_lat - lat_pad, max_lat + lat_pad)
+
+
+def _project_point(
+    lon: float,
+    lat: float,
+    *,
+    bounds: tuple[float, float, float, float],
+    width: int,
+    height: int,
+    pad: int,
+) -> tuple[float, float]:
+    min_lon, max_lon, min_lat, max_lat = bounds
+    x = pad + (lon - min_lon) / max(max_lon - min_lon, 0.0001) * (width - 2 * pad)
+    y = height - pad - (lat - min_lat) / max(max_lat - min_lat, 0.0001) * (height - 2 * pad)
+    return (x, y)
+
+
+def _circle_radius(score: float) -> float:
+    return 7.0 + _clamp01(score) * 18.0
+
+
+def _render_map_svg(report: dict[str, Any]) -> str:
+    stations = report.get("stations", [])
+    stations = [s for s in stations if isinstance(s, dict)]
+    aggregate = report.get("aggregate", {})
+    target = report.get("target_window", {})
+    width = 1120
+    height = 780
+    pad = 72
+    bounds = _map_bounds(stations)
+
+    def esc(value: Any) -> str:
+        return html.escape(str(value), quote=True)
+
+    def point(lon: float, lat: float) -> str:
+        x, y = _project_point(lon, lat, bounds=bounds, width=width, height=height, pad=pad)
+        return f"{x:.1f},{y:.1f}"
+
+    outline_points = " ".join(point(lon, lat) for lon, lat in BE_OUTLINE_LON_LAT)
+    lines: list[str] = []
+    lines.append('<?xml version="1.0" encoding="UTF-8"?>')
+    lines.append(
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}" role="img" aria-labelledby="title desc">'
+    )
+    lines.append("<title id=\"title\">MeteoVoid Belgium Alert Map</title>")
+    lines.append(
+        "<desc id=\"desc\">Carte statique des scores de risque par station pour la Belgique et les approches frontalières.</desc>"
+    )
+    lines.append('<rect width="100%" height="100%" fill="#f7f5ef"/>')
+    lines.append('<rect x="28" y="28" width="1064" height="724" rx="24" fill="#ffffff" stroke="#d9d4c8"/>')
+    lines.append(
+        f'<text x="56" y="70" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#222">'
+        f'MeteoVoid Belgique, carte de veille</text>'
+    )
+    lines.append(
+        f'<text x="56" y="102" font-family="Arial, Helvetica, sans-serif" font-size="16" fill="#555">'
+        f'Score national {float(aggregate.get("score", 0.0)):.3f}, sévérité {esc(aggregate.get("severity", "n/a"))}, '
+        f'fenêtre {esc(target.get("start", "n/a"))} à {esc(target.get("end", "n/a"))}</text>'
+    )
+
+    for frac in (0.0, 0.25, 0.5, 0.75, 1.0):
+        x = pad + frac * (width - 2 * pad)
+        y = pad + frac * (height - 2 * pad)
+        lines.append(f'<line x1="{x:.1f}" y1="{pad}" x2="{x:.1f}" y2="{height-pad}" stroke="#eee8dc"/>')
+        lines.append(f'<line x1="{pad}" y1="{y:.1f}" x2="{width-pad}" y2="{y:.1f}" stroke="#eee8dc"/>')
+
+    lines.append(
+        f'<polygon points="{outline_points}" fill="#eef2f0" stroke="#9aa9a2" stroke-width="2" opacity="0.95"/>'
+    )
+    lines.append(
+        '<text x="88" y="720" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#777">'
+        'Carte schématique sans fond géographique externe. Points dimensionnés par score, couleurs par sévérité.</text>'
+    )
+
+    ordered = sorted(stations, key=lambda x: float(x.get("score") or 0.0), reverse=True)
+    for item in ordered:
+        lon = _safe_float(item.get("lon"))
+        lat = _safe_float(item.get("lat"))
+        if lon is None or lat is None:
+            continue
+        x, y = _project_point(lon, lat, bounds=bounds, width=width, height=height, pad=pad)
+        severity = str(item.get("severity", "normal"))
+        score = float(item.get("score") or 0.0)
+        color = "#888888" if not item.get("source_ok", True) else _severity_color(severity)
+        radius = _circle_radius(score)
+        stroke = "#333333" if item.get("source_ok", True) else "#777777"
+        station_name = esc(item.get("name", item.get("station_id", "station")))
+        station_id = esc(item.get("station_id", ""))
+        title = esc(
+            f"{item.get('name', station_id)} | score {score:.3f} | {severity} | {item.get('worst_time') or 'n/a'}"
+        )
+        lines.append(f'<g class="station station-{esc(severity)}">')
+        lines.append(f'<title>{title}</title>')
+        lines.append(
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{radius:.1f}" fill="{color}" '
+            f'fill-opacity="0.82" stroke="{stroke}" stroke-width="1.4"/>'
+        )
+        lines.append(
+            f'<text x="{x + radius + 5:.1f}" y="{y + 4:.1f}" font-family="Arial, Helvetica, sans-serif" '
+            f'font-size="12" fill="#242424">{station_name}</text>'
+        )
+        lines.append("</g>")
+
+    legend_x = 820
+    legend_y = 134
+    lines.append(f'<g transform="translate({legend_x},{legend_y})">')
+    lines.append('<rect x="0" y="0" width="232" height="178" rx="14" fill="#ffffff" stroke="#d9d4c8"/>')
+    lines.append('<text x="18" y="28" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#333">Légende</text>')
+    for idx, sev in enumerate(["normal", "watch", "medium", "high", "alert"]):
+        y = 54 + idx * 23
+        lines.append(f'<circle cx="24" cy="{y}" r="8" fill="{_severity_color(sev)}"/>')
+        lines.append(f'<text x="42" y="{y + 4}" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#333">{sev}</text>')
+    lines.append('<text x="18" y="164" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#666">Plus le cercle est grand, plus le score est élevé.</text>')
+    lines.append("</g>")
+    lines.append("</svg>")
+    return "\n".join(lines) + "\n"
+
+
+def _render_map_html(report: dict[str, Any]) -> str:
+    svg = _render_map_svg(report)
+    aggregate = report.get("aggregate", {})
+    stations = report.get("stations", [])
+    ordered = sorted(
+        [s for s in stations if isinstance(s, dict)],
+        key=lambda x: float(x.get("score") or 0.0),
+        reverse=True,
+    )
+    rows: list[str] = []
+    for item in ordered[:15]:
+        signals = "; ".join(str(x) for x in item.get("signals", []))
+        rows.append(
+            "<tr>"
+            f"<td>{html.escape(str(item.get('name', '')))}</td>"
+            f"<td>{html.escape(str(item.get('severity', '')))}</td>"
+            f"<td>{float(item.get('score') or 0.0):.3f}</td>"
+            f"<td>{html.escape(str(item.get('worst_time') or 'n/a'))}</td>"
+            f"<td>{html.escape(signals)}</td>"
+            "</tr>"
+        )
+    return """<!doctype html>
+<html lang=\"fr\">
+<head>
+  <meta charset=\"utf-8\">
+  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
+  <title>MeteoVoid Belgium Alert Map</title>
+  <style>
+    body { font-family: Arial, Helvetica, sans-serif; margin: 24px; background: #f7f5ef; color: #222; }
+    main { max-width: 1180px; margin: 0 auto; }
+    .panel { background: #fff; border: 1px solid #d9d4c8; border-radius: 18px; padding: 20px; margin-bottom: 18px; }
+    svg { width: 100%; height: auto; display: block; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { border-bottom: 1px solid #e7e1d7; padding: 8px; text-align: left; vertical-align: top; }
+    th { background: #fbfaf6; }
+    code { background: #f1ece1; padding: 2px 5px; border-radius: 5px; }
+  </style>
+</head>
+<body>
+<main>
+  <section class=\"panel\">
+    <h1>MeteoVoid Belgium Alert Watch</h1>
+    <p>Score national : <code>""" + f"{float(aggregate.get('score', 0.0)):.3f}" + """</code>. Sévérité : <code>""" + html.escape(str(aggregate.get("severity", "n/a"))) + """</code>.</p>
+    <p>Carte statique hors ligne. Elle ne dépend d’aucune tuile externe.</p>
+  </section>
+  <section class=\"panel\">
+""" + svg + """
+  </section>
+  <section class=\"panel\">
+    <h2>Stations</h2>
+    <table>
+      <thead><tr><th>Station</th><th>Sévérité</th><th>Score</th><th>Heure sensible</th><th>Signaux</th></tr></thead>
+      <tbody>
+""" + "\n".join(rows) + """
+      </tbody>
+    </table>
+  </section>
+</main>
+</body>
+</html>
+"""
+
+
+def _render_geojson(report: dict[str, Any]) -> dict[str, Any]:
+    features: list[dict[str, Any]] = []
+    for item in report.get("stations", []):
+        if not isinstance(item, dict):
+            continue
+        lon = _safe_float(item.get("lon"))
+        lat = _safe_float(item.get("lat"))
+        if lon is None or lat is None:
+            continue
+        props = {k: v for k, v in item.items() if k not in {"lat", "lon", "components"}}
+        props["component_heat"] = item.get("components", {}).get("heat") if isinstance(item.get("components"), dict) else None
+        props["component_moisture"] = item.get("components", {}).get("moisture") if isinstance(item.get("components"), dict) else None
+        props["component_precipitation"] = item.get("components", {}).get("precipitation") if isinstance(item.get("components"), dict) else None
+        props["component_wind_gust"] = item.get("components", {}).get("wind_gust") if isinstance(item.get("components"), dict) else None
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                "properties": props,
+            }
+        )
+    return {
+        "type": "FeatureCollection",
+        "name": "MeteoVoid Belgium Alert Risk By Station",
+        "generated_at": report.get("generated_at"),
+        "features": features,
+    }
+
+
 def _render_markdown(report: dict[str, Any]) -> str:
     aggregate = report["aggregate"]
     stations = report["stations"]
+    data_mode = report.get("data_mode", "unknown")
+    source_type = report.get("source_type", "unknown")
+    source_detail = report.get("source_detail", report.get("source", "unknown"))
+    integrations = report.get("integrations", {})
+
     lines: list[str] = []
     lines.append("# MeteoVoid Belgium Alert Watch")
     lines.append("")
@@ -502,12 +757,37 @@ def _render_markdown(report: dict[str, Any]) -> str:
     lines.append(f"Score national : `{aggregate['score']:.3f}`")
     lines.append(f"Sévérité : `{aggregate['severity']}`")
     lines.append("")
-    lines.append("## Guide de lecture")
+    lines.append("## Source et limites")
+    lines.append("")
+    lines.append(f"Source principale : `{source_detail}`")
+    lines.append(f"Mode de données : `{data_mode}`")
+    lines.append(f"Type de source : `{source_type}`")
+    lines.append(
+        "Données récupérées au moment de l’exécution"
+        if data_mode == "live_forecast_api"
+        else "Données de démonstration déterministes, sans accès réseau"
+    )
+    lines.append("")
+    lines.append("Intégrations externes actuellement actives :")
+    lines.append(
+        f"- Avertissements officiels IRM/KMI : `{bool(integrations.get('official_warning_integrated', False))}`"
+    )
+    lines.append(f"- MeteoAlarm : `{bool(integrations.get('metealarm_integrated', False))}`")
+    lines.append(f"- ESTOFEX : `{bool(integrations.get('estofex_integrated', False))}`")
+    lines.append(f"- Radar : `{bool(integrations.get('radar_integrated', False))}`")
+    lines.append(f"- Foudre : `{bool(integrations.get('lightning_integrated', False))}`")
     lines.append("")
     lines.append(
         "Ce rapport est une veille basée sur modèle. Ce n’est pas une alerte officielle. "
         "Pour la sécurité publique, il doit toujours être comparé avec l’IRM/KMI, "
         "MeteoAlarm, le radar et le nowcast foudre."
+    )
+    lines.append("")
+    lines.append("## Carte")
+    lines.append("")
+    lines.append(
+        "Une carte statique est générée avec le rapport : `belgium_alert_map.svg` et "
+        "`belgium_alert_map.html`. Un fichier SIG est aussi produit : `risk_by_station.geojson`."
     )
     lines.append("")
     lines.append("## Stations les plus sensibles")
@@ -564,6 +844,12 @@ def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
         encoding="utf-8",
     )
     (out_dir / "belgium_alert_report.md").write_text(_render_markdown(report), encoding="utf-8")
+    (out_dir / "belgium_alert_map.svg").write_text(_render_map_svg(report), encoding="utf-8")
+    (out_dir / "belgium_alert_map.html").write_text(_render_map_html(report), encoding="utf-8")
+    (out_dir / "risk_by_station.geojson").write_text(
+        json.dumps(_render_geojson(report), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
     rows = report["stations"]
     csv_path = out_dir / "risk_by_station.csv"
@@ -637,14 +923,36 @@ def _build_report(
     stations = [asdict(r) for r in risks]
     aggregate = _aggregate_risk(risks)
     generated = datetime.now().astimezone().isoformat(timespec="seconds")
+    source = "openmeteo_forecast" if not offline_demo else "offline_demo"
+    data_mode = "live_forecast_api" if not offline_demo else "offline_demo"
+    source_type = "model_forecast" if not offline_demo else "synthetic_demo"
+    source_detail = "Open-Meteo Forecast API" if not offline_demo else "Deterministic offline demo payload"
     return {
         "generated_at": generated,
-        "source": "openmeteo_forecast" if not offline_demo else "offline_demo",
+        "source": source,
+        "data_mode": data_mode,
+        "source_type": source_type,
+        "source_detail": source_detail,
         "timezone": timezone,
         "target_window": {
             "start": target.start.isoformat(),
             "end": target.end.isoformat(),
             "label": target.label,
+        },
+        "integrations": {
+            "official_warning_integrated": False,
+            "metealarm_integrated": False,
+            "estofex_integrated": False,
+            "radar_integrated": False,
+            "lightning_integrated": False,
+        },
+        "outputs": {
+            "json": "belgium_alert_report.json",
+            "markdown": "belgium_alert_report.md",
+            "csv": "risk_by_station.csv",
+            "geojson": "risk_by_station.geojson",
+            "map_svg": "belgium_alert_map.svg",
+            "map_html": "belgium_alert_map.html",
         },
         "aggregate": aggregate,
         "stations": stations,
@@ -697,6 +1005,9 @@ def main(argv: list[str] | None = None) -> int:
 
     print(out_dir / "belgium_alert_report.json")
     print(out_dir / "belgium_alert_report.md")
+    print(out_dir / "belgium_alert_map.svg")
+    print(out_dir / "belgium_alert_map.html")
+    print(out_dir / "risk_by_station.geojson")
     return 0
 
 
