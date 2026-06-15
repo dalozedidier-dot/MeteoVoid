@@ -1261,6 +1261,579 @@ def _render_dashboard_html(report: dict[str, Any]) -> str:
 """
 
 
+# ---------------------------------------------------------------------------
+# Professional map rendering overrides
+# ---------------------------------------------------------------------------
+# These definitions intentionally override the first lightweight map renderer above.
+# The HTML map uses Leaflet and OpenStreetMap tiles for a real geographic basemap.
+# The SVG map remains an offline fallback and now applies marker decluttering.
+
+BE_OUTLINE_LON_LAT_DETAILED = [
+    (2.54, 51.09),
+    (2.70, 51.14),
+    (2.91, 51.23),
+    (3.18, 51.29),
+    (3.45, 51.33),
+    (3.82, 51.36),
+    (4.26, 51.50),
+    (4.74, 51.44),
+    (5.16, 51.34),
+    (5.55, 51.15),
+    (5.82, 50.93),
+    (6.20, 50.78),
+    (6.38, 50.62),
+    (6.18, 50.36),
+    (6.29, 50.12),
+    (5.98, 49.96),
+    (5.82, 49.54),
+    (5.42, 49.50),
+    (5.05, 49.63),
+    (4.75, 49.56),
+    (4.36, 49.80),
+    (3.98, 49.93),
+    (3.55, 50.02),
+    (3.24, 50.31),
+    (2.82, 50.72),
+    (2.55, 50.82),
+    (2.54, 51.09),
+]
+
+LABEL_OFFSETS = {
+    "BE_COXYDE": (16, -16, "start"),
+    "BE_GENT": (-18, -20, "end"),
+    "BE_ANTWERP": (16, -18, "start"),
+    "BE_HASSELT": (18, -10, "start"),
+    "BE_UCCLE": (-18, -16, "end"),
+    "BE_JODOIGNE": (20, -16, "start"),
+    "BE_LIEGE": (18, 4, "start"),
+    "BE_NAMUR": (18, 20, "start"),
+    "BE_CHARLEROI": (-18, 18, "end"),
+    "BE_MONS": (-18, 20, "end"),
+    "BE_ARLON": (-18, -18, "end"),
+    "FR_LILLE": (-18, -18, "end"),
+    "NL_MAASTRICHT": (18, -22, "start"),
+    "DE_AACHEN": (18, 20, "start"),
+    "LU_LUXEMBOURG": (18, 18, "start"),
+}
+
+
+def _better_bounds(stations: list[dict[str, Any]]) -> tuple[float, float, float, float]:
+    """Stable map bounds centered on Belgium plus the immediate approaches."""
+    return (2.25, 6.65, 49.35, 51.65)
+
+
+def _project_entries_decluttered(
+    stations: list[dict[str, Any]],
+    *,
+    bounds: tuple[float, float, float, float],
+    width: int,
+    height: int,
+    pad: int,
+    radius_scale: float = 1.0,
+) -> list[dict[str, Any]]:
+    """Project stations and move markers slightly when markers would overlap.
+
+    The true geographic point is kept as raw_x/raw_y. When a marker is shifted,
+    renderers can draw a thin leader line so the displacement remains explicit.
+    """
+
+    ordered = sorted(stations, key=lambda x: float(x.get("score") or 0.0), reverse=True)
+    placed: list[dict[str, Any]] = []
+    angles = [0, 60, 120, 180, 240, 300]
+    candidates: list[tuple[float, float]] = [(0.0, 0.0)]
+    for ring in (10, 18, 28, 40, 54, 70):
+        for angle in angles:
+            import math
+
+            rad = math.radians(angle)
+            candidates.append((math.cos(rad) * ring, math.sin(rad) * ring))
+
+    for item in ordered:
+        lon = _safe_float(item.get("lon"))
+        lat = _safe_float(item.get("lat"))
+        if lon is None or lat is None:
+            continue
+        raw_x, raw_y = _project_point(lon, lat, bounds=bounds, width=width, height=height, pad=pad)
+        score = float(item.get("score") or 0.0)
+        radius = (7.0 + _clamp01(score) * 15.0) * radius_scale
+        best_x = raw_x
+        best_y = raw_y
+        for dx, dy in candidates:
+            candidate_x = min(max(raw_x + dx, pad + radius), width - pad - radius)
+            candidate_y = min(max(raw_y + dy, pad + radius), height - pad - radius)
+            ok = True
+            for other in placed:
+                dist = ((candidate_x - other["x"]) ** 2 + (candidate_y - other["y"]) ** 2) ** 0.5
+                if dist < radius + other["radius"] + 8:
+                    ok = False
+                    break
+            if ok:
+                best_x = candidate_x
+                best_y = candidate_y
+                break
+        placed.append(
+            {
+                "item": item,
+                "raw_x": raw_x,
+                "raw_y": raw_y,
+                "x": best_x,
+                "y": best_y,
+                "radius": radius,
+                "shifted": abs(best_x - raw_x) > 1.0 or abs(best_y - raw_y) > 1.0,
+            }
+        )
+    return placed
+
+
+def _render_map_svg(report: dict[str, Any]) -> str:
+    stations = [s for s in report.get("stations", []) if isinstance(s, dict)]
+    aggregate = report.get("aggregate", {})
+    target = report.get("target_window", {})
+    width = 1180
+    height = 760
+    pad = 74
+    bounds = _better_bounds(stations)
+    placements = _project_entries_decluttered(
+        stations, bounds=bounds, width=width, height=height, pad=pad, radius_scale=1.0
+    )
+
+    def esc(value: Any) -> str:
+        return html.escape(str(value), quote=True)
+
+    def point(lon: float, lat: float) -> str:
+        x, y = _project_point(lon, lat, bounds=bounds, width=width, height=height, pad=pad)
+        return f"{x:.1f},{y:.1f}"
+
+    outline_points = " ".join(point(lon, lat) for lon, lat in BE_OUTLINE_LON_LAT_DETAILED)
+    lines: list[str] = []
+    lines.append('<?xml version="1.0" encoding="UTF-8"?>')
+    lines.append(
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}" role="img" aria-labelledby="title desc">'
+    )
+    lines.append('<title id="title">MeteoVoid Belgique, carte de veille</title>')
+    lines.append(
+        '<desc id="desc">Carte statique des scores de risque par station. Les marqueurs proches sont légèrement décalés et reliés à leur position réelle.</desc>'
+    )
+    lines.append("<defs>")
+    lines.append(
+        '<linearGradient id="sea" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#dff1ff"/><stop offset="1" stop-color="#f8fbff"/></linearGradient>'
+    )
+    lines.append(
+        '<linearGradient id="land" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#f3f7e8"/><stop offset="1" stop-color="#edf4df"/></linearGradient>'
+    )
+    lines.append(
+        '<filter id="shadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#172033" flood-opacity="0.14"/></filter>'
+    )
+    lines.append(
+        '<filter id="markerShadow" x="-80%" y="-80%" width="260%" height="260%"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#172033" flood-opacity="0.25"/></filter>'
+    )
+    lines.append("</defs>")
+    lines.append('<rect width="100%" height="100%" fill="#f3f6fb"/>')
+    lines.append(
+        '<rect x="28" y="28" width="1124" height="704" rx="26" fill="#ffffff" stroke="#dce4ee"/>'
+    )
+    lines.append(
+        '<text x="60" y="74" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="800" fill="#10213f">MeteoVoid Belgique, carte de veille</text>'
+    )
+    lines.append(
+        f'<text x="60" y="106" font-family="Arial, Helvetica, sans-serif" font-size="15" fill="#607089">Score national {float(aggregate.get("score", 0.0)):.3f}, sévérité {esc(aggregate.get("severity", "n/a"))}, fenêtre {esc(target.get("start", "n/a"))} à {esc(target.get("end", "n/a"))}</text>'
+    )
+    lines.append(
+        '<rect x="60" y="128" width="1060" height="538" rx="20" fill="#f8fbff" stroke="#dfe7f0"/>'
+    )
+    lines.append(
+        '<path d="M60,128 L310,128 C278,185 190,215 60,232 Z" fill="url(#sea)" opacity="0.85"/>'
+    )
+
+    grid_x0, grid_y0, grid_w, grid_h = 60, 128, 1060, 538
+    lines.append('<g opacity="0.55" stroke="#d6e5ef" stroke-width="1">')
+    for frac in (0.18, 0.36, 0.54, 0.72, 0.90):
+        x = grid_x0 + frac * grid_w
+        y = grid_y0 + frac * grid_h
+        lines.append(f'<line x1="{x:.1f}" y1="{grid_y0}" x2="{x:.1f}" y2="{grid_y0 + grid_h}"/>')
+        lines.append(f'<line x1="{grid_x0}" y1="{y:.1f}" x2="{grid_x0 + grid_w}" y2="{y:.1f}"/>')
+    lines.append("</g>")
+    lines.append(
+        '<text x="160" y="588" font-family="Arial" font-size="13" fill="#738196" font-weight="800" letter-spacing="1.2">FRANCE</text>'
+    )
+    lines.append(
+        '<text x="910" y="210" font-family="Arial" font-size="13" fill="#738196" font-weight="800" letter-spacing="1.2">PAYS-BAS</text>'
+    )
+    lines.append(
+        '<text x="920" y="410" font-family="Arial" font-size="13" fill="#738196" font-weight="800" letter-spacing="1.2">ALLEMAGNE</text>'
+    )
+    lines.append(
+        '<text x="790" y="625" font-family="Arial" font-size="13" fill="#738196" font-weight="800" letter-spacing="1.2">LUXEMBOURG</text>'
+    )
+    lines.append(
+        f'<polygon points="{outline_points}" fill="url(#land)" stroke="#b7c7a8" stroke-width="2.4" filter="url(#shadow)"/>'
+    )
+    lines.append('<g stroke="#9ed4e8" stroke-width="1.2" opacity="0.55" fill="none">')
+    lines.append('<path d="M300 300 C420 325, 520 320, 640 300 S830 300, 940 330"/>')
+    lines.append('<path d="M450 220 C520 248, 590 244, 668 228 S800 230, 882 265"/>')
+    lines.append('<path d="M575 410 C650 432, 715 465, 780 530"/>')
+    lines.append("</g>")
+
+    for entry in reversed(placements):
+        item = entry["item"]
+        x = float(entry["x"])
+        y = float(entry["y"])
+        raw_x = float(entry["raw_x"])
+        raw_y = float(entry["raw_y"])
+        radius = float(entry["radius"])
+        severity = str(item.get("severity", "normal"))
+        score = float(item.get("score") or 0.0)
+        color = "#94a3b8" if not item.get("source_ok", True) else _severity_color(severity)
+        station_id = str(item.get("station_id", ""))
+        station_name = esc(item.get("name", station_id))
+        title = esc(
+            f"{item.get('name', station_id)} | score {score:.3f} | {severity} | {item.get('worst_time') or 'n/a'}"
+        )
+        if entry["shifted"]:
+            lines.append(
+                f'<line x1="{raw_x:.1f}" y1="{raw_y:.1f}" x2="{x:.1f}" y2="{y:.1f}" stroke="#516276" stroke-width="1" stroke-dasharray="3 4" opacity="0.58"/>'
+            )
+        label_dx, label_dy, anchor = LABEL_OFFSETS.get(station_id, (radius + 8, 4, "start"))
+        lines.append('<g class="station">')
+        lines.append(f"<title>{title}</title>")
+        lines.append(
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{radius + 6:.1f}" fill="{color}" opacity="0.16"/>'
+        )
+        lines.append(
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{radius:.1f}" fill="{color}" stroke="#ffffff" stroke-width="4" filter="url(#markerShadow)"/>'
+        )
+        lines.append(
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{max(3.0, radius * 0.22):.1f}" fill="#ffffff" opacity="0.55"/>'
+        )
+        lines.append(
+            f'<text x="{x + label_dx:.1f}" y="{y + label_dy:.1f}" text-anchor="{anchor}" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="800" fill="#172033" paint-order="stroke" stroke="#ffffff" stroke-width="4" stroke-linejoin="round">{station_name}</text>'
+        )
+        lines.append("</g>")
+
+    legend_x = 72
+    legend_y = 470
+    lines.append(f'<g transform="translate({legend_x},{legend_y})">')
+    lines.append(
+        '<rect x="0" y="0" width="184" height="156" rx="16" fill="#ffffff" stroke="#d8e0ea" filter="url(#shadow)"/>'
+    )
+    lines.append(
+        '<text x="18" y="29" font-family="Arial" font-size="15" font-weight="800" fill="#172033">Sévérité</text>'
+    )
+    for idx, sev in enumerate(["normal", "watch", "medium", "high", "alert"]):
+        yy = 55 + idx * 20
+        lines.append(f'<circle cx="24" cy="{yy}" r="7" fill="{_severity_color(sev)}"/>')
+        lines.append(
+            f'<text x="42" y="{yy + 4}" font-family="Arial" font-size="12" fill="#34445b">{sev}</text>'
+        )
+    lines.append(
+        '<text x="60" y="704" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#607089">Fond SVG hors ligne. Les lignes pointillées indiquent un léger décalage anti-superposition. La carte interactive HTML utilise OpenStreetMap.</text>'
+    )
+    lines.append("</g>")
+    lines.append("</svg>")
+    return "\n".join(lines) + "\n"
+
+
+def _leaflet_station_payload(report: dict[str, Any]) -> str:
+    features: list[dict[str, Any]] = []
+    for item in report.get("stations", []):
+        if not isinstance(item, dict):
+            continue
+        lat = _safe_float(item.get("lat"))
+        lon = _safe_float(item.get("lon"))
+        if lat is None or lon is None:
+            continue
+        features.append(
+            {
+                "station_id": item.get("station_id"),
+                "name": item.get("name"),
+                "region": item.get("region"),
+                "lat": lat,
+                "lon": lon,
+                "score": float(item.get("score") or 0.0),
+                "severity": item.get("severity", "normal"),
+                "worst_time": item.get("worst_time"),
+                "signals": item.get("signals", []),
+                "source_ok": bool(item.get("source_ok", True)),
+            }
+        )
+    return json.dumps(features, ensure_ascii=False).replace("</", "<\\/")
+
+
+def _render_map_html(report: dict[str, Any]) -> str:
+    aggregate = report.get("aggregate", {})
+    target = report.get("target_window", {})
+    stations_json = _leaflet_station_payload(report)
+    source = html.escape(str(report.get("source_detail", "Open-Meteo Forecast API")))
+    data_mode = html.escape(str(report.get("data_mode", "unknown")))
+    source_type = html.escape(str(report.get("source_type", "unknown")))
+    return f"""<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MeteoVoid Belgique, carte interactive</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+  <style>
+    :root {{ --ink:#0f213f; --muted:#607089; --line:#dfe7f0; --panel:#ffffff; }}
+    html, body {{ height:100%; margin:0; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color:var(--ink); background:#f3f6fb; }}
+    .shell {{ height:100%; display:grid; grid-template-rows:auto 1fr auto; }}
+    header {{ display:flex; justify-content:space-between; gap:18px; align-items:flex-start; padding:16px 18px; background:#fff; border-bottom:1px solid var(--line); }}
+    h1 {{ margin:0; font-size:22px; letter-spacing:-.3px; }}
+    p {{ margin:4px 0 0; color:var(--muted); font-size:13px; }}
+    .score {{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end; font-size:13px; color:var(--muted); }}
+    .pill {{ display:inline-flex; align-items:center; border:1px solid var(--line); border-radius:999px; background:#fff; padding:7px 10px; font-weight:800; color:var(--ink); }}
+    #map {{ min-height:520px; height:100%; }}
+    footer {{ padding:9px 14px; font-size:12px; color:var(--muted); background:#fff; border-top:1px solid var(--line); display:flex; justify-content:space-between; gap:14px; }}
+    .risk-dot {{ border-radius:999px; border:3px solid #fff; box-shadow:0 4px 12px rgba(15,33,63,.25); display:block; }}
+    .legend {{ background:#fff; border:1px solid var(--line); border-radius:14px; box-shadow:0 12px 30px rgba(15,33,63,.12); padding:12px 13px; line-height:1.25; }}
+    .legend h3 {{ margin:0 0 9px; font-size:14px; }}
+    .legend-row {{ display:flex; align-items:center; gap:8px; margin:6px 0; font-size:13px; }}
+    .legend-swatch {{ width:12px; height:12px; border-radius:50%; display:inline-block; }}
+    .popup h3 {{ margin:0 0 6px; font-size:16px; }}
+    .popup .meta {{ color:#607089; margin-bottom:6px; }}
+    .popup ul {{ padding-left:18px; margin:7px 0 0; }}
+    .leaflet-tooltip {{ font-weight:800; color:#0f213f; border:1px solid #dfe7f0; box-shadow:0 4px 12px rgba(15,33,63,.12); }}
+    .note {{ background:#eff6ff; color:#1d4f9c; border:1px solid #cfe0ff; border-radius:12px; padding:8px 10px; }}
+  </style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <div>
+      <h1>MeteoVoid Belgique, carte interactive</h1>
+      <p>Fond géographique OpenStreetMap, regroupement des points proches et affichage des détails au clic.</p>
+    </div>
+    <div class="score">
+      <span class="pill">Score {float(aggregate.get('score', 0.0)):.3f}</span>
+      <span class="pill">Sévérité {html.escape(str(aggregate.get('severity', 'n/a')))}</span>
+      <span class="pill">{html.escape(str(target.get('start', 'n/a')))} à {html.escape(str(target.get('end', 'n/a')))}</span>
+    </div>
+  </header>
+  <div id="map"></div>
+  <footer>
+    <span>Données : {source} | Mode : {data_mode} | Type : {source_type}</span>
+    <span>Carte non officielle. Vérification IRM/KMI, MeteoAlarm, radar et foudre indispensable.</span>
+  </footer>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+const severityColors = {{normal:"{SEVERITY_COLORS['normal']}", watch:"{SEVERITY_COLORS['watch']}", medium:"{SEVERITY_COLORS['medium']}", high:"{SEVERITY_COLORS['high']}", alert:"{SEVERITY_COLORS['alert']}"}};
+const stations = {stations_json};
+const map = L.map('map', {{ zoomControl: true, scrollWheelZoom: true }}).setView([50.64, 4.65], 8);
+L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
+  maxZoom: 12,
+  attribution: '&copy; OpenStreetMap contributors'
+}}).addTo(map);
+const group = (L.markerClusterGroup ? L.markerClusterGroup({{ showCoverageOnHover:false, spiderfyOnMaxZoom:true, disableClusteringAtZoom:10, maxClusterRadius:38 }}) : L.layerGroup());
+function esc(value) {{ return String(value ?? '').replace(/[&<>"']/g, ch => ({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}}[ch])); }}
+function markerSize(score) {{ return 18 + Math.max(0, Math.min(1, Number(score || 0))) * 24; }}
+for (const st of stations) {{
+  const sev = String(st.severity || 'normal');
+  const color = st.source_ok ? (severityColors[sev] || '#94a3b8') : '#94a3b8';
+  const size = markerSize(st.score);
+  const marker = L.marker([st.lat, st.lon], {{
+    title: st.name,
+    icon: L.divIcon({{
+      className: 'risk-icon',
+      html: `<span class="risk-dot" style="width:${{size}}px;height:${{size}}px;background:${{color}}"></span>`,
+      iconSize: [size, size],
+      iconAnchor: [size / 2, size / 2],
+    }})
+  }});
+  const signals = Array.isArray(st.signals) ? st.signals : [];
+  const popup = `<div class="popup"><h3>${{esc(st.name)}}</h3><div class="meta">${{esc(st.region)}} | score ${{Number(st.score || 0).toFixed(3)}} | ${{esc(sev)}} | ${{esc(st.worst_time || 'n/a')}}</div>${{signals.length ? '<ul>' + signals.map(s => '<li>' + esc(s) + '</li>').join('') + '</ul>' : '<div class="note">Aucun signal détaillé disponible.</div>'}}</div>`;
+  marker.bindPopup(popup, {{ maxWidth: 360 }});
+  marker.bindTooltip(esc(st.name), {{ permanent:false, direction:'top', offset:[0, -12] }});
+  group.addLayer(marker);
+}}
+group.addTo(map);
+if (stations.length) {{
+  const bounds = L.latLngBounds(stations.map(st => [st.lat, st.lon]));
+  map.fitBounds(bounds.pad(0.16));
+}}
+const legend = L.control({{ position: 'bottomleft' }});
+legend.onAdd = function() {{
+  const div = L.DomUtil.create('div', 'legend');
+  div.innerHTML = '<h3>Sévérité</h3>' + ['normal','watch','medium','high','alert'].map(sev => `<div class="legend-row"><span class="legend-swatch" style="background:${{severityColors[sev]}}"></span>${{sev}}</div>`).join('') + '<p>La taille du marqueur reflète le score. Les points proches sont regroupés automatiquement.</p>';
+  return div;
+}};
+legend.addTo(map);
+</script>
+</body>
+</html>
+"""
+
+
+def _render_dashboard_map_svg(report: dict[str, Any]) -> str:
+    # Kept as an offline fallback for environments where the Leaflet map cannot load.
+    return _render_map_svg(report)
+
+
+def _render_dashboard_html(report: dict[str, Any]) -> str:
+    aggregate = report.get("aggregate", {})
+    target = report.get("target_window", {})
+    rows = _station_rows(report)
+    generated_at = str(report.get("generated_at", "n/a"))
+    score = float(aggregate.get("score") or 0.0)
+    severity = str(aggregate.get("severity", "normal"))
+    source_detail = html.escape(str(report.get("source_detail", "unknown")))
+    source_type = html.escape(str(report.get("source_type", "unknown")))
+    data_mode = html.escape(str(report.get("data_mode", "unknown")))
+    last_sensitive = next((str(r.get("worst_time")) for r in rows if r.get("worst_time")), "n/a")
+    active_count = int(aggregate.get("source_ok_count") or 0)
+    error_count = int(aggregate.get("source_error_count") or 0)
+    top_scores = [float(r.get("score") or 0.0) for r in rows[:6]] or [0.0]
+    spark_points = []
+    for i, val in enumerate(top_scores):
+        x = 8 + i * (88 / max(1, len(top_scores) - 1))
+        y = 48 - val * 34
+        spark_points.append(f"{x:.1f},{y:.1f}")
+    sparkline = " ".join(spark_points)
+
+    def esc(value: Any) -> str:
+        return html.escape(str(value), quote=True)
+
+    def badge(sev: Any) -> str:
+        sev_s = str(sev)
+        return f'<span class="badge badge-{esc(sev_s)}">{esc(_severity_badge_label(sev_s))}</span>'
+
+    station_rows: list[str] = []
+    for item in rows:
+        signals = "; ".join(str(x) for x in item.get("signals", []))
+        station_rows.append(
+            "<tr>"
+            f"<td><strong>{esc(item.get('name', ''))}</strong><span>{esc(item.get('region', ''))}</span></td>"
+            f"<td>{badge(item.get('severity', 'normal'))}</td>"
+            f'<td class="num">{float(item.get("score") or 0.0):.3f}</td>'
+            f"<td>{esc(_fmt_time(item.get('worst_time')))}</td>"
+            f"<td>{esc(signals)}</td>"
+            "</tr>"
+        )
+
+    insight_blocks: list[str] = []
+    icon_map = {"heat": "Chaleur", "storm": "Orage", "rain": "Pluie"}
+    for title, text, kind in _dashboard_insights(report):
+        insight_blocks.append(
+            f'<article class="insight insight-{esc(kind)}"><div class="insight-icon">{esc(icon_map.get(kind, "Info"))}</div>'
+            f"<div><h3>{esc(title)}</h3><p>{esc(text)}</p></div></article>"
+        )
+
+    official_states = (
+        report.get("integrations", {}) if isinstance(report.get("integrations"), dict) else {}
+    )
+    integrations_text = ", ".join(
+        [
+            f"IRM/KMI: {bool(official_states.get('official_warning_integrated', False))}",
+            f"MeteoAlarm: {bool(official_states.get('metealarm_integrated', False))}",
+            f"ESTOFEX: {bool(official_states.get('estofex_integrated', False))}",
+            f"Radar: {bool(official_states.get('radar_integrated', False))}",
+            f"Foudre: {bool(official_states.get('lightning_integrated', False))}",
+        ]
+    )
+
+    return f"""<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MeteoVoid Belgique Dashboard</title>
+  <style>
+    :root {{ --bg:#f3f6fb; --panel:#ffffff; --ink:#0f213f; --muted:#607089; --line:#dfe7f0; --blue:#2b6fed; --normal:{SEVERITY_COLORS['normal']}; --watch:{SEVERITY_COLORS['watch']}; --medium:{SEVERITY_COLORS['medium']}; --high:{SEVERITY_COLORS['high']}; --alert:{SEVERITY_COLORS['alert']}; --shadow:0 14px 34px rgba(15, 33, 63, 0.08); }}
+    * {{ box-sizing:border-box; }}
+    body {{ margin:0; background:var(--bg); color:var(--ink); font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+    .app {{ display:grid; grid-template-columns:228px 1fr; min-height:100vh; }}
+    aside {{ background:linear-gradient(180deg, #0b1d37 0%, #102b4f 100%); color:#dbe7ff; padding:24px 18px; display:flex; flex-direction:column; gap:28px; }}
+    .brand {{ display:flex; align-items:center; gap:12px; font-weight:800; letter-spacing:.2px; }}
+    .logo {{ width:46px; height:46px; border-radius:15px; display:grid; place-items:center; background:rgba(255,255,255,.12); font-size:22px; }}
+    nav {{ display:grid; gap:9px; }}
+    nav a {{ color:#cbd7ee; text-decoration:none; padding:12px 14px; border-radius:13px; font-weight:650; }}
+    nav a.active {{ background:rgba(43,111,237,.28); color:#fff; outline:1px solid rgba(137,172,255,.45); }}
+    .status {{ margin-top:auto; border:1px solid rgba(210,226,255,.20); background:rgba(255,255,255,.07); border-radius:16px; padding:14px; font-size:13px; }}
+    .dot {{ display:inline-block; width:10px; height:10px; border-radius:50%; background:#65c466; margin-right:8px; }}
+    main {{ padding:28px 34px 24px; }}
+    header {{ display:flex; align-items:flex-start; justify-content:space-between; gap:18px; margin-bottom:20px; }}
+    h1 {{ margin:0; font-size:38px; line-height:1; letter-spacing:-1.2px; }}
+    .subtitle {{ margin:8px 0 0; color:var(--muted); font-size:16px; }}
+    .header-actions {{ display:flex; align-items:center; gap:16px; }}
+    .refresh {{ border:1px solid var(--line); background:#fff; border-radius:12px; padding:10px 16px; font-weight:700; color:var(--blue); box-shadow:0 6px 18px rgba(15,33,63,.05); }}
+    .stamp {{ color:var(--muted); text-align:right; font-size:14px; line-height:1.4; }}
+    .kpis {{ display:grid; grid-template-columns:1.15fr 1fr 1.15fr .9fr 1.15fr; gap:14px; margin-bottom:16px; }}
+    .card {{ background:var(--panel); border:1px solid var(--line); border-radius:18px; box-shadow:var(--shadow); }}
+    .kpi {{ padding:18px 20px; min-height:116px; }}
+    .kpi small {{ color:var(--muted); font-weight:800; letter-spacing:.06em; text-transform:uppercase; }}
+    .kpi strong {{ display:block; margin-top:8px; font-size:32px; line-height:1; }}
+    .kpi p {{ color:var(--muted); margin:10px 0 0; font-size:13px; }}
+    .severity-word {{ color:var(--high); }}
+    .spark {{ float:right; margin-top:4px; width:110px; height:54px; }}
+    .layout {{ display:grid; grid-template-columns:minmax(640px, 1.9fr) minmax(300px, .9fr); gap:16px; align-items:stretch; }}
+    .panel-title {{ padding:16px 18px 0; font-size:16px; font-weight:800; }}
+    .map-panel {{ overflow:hidden; min-height:588px; }}
+    .map-frame {{ width:100%; height:520px; border:0; display:block; border-radius:14px; background:#f8fbff; }}
+    .map-wrap {{ padding:10px 14px 14px; }}
+    .map-links {{ padding:0 18px 16px; display:flex; gap:12px; flex-wrap:wrap; color:var(--muted); font-size:13px; }}
+    .map-links a {{ color:var(--blue); font-weight:800; text-decoration:none; }}
+    .insights {{ padding:16px; display:grid; gap:12px; }}
+    .insight {{ display:grid; grid-template-columns:76px 1fr; gap:13px; align-items:center; border:1px solid var(--line); border-radius:16px; padding:14px; background:linear-gradient(180deg, #fff, #fbfdff); }}
+    .insight-icon {{ min-width:64px; height:38px; border-radius:999px; display:grid; place-items:center; font-size:12px; font-weight:900; }}
+    .insight-heat .insight-icon {{ color:#b42318; background:rgba(216,86,70,.10); }}
+    .insight-storm .insight-icon {{ color:#a15c07; background:rgba(229,147,58,.12); }}
+    .insight-rain .insight-icon {{ color:#5b3190; background:rgba(110,63,160,.10); }}
+    .insight h3 {{ margin:0 0 5px; font-size:15px; }}
+    .insight p {{ margin:0; color:#34445b; font-size:13px; line-height:1.35; }}
+    .info-strip {{ margin-top:2px; border:1px solid #cfe0ff; background:#eff6ff; color:#1d4f9c; border-radius:14px; padding:12px 14px; font-weight:650; font-size:13px; }}
+    .table-card {{ margin-top:16px; overflow:hidden; }}
+    table {{ width:100%; border-collapse:collapse; font-size:13px; }}
+    th {{ text-align:left; color:var(--muted); font-size:12px; letter-spacing:.03em; text-transform:uppercase; background:#f9fbfe; padding:13px 18px; border-bottom:1px solid var(--line); }}
+    td {{ padding:11px 18px; border-bottom:1px solid #edf2f7; vertical-align:top; }}
+    td span {{ display:block; color:var(--muted); font-size:12px; margin-top:2px; }}
+    .num {{ font-variant-numeric:tabular-nums; font-weight:800; }}
+    .badge {{ display:inline-flex; min-width:66px; justify-content:center; border-radius:999px; color:#fff; padding:4px 9px; font-weight:800; font-size:12px; }}
+    .badge-normal {{ background:var(--normal); }} .badge-watch {{ background:var(--watch); }} .badge-medium {{ background:var(--medium); }} .badge-high {{ background:var(--high); }} .badge-alert {{ background:var(--alert); }}
+    .meta {{ margin-top:14px; display:flex; justify-content:space-between; gap:16px; color:var(--muted); font-size:12px; flex-wrap:wrap; }}
+    .foot {{ margin-top:16px; display:flex; justify-content:space-between; gap:18px; color:var(--muted); font-size:13px; }}
+    @media (max-width:1100px) {{ .app {{ grid-template-columns:1fr; }} aside {{ display:none; }} .kpis, .layout {{ grid-template-columns:1fr; }} .map-frame {{ height:470px; }} header {{ flex-direction:column; }} }}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <div class="brand"><div class="logo">MV</div><div>MeteoVoid<br>Belgique</div></div>
+      <nav><a class="active" href="#">Vue d'ensemble</a><a href="#stations">Stations</a><a href="belgium_alert_map.html">Carte</a><a href="#">Historique</a><a href="#">Paramètres</a></nav>
+      <div class="status"><p><span class="dot"></span>Système opérationnel</p><p>Dernière mise à jour<br>{esc(generated_at)}</p></div>
+    </aside>
+    <main>
+      <header>
+        <div><h1>MeteoVoid Belgique</h1><p class="subtitle">Tableau de bord de surveillance météo pour la Belgique</p></div>
+        <div class="header-actions"><button class="refresh">Actualiser</button><div class="stamp">{esc(generated_at)}<br>Europe/Brussels</div></div>
+      </header>
+      <section class="kpis">
+        <article class="card kpi"><small>Score national</small><svg class="spark" viewBox="0 0 110 54"><polyline points="{sparkline}" fill="none" stroke="#2b6fed" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><strong>{score:.3f}</strong><p>Plus le score est élevé, plus la vigilance augmente.</p></article>
+        <article class="card kpi"><small>Sévérité nationale</small><strong class="severity-word">{esc(severity)}</strong><p>Niveau dominant issu du scoring modèle.</p></article>
+        <article class="card kpi"><small>Fenêtre de veille</small><strong>{esc(target.get('start', 'n/a'))}<br>au {esc(target.get('end', 'n/a'))}</strong><p>Période couverte par l'analyse.</p></article>
+        <article class="card kpi"><small>Stations évaluées</small><strong>{active_count}</strong><p>{error_count} station(s) en erreur de source.</p></article>
+        <article class="card kpi"><small>Dernière heure sensible</small><strong>{esc(_fmt_time(last_sensitive))}</strong><p>Heure sensible la plus récente du top risque.</p></article>
+      </section>
+      <section class="layout">
+        <article class="card map-panel"><div class="panel-title">Carte interactive des risques météo par station</div><div class="map-wrap"><iframe class="map-frame" src="belgium_alert_map.html" title="Carte interactive MeteoVoid Belgique"></iframe></div><div class="map-links"><a href="belgium_alert_map.html">Ouvrir la carte pleine page</a><span>Fond OpenStreetMap, clustering des points proches, détails au clic.</span></div></article>
+        <article class="card"><div class="panel-title">Points clés et lecture opérationnelle</div><div class="insights">{''.join(insight_blocks)}<div class="info-strip">Données basées sur des prévisions modèle. Surveillance active recommandée, confirmation externe nécessaire.</div></div></article>
+      </section>
+      <section id="stations" class="card table-card">
+        <div class="panel-title">Stations et évaluation des risques</div>
+        <table><thead><tr><th>Station</th><th>Sévérité</th><th>Score</th><th>Heure sensible</th><th>Signaux</th></tr></thead><tbody>{''.join(station_rows)}</tbody></table>
+      </section>
+      <div class="meta"><span>Données : {source_detail} | Mode : {data_mode} | Type : {source_type}</span><span>{esc(integrations_text)}</span></div>
+      <footer class="foot"><strong>MeteoVoid Belgique</strong><span>Données non contractuelles. Comparaison indispensable avec IRM/KMI, MeteoAlarm, radar et foudre.</span></footer>
+    </main>
+  </div>
+</body>
+</html>
+"""
+
+
 def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     report_path = out_dir / "belgium_alert_report.json"

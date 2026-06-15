@@ -38,9 +38,11 @@ Le workflow écrit ces fichiers dans `_ci_out/belgium_alert/` :
 - `belgium_alert_map.html`
 - `belgium_alert_dashboard.html`
 
-La carte SVG/HTML est volontairement statique et hors ligne. Elle ne dépend pas de tuiles externes. Les points sont placés selon la latitude et la longitude des stations. La couleur représente la sévérité, et la taille du cercle représente le score.
+`belgium_alert_map.html` est maintenant la carte principale. Elle utilise Leaflet avec un fond OpenStreetMap, un regroupement automatique des points proches et des détails au clic. Cette carte est plus lisible pour la Belgique réelle et évite les superpositions visibles dans la vue nationale.
 
-Le fichier `belgium_alert_dashboard.html` reprend ces mêmes données dans un tableau de bord plus professionnel : barre latérale, cartes KPI, carte intégrée, panneau de lecture opérationnelle, tableau des stations et rappel des sources. Il s’agit d’un rendu HTML autonome, ouvrable directement depuis les artefacts GitHub Actions.
+`belgium_alert_map.svg` reste un fallback hors ligne. Il ne dépend d’aucune tuile externe. Les points proches sont légèrement décalés avec une ligne de rappel vers leur position réelle.
+
+Le fichier `belgium_alert_dashboard.html` reprend ces mêmes données dans un tableau de bord plus professionnel : barre latérale, cartes KPI, carte interactive intégrée, panneau de lecture opérationnelle, tableau des stations et rappel des sources. Il est ouvrable directement depuis les artefacts GitHub Actions. Si l’environnement bloque les ressources externes, utiliser le SVG comme fallback.
 
 ## Niveaux de sévérité
 
