@@ -1,0 +1,147 @@
+# MeteoVoid Belgium alert grid
+# Source: Open-Meteo forecast API, no key required
+# Variables use Open-Meteo current/hourly names.
+
+stations:
+  - id: BE_UCCLE
+    name: Uccle / Bruxelles
+    region: belgium_center
+    lat: 50.7989
+    lon: 4.3583
+    source: openmeteo
+    variables: &vars [temperature_2m, relative_humidity_2m, dew_point_2m, precipitation_probability, precipitation, rain, showers, weather_code, pressure_msl, wind_speed_10m, wind_gusts_10m]
+
+  - id: BE_JODOIGNE
+    name: Jodoigne / Brabant wallon
+    region: belgium_center
+    lat: 50.7236
+    lon: 4.8696
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_NAMUR
+    name: Namur
+    region: belgium_south
+    lat: 50.4674
+    lon: 4.8718
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_LIEGE
+    name: Liège
+    region: belgium_east
+    lat: 50.6326
+    lon: 5.5797
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_CHARLEROI
+    name: Charleroi
+    region: belgium_southwest
+    lat: 50.4108
+    lon: 4.4446
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_MONS
+    name: Mons
+    region: belgium_west
+    lat: 50.4542
+    lon: 3.9567
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_GENT
+    name: Gand
+    region: belgium_northwest
+    lat: 51.0543
+    lon: 3.7174
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_ANTWERP
+    name: Anvers
+    region: belgium_north
+    lat: 51.2194
+    lon: 4.4025
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_HASSELT
+    name: Hasselt
+    region: belgium_northeast
+    lat: 50.9307
+    lon: 5.3325
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_ARLON
+    name: Arlon
+    region: belgium_southeast
+    lat: 49.6833
+    lon: 5.8167
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_KOKSIJDE
+    name: Coxyde / côte belge
+    region: belgium_coast
+    lat: 51.1057
+    lon: 2.6505
+    source: openmeteo
+    variables: *vars
+
+  - id: FR_LILLE
+    name: Lille / approche sud-ouest
+    region: approach_france
+    lat: 50.6292
+    lon: 3.0573
+    source: openmeteo
+    variables: *vars
+
+  - id: NL_MAASTRICHT
+    name: Maastricht / approche nord-est
+    region: approach_netherlands
+    lat: 50.8514
+    lon: 5.6900
+    source: openmeteo
+    variables: *vars
+
+  - id: DE_AACHEN
+    name: Aachen / approche est
+    region: approach_germany
+    lat: 50.7753
+    lon: 6.0839
+    source: openmeteo
+    variables: *vars
+
+  - id: LU_LUXEMBOURG
+    name: Luxembourg / approche sud-est
+    region: approach_luxembourg
+    lat: 49.6116
+    lon: 6.1319
+    source: openmeteo
+    variables: *vars
+
+thresholds:
+  belgium_alert_score:
+    watch: 0.35
+    alert: 0.65
+  temperature_2m:
+    watch: 28.0
+    alert: 32.0
+  dew_point_2m:
+    watch: 16.0
+    alert: 20.0
+  precipitation_probability:
+    watch: 35.0
+    alert: 65.0
+  precipitation:
+    watch: 5.0
+    alert: 15.0
+  wind_gusts_10m:
+    watch: 15.0
+    alert: 22.0
+  pressure_drop_6h:
+    watch: 3.0
+    alert: 6.0

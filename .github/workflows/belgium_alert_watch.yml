@@ -1,0 +1,102 @@
+name: Belgium Alert Watch
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: "auto, today, tomorrow, next-friday or YYYY-MM-DD"
+        required: false
+        default: "auto"
+      min_severity:
+        description: "Minimum severity for webhook notification"
+        required: false
+        default: "medium"
+        type: choice
+        options:
+          - normal
+          - watch
+          - medium
+          - high
+          - alert
+      offline_demo:
+        description: "Use deterministic demo data instead of Open-Meteo"
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    - cron: "15 */3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: belgium-alert-watch
+  cancel-in-progress: true
+
+jobs:
+  belgium-alert-watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      PYTHONUNBUFFERED: "1"
+      METEOVOID_ALERT_WEBHOOK_URL: ${{ secrets.METEOVOID_ALERT_WEBHOOK_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Prepare output
+        run: |
+          set -euo pipefail
+          mkdir -p _ci_out/belgium_alert
+
+      - name: Generate Belgium alert report
+        run: |
+          set -euo pipefail
+          TARGET_DATE="${{ inputs.target_date || 'auto' }}"
+          MIN_SEVERITY="${{ inputs.min_severity || 'medium' }}"
+          OFFLINE_DEMO="${{ inputs.offline_demo || 'false' }}"
+
+          cmd=(
+            python tools/generate_belgium_alert_report.py
+            --stations config/stations_belgium.yaml
+            --target-date "$TARGET_DATE"
+            --out-dir _ci_out/belgium_alert
+            --webhook-url "$METEOVOID_ALERT_WEBHOOK_URL"
+            --min-severity "$MIN_SEVERITY"
+          )
+
+          if [ "$OFFLINE_DEMO" = "true" ]; then
+            cmd+=(--offline-demo)
+          fi
+
+          "${cmd[@]}"
+
+      - name: Show Markdown summary
+        if: always()
+        run: |
+          set -euo pipefail
+          if [ -f _ci_out/belgium_alert/belgium_alert_report.md ]; then
+            cat _ci_out/belgium_alert/belgium_alert_report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload Belgium alert artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: belgium_alert_report
+          path: _ci_out/belgium_alert/
+          if-no-files-found: error
