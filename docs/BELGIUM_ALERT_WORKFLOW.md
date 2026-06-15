@@ -121,3 +121,84 @@ Pour éviter les alertes excessives, le workflow peut être lancé avec `min_sev
 - Le système ne fait pas encore de scraping ou ingestion automatique IRM/KMI, MeteoAlarm, ESTOFEX, radar ou foudre.
 - Les confirmations externes sont actuellement manuelles ou préparées pour de futurs connecteurs.
 - La convection peut évoluer très vite. Un run à J-3 n’a pas la même valeur qu’un run à H-3.
+
+## Mise à jour étendue : lignes futures intégrées
+
+La version étendue ajoute directement plusieurs briques qui étaient prévues dans la feuille de route.
+
+### Séries horaires et fenêtre sensible
+
+Le rapport conserve maintenant une série horaire compacte par station dans `stations[].hourly_risk`. Elle alimente :
+
+- `risk_timeseries.json` : timeline agrégée par heure.
+- `risk_timeline.csv` : version tabulaire exploitable.
+- `timeline_summary` dans le rapport JSON : pic, score du pic, première et dernière heure `high`.
+
+Cette couche permet de savoir si le risque est ponctuel, durable, en fin de journée ou concentré sur une fenêtre précise.
+
+### Synthèse par province / zone
+
+Les stations sont regroupées dans une synthèse territoriale :
+
+- `province_summary.json`
+- `province_summary.csv`
+- `province_summary` dans `belgium_alert_report.json`
+
+Le regroupement distingue les provinces belges et les zones d’approche frontalières. Ce n’est pas encore une carte administrative officielle, mais cela prépare le passage vers une vraie couche provinces GeoJSON.
+
+### Heatmap
+
+Une nouvelle sortie est générée :
+
+- `belgium_alert_heatmap.html`
+
+Elle utilise Leaflet et une couche de chaleur pour visualiser la concentration du risque. Elle ne remplace pas un radar météo ; elle représente uniquement la distribution spatiale du score MeteoVoid.
+
+### Notification state
+
+Une sortie anti-spam/notification est maintenant générée :
+
+- `notification_state.json`
+
+Elle contient :
+
+- `should_notify`
+- `cooldown_hours`
+- `dedupe_key`
+- `public_alert_allowed`
+- `message_summary`
+
+Cette sortie prépare une logique de notification plus propre : ne pas envoyer la même alerte plusieurs fois si le niveau, la fenêtre et la sévérité n’ont pas changé.
+
+### Replay metrics
+
+Une sortie de pré-validation est générée :
+
+- `replay_metrics.json`
+
+Elle contient des métriques simples : nombre de stations high, durée horaire high, pic horaire, densité du signal. Cette couche prépare un futur mode replay complet sur épisodes passés.
+
+### Fichiers générés dans la version étendue
+
+En plus des sorties précédentes, le dossier `_ci_out/belgium_alert/` contient maintenant :
+
+- `risk_timeseries.json`
+- `risk_timeline.csv`
+- `province_summary.json`
+- `province_summary.csv`
+- `belgium_alert_heatmap.html`
+- `notification_state.json`
+- `replay_metrics.json`
+
+## Prochaines extensions encore ouvertes
+
+Ce qui reste volontairement préparé mais non branché automatiquement :
+
+- connecteur IRM/KMI automatique robuste ;
+- connecteur MeteoAlarm stable ;
+- connecteur ESTOFEX avec parsing prudent ;
+- couche radar/foudre temps réel ;
+- vrai fond administratif belge GeoJSON provinces/communes ;
+- validation replay sur épisodes historiques observés.
+
+Le principe retenu reste conservateur : mieux vaut une intégration déclarative fiable qu’un scraping fragile qui casse la CI ou donne une fausse confirmation.

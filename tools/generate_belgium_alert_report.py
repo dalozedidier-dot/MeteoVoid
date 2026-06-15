@@ -87,6 +87,7 @@ class StationRisk:
     shower_code_seen: bool
     components: dict[str, float]
     signals: list[str]
+    hourly_risk: list[dict[str, Any]]
     source_ok: bool
     error: str | None = None
 
@@ -268,6 +269,60 @@ def _offline_payload(station: StationSpec, *, target: TargetWindow) -> dict[str,
     }
 
 
+def _hourly_risk_points(
+    *,
+    times: list[str],
+    temperatures: list[Any],
+    dew_points: list[Any],
+    precipitation_probability: list[Any],
+    wind_gusts: list[Any],
+    weather_codes: list[Any],
+) -> list[dict[str, Any]]:
+    """Compact hourly station risk timeline used for trend/heatmap outputs."""
+    points: list[dict[str, Any]] = []
+    for i, time_value in enumerate(times):
+        temp = _safe_float(temperatures[i]) if i < len(temperatures) else None
+        dew = _safe_float(dew_points[i]) if i < len(dew_points) else None
+        prob = (
+            _safe_float(precipitation_probability[i])
+            if i < len(precipitation_probability)
+            else None
+        )
+        gust = _safe_float(wind_gusts[i]) if i < len(wind_gusts) else None
+        code = _safe_int(weather_codes[i]) if i < len(weather_codes) else None
+        thunderstorm = code in THUNDERSTORM_CODES
+        showers_seen = code in SHOWER_CODES
+        components = {
+            "heat": _ramp(temp, 28.0, 34.0),
+            "moisture": _ramp(dew, 16.0, 21.0),
+            "precipitation": _ramp(prob, 35.0, 75.0),
+            "wind_gust": _ramp(gust, 15.0, 25.0),
+            "weather_code": 1.0 if thunderstorm else (0.45 if showers_seen else 0.0),
+        }
+        score = (
+            components["heat"] * 0.20
+            + components["moisture"] * 0.22
+            + components["precipitation"] * 0.25
+            + components["wind_gust"] * 0.13
+            + components["weather_code"] * 0.20
+        )
+        score = round(_clamp01(score), 6)
+        points.append(
+            {
+                "time": str(time_value),
+                "score": score,
+                "severity": _severity_from_score(score),
+                "temperature_c": temp,
+                "dew_point_c": dew,
+                "precip_probability_pct": prob,
+                "wind_gust_ms": gust,
+                "weather_code": code,
+                "components": {k: round(v, 6) for k, v in components.items()},
+            }
+        )
+    return points
+
+
 def _station_risk_from_payload(station: StationSpec, payload: dict[str, Any]) -> StationRisk:
     hourly_any = payload.get("hourly")
     if not isinstance(hourly_any, dict):
@@ -337,15 +392,29 @@ def _station_risk_from_payload(station: StationSpec, payload: dict[str, Any]) ->
         showers_seen=showers_seen,
     )
 
+    time_values = times
+    temperature_values = temperatures if isinstance(temperatures, list) else []
+    dew_point_values = dew_points if isinstance(dew_points, list) else []
+    precip_probability_values = (
+        precipitation_probability if isinstance(precipitation_probability, list) else []
+    )
+    wind_gust_values = wind_gusts if isinstance(wind_gusts, list) else []
+    weather_code_values = weather_codes_any if isinstance(weather_codes_any, list) else []
     worst_time = _worst_time(
-        times=times,
-        temperatures=temperatures if isinstance(temperatures, list) else [],
-        dew_points=dew_points if isinstance(dew_points, list) else [],
-        precipitation_probability=(
-            precipitation_probability if isinstance(precipitation_probability, list) else []
-        ),
-        wind_gusts=wind_gusts if isinstance(wind_gusts, list) else [],
-        weather_codes=weather_codes_any if isinstance(weather_codes_any, list) else [],
+        times=time_values,
+        temperatures=temperature_values,
+        dew_points=dew_point_values,
+        precipitation_probability=precip_probability_values,
+        wind_gusts=wind_gust_values,
+        weather_codes=weather_code_values,
+    )
+    hourly_risk = _hourly_risk_points(
+        times=time_values,
+        temperatures=temperature_values,
+        dew_points=dew_point_values,
+        precipitation_probability=precip_probability_values,
+        wind_gusts=wind_gust_values,
+        weather_codes=weather_code_values,
     )
 
     return StationRisk(
@@ -368,6 +437,7 @@ def _station_risk_from_payload(station: StationSpec, payload: dict[str, Any]) ->
         shower_code_seen=showers_seen,
         components={k: round(v, 6) for k, v in components.items()},
         signals=signals,
+        hourly_risk=hourly_risk,
         source_ok=True,
     )
 
@@ -485,6 +555,7 @@ def _failed_station(station: StationSpec, error: str) -> StationRisk:
         shower_code_seen=False,
         components={},
         signals=[],
+        hourly_risk=[],
         source_ok=False,
         error=error,
     )
@@ -835,6 +906,23 @@ def _render_markdown(report: dict[str, Any]) -> str:
     lines.append(f"- ESTOFEX : `{bool(integrations.get('estofex_integrated', False))}`")
     lines.append(f"- Radar : `{bool(integrations.get('radar_integrated', False))}`")
     lines.append(f"- Foudre : `{bool(integrations.get('lightning_integrated', False))}`")
+    lines.append("")
+    timeline_summary = report.get("timeline_summary", {})
+    province_rows = report.get("province_summary", [])
+    lines.append("## Fenêtre horaire")
+    lines.append("")
+    lines.append(
+        f"Résumé : {timeline_summary.get('summary', 'n/a') if isinstance(timeline_summary, dict) else 'n/a'}"
+    )
+    lines.append("")
+    lines.append("## Synthèse par province / zone")
+    lines.append("")
+    lines.append("| Zone | Sévérité | Score max | Score moyen | Station dominante |")
+    lines.append("|---|---:|---:|---:|---|")
+    for row in province_rows[:10] if isinstance(province_rows, list) else []:
+        lines.append(
+            f"| {row.get('province')} | {row.get('severity')} | {float(row.get('max_score') or 0.0):.3f} | {float(row.get('mean_score') or 0.0):.3f} | {row.get('top_station') or 'n/a'} |"
+        )
     lines.append("")
     lines.append(
         "Ce rapport est une veille basée sur modèle. Ce n’est pas une alerte officielle. "
@@ -2337,6 +2425,23 @@ def _render_markdown(report: dict[str, Any]) -> str:
                 f"| {key} | {float(value.get('mean') or 0.0):.3f} | {float(value.get('max') or 0.0):.3f} |"
             )
     lines.append("")
+    timeline_summary = report.get("timeline_summary", {})
+    province_rows = report.get("province_summary", [])
+    lines.append("## Fenêtre horaire")
+    lines.append("")
+    lines.append(
+        f"Résumé : {timeline_summary.get('summary', 'n/a') if isinstance(timeline_summary, dict) else 'n/a'}"
+    )
+    lines.append("")
+    lines.append("## Synthèse par province / zone")
+    lines.append("")
+    lines.append("| Zone | Sévérité | Score max | Score moyen | Station dominante |")
+    lines.append("|---|---:|---:|---:|---|")
+    for row in province_rows[:10] if isinstance(province_rows, list) else []:
+        lines.append(
+            f"| {row.get('province')} | {row.get('severity')} | {float(row.get('max_score') or 0.0):.3f} | {float(row.get('mean_score') or 0.0):.3f} | {row.get('top_station') or 'n/a'} |"
+        )
+    lines.append("")
     lines.append(
         "Ce rapport est une veille basée sur modèle. Ce n’est pas une alerte officielle. "
         "Pour la sécurité publique, il doit toujours être comparé avec l’IRM/KMI, "
@@ -2354,6 +2459,13 @@ def _render_markdown(report: dict[str, Any]) -> str:
     lines.append("- `source_status.json`")
     lines.append("- `alert_state.json`")
     lines.append("- `history.csv`")
+    lines.append("- `risk_timeseries.json`")
+    lines.append("- `risk_timeline.csv`")
+    lines.append("- `province_summary.json`")
+    lines.append("- `province_summary.csv`")
+    lines.append("- `belgium_alert_heatmap.html`")
+    lines.append("- `notification_state.json`")
+    lines.append("- `replay_metrics.json`")
     lines.append("- `manifest.json`")
     lines.append("")
     lines.append("## Stations les plus sensibles")
@@ -2400,6 +2512,270 @@ def _render_markdown(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+PROVINCE_BY_STATION = {
+    "BE_UCCLE": "Bruxelles",
+    "BE_JODOIGNE": "Brabant wallon",
+    "BE_NAMUR": "Namur",
+    "BE_LIEGE": "Liège",
+    "BE_CHARLEROI": "Hainaut",
+    "BE_MONS": "Hainaut",
+    "BE_GENT": "Flandre orientale",
+    "BE_ANTWERP": "Anvers",
+    "BE_HASSELT": "Limbourg",
+    "BE_ARLON": "Luxembourg belge",
+    "BE_KOKSIJDE": "Flandre occidentale",
+    "FR_LILLE": "Approche France",
+    "NL_MAASTRICHT": "Approche Pays-Bas",
+    "DE_AACHEN": "Approche Allemagne",
+    "LU_LUXEMBOURG": "Approche Luxembourg",
+}
+
+
+def _station_province(station: dict[str, Any]) -> str:
+    station_id = str(station.get("station_id") or "")
+    return PROVINCE_BY_STATION.get(station_id, str(station.get("region") or "inconnu"))
+
+
+def _timeline_points(report: dict[str, Any]) -> list[dict[str, Any]]:
+    buckets: dict[str, list[dict[str, Any]]] = {}
+    for station in report.get("stations", []):
+        if not isinstance(station, dict) or not station.get("source_ok"):
+            continue
+        for point in station.get("hourly_risk", []):
+            if isinstance(point, dict) and point.get("time"):
+                buckets.setdefault(str(point["time"]), []).append(point)
+    rows: list[dict[str, Any]] = []
+    for time_value in sorted(buckets):
+        points = buckets[time_value]
+        scores = [float(p.get("score") or 0.0) for p in points]
+        top = max(scores) if scores else 0.0
+        mean = sum(scores) / len(scores) if scores else 0.0
+        rows.append(
+            {
+                "time": time_value,
+                "mean_score": round(mean, 6),
+                "max_score": round(top, 6),
+                "severity": _severity_from_score(top),
+                "nb_watch_or_more": sum(1 for value in scores if value >= 0.35),
+                "nb_high_or_more": sum(1 for value in scores if value >= 0.65),
+                "nb_alert": sum(1 for value in scores if value >= 0.78),
+                "station_count": len(points),
+            }
+        )
+    return rows
+
+
+def _timeline_summary(report: dict[str, Any]) -> dict[str, Any]:
+    points = _timeline_points(report)
+    if not points:
+        return {
+            "status": "empty",
+            "peak_time": None,
+            "peak_score": 0.0,
+            "peak_severity": "normal",
+            "summary": "Aucune série horaire disponible.",
+        }
+    peak = max(points, key=lambda row: float(row.get("max_score") or 0.0))
+    high_hours = [row for row in points if float(row.get("max_score") or 0.0) >= 0.65]
+    first_high = high_hours[0]["time"] if high_hours else None
+    last_high = high_hours[-1]["time"] if high_hours else None
+    summary = (
+        f"Pic horaire {peak['peak_time'] if 'peak_time' in peak else peak['time']} "
+        f"avec score max {float(peak['max_score']):.3f}."
+    )
+    if first_high and last_high:
+        summary += f" Fenêtre high ou plus : {first_high} → {last_high}."
+    return {
+        "status": "available",
+        "peak_time": peak["time"],
+        "peak_score": float(peak["max_score"]),
+        "peak_severity": peak["severity"],
+        "first_high_time": first_high,
+        "last_high_time": last_high,
+        "high_hour_count": len(high_hours),
+        "summary": summary,
+    }
+
+
+def _province_summary(report: dict[str, Any]) -> list[dict[str, Any]]:
+    buckets: dict[str, list[dict[str, Any]]] = {}
+    for station in report.get("stations", []):
+        if isinstance(station, dict):
+            buckets.setdefault(_station_province(station), []).append(station)
+    rows: list[dict[str, Any]] = []
+    for province, stations in sorted(buckets.items()):
+        ok = [s for s in stations if s.get("source_ok")]
+        scores = [float(s.get("score") or 0.0) for s in ok]
+        max_score = max(scores) if scores else 0.0
+        mean_score = sum(scores) / len(scores) if scores else 0.0
+        top_station = max(ok, key=lambda s: float(s.get("score") or 0.0), default={})
+        rows.append(
+            {
+                "province": province,
+                "station_count": len(stations),
+                "source_ok_count": len(ok),
+                "mean_score": round(mean_score, 6),
+                "max_score": round(max_score, 6),
+                "severity": _severity_from_score(max_score),
+                "top_station": top_station.get("name"),
+                "top_station_score": (
+                    round(float(top_station.get("score") or 0.0), 6) if top_station else 0.0
+                ),
+            }
+        )
+    return sorted(rows, key=lambda row: float(row["max_score"]), reverse=True)
+
+
+def _risk_timeseries_json(report: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "generated_at": report.get("generated_at"),
+        "target_window": report.get("target_window"),
+        "summary": _timeline_summary(report),
+        "timeline": _timeline_points(report),
+    }
+
+
+def _write_timeline_csv(report: dict[str, Any], path: Path) -> None:
+    rows = _timeline_points(report)
+    fieldnames = [
+        "time",
+        "mean_score",
+        "max_score",
+        "severity",
+        "nb_watch_or_more",
+        "nb_high_or_more",
+        "nb_alert",
+        "station_count",
+    ]
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
+def _write_province_csv(report: dict[str, Any], path: Path) -> None:
+    rows = _province_summary(report)
+    fieldnames = [
+        "province",
+        "station_count",
+        "source_ok_count",
+        "mean_score",
+        "max_score",
+        "severity",
+        "top_station",
+        "top_station_score",
+    ]
+    with path.open("w", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
+def _replay_metrics(report: dict[str, Any]) -> dict[str, Any]:
+    timeline = _timeline_points(report)
+    stations = [s for s in report.get("stations", []) if isinstance(s, dict)]
+    ok_stations = [s for s in stations if s.get("source_ok")]
+    high_stations = [s for s in ok_stations if float(s.get("score") or 0.0) >= 0.65]
+    peak = max(timeline, key=lambda x: float(x.get("max_score") or 0.0), default={})
+    return {
+        "generated_at": report.get("generated_at"),
+        "mode": "single_run_diagnostics",
+        "station_count": len(stations),
+        "source_ok_count": len(ok_stations),
+        "high_station_count": len(high_stations),
+        "peak_time": peak.get("time"),
+        "peak_score": float(peak.get("max_score") or 0.0),
+        "high_hour_count": sum(1 for row in timeline if float(row.get("max_score") or 0.0) >= 0.65),
+        "signal_density": round(len(high_stations) / len(ok_stations), 6) if ok_stations else 0.0,
+        "notes": [
+            "Ce fichier prépare le mode replay : il résume déjà densité, pic et durée du signal.",
+            "Pour une validation complète, comparer ces métriques avec des épisodes passés observés.",
+        ],
+    }
+
+
+def _notification_state(report: dict[str, Any], history_dir: Path | None = None) -> dict[str, Any]:
+    operational = report.get("operational_state", {})
+    level = str(operational.get("level", "normal"))
+    severity = str(report.get("aggregate", {}).get("severity", "normal"))
+    trend = str(report.get("trend", {}).get("status", "no_history"))
+    cooldown_hours = {
+        "normal": 12,
+        "low_watch": 12,
+        "watch": 6,
+        "watch_reinforced": 3,
+        "pre_alert_confirmed": 1,
+        "alert_confirmed": 0,
+    }.get(level, 6)
+    should_notify = level in {"watch_reinforced", "pre_alert_confirmed", "alert_confirmed"}
+    reason = f"niveau {level}, sévérité modèle {severity}, tendance {trend}"
+    if trend in {"rising", "rising_fast"} and level in {"watch", "watch_reinforced"}:
+        should_notify = True
+        reason += ", tendance en hausse"
+    return {
+        "generated_at": report.get("generated_at"),
+        "should_notify": should_notify,
+        "cooldown_hours": cooldown_hours,
+        "dedupe_key": f"{level}:{severity}:{report.get('target_window', {}).get('start')}:{report.get('target_window', {}).get('end')}",
+        "reason": reason,
+        "public_alert_allowed": bool(operational.get("public_alert_allowed", False)),
+        "message_title": "MeteoVoid Belgique - veille météo",
+        "message_summary": operational.get("reason", "n/a"),
+    }
+
+
+def _render_heatmap_html(report: dict[str, Any]) -> str:
+    stations_payload = _leaflet_station_payload(report)
+    aggregate = report.get("aggregate", {})
+    return f"""<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MeteoVoid Belgique, heatmap de risque</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    html, body, #map {{ height:100%; margin:0; }}
+    body {{ font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
+    .panel {{ position:absolute; top:14px; left:14px; z-index:800; max-width:360px; background:#fff; border:1px solid #dfe7f0; border-radius:16px; padding:14px 16px; box-shadow:0 12px 30px rgba(15,33,63,.15); color:#0f213f; }}
+    .panel h1 {{ margin:0 0 6px; font-size:18px; }}
+    .panel p {{ margin:4px 0; color:#607089; font-size:13px; }}
+    .dot {{ border-radius:50%; border:3px solid #fff; box-shadow:0 4px 12px rgba(15,33,63,.25); }}
+  </style>
+</head>
+<body>
+<div id="map"></div>
+<div class="panel">
+  <h1>Heatmap MeteoVoid Belgique</h1>
+  <p>Score national : <strong>{float(aggregate.get('score') or 0.0):.3f}</strong> — sévérité : <strong>{html.escape(str(aggregate.get('severity', 'n/a')))}</strong></p>
+  <p>Couche de chaleur basée sur les scores par station. Elle aide à voir la zone de concentration, sans remplacer une carte radar.</p>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script>
+const stations = {stations_payload};
+const colors = {{normal:'#6BA36B',watch:'#C4B54B',medium:'#E5933A',high:'#D85646',alert:'#6E3FA0'}};
+const map = L.map('map').setView([50.64, 4.65], 8);
+L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{ maxZoom: 12, attribution: '&copy; OpenStreetMap contributors' }}).addTo(map);
+if (L.heatLayer) {{
+  L.heatLayer(stations.filter(s => s.source_ok).map(s => [s.lat, s.lon, Number(s.score || 0)]), {{ radius: 42, blur: 30, minOpacity: 0.25, maxZoom: 10 }}).addTo(map);
+}}
+for (const st of stations) {{
+  const color = st.source_ok ? (colors[st.severity] || '#94a3b8') : '#94a3b8';
+  const size = 12 + Math.max(0, Math.min(1, Number(st.score || 0))) * 20;
+  const marker = L.marker([st.lat, st.lon], {{ icon:L.divIcon({{ className:'', html:`<div class="dot" style="width:${{size}}px;height:${{size}}px;background:${{color}}"></div>`, iconSize:[size,size], iconAnchor:[size/2,size/2] }}) }});
+  marker.bindPopup(`<strong>${{st.name}}</strong><br>Score ${{Number(st.score || 0).toFixed(3)}} — ${{st.severity}}<br>${{st.worst_time || 'n/a'}}`);
+  marker.addTo(map);
+}}
+if (stations.length) map.fitBounds(L.latLngBounds(stations.map(s => [s.lat, s.lon])).pad(.16));
+</script>
+</body>
+</html>
+"""
+
+
 def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     report_path = out_dir / "belgium_alert_report.json"
@@ -2413,6 +2789,25 @@ def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
     (out_dir / "risk_by_station.geojson").write_text(
         _json_dumps(_render_geojson(report)),
         encoding="utf-8",
+    )
+    (out_dir / "risk_timeseries.json").write_text(
+        _json_dumps(_risk_timeseries_json(report)),
+        encoding="utf-8",
+    )
+    _write_timeline_csv(report, out_dir / "risk_timeline.csv")
+    (out_dir / "province_summary.json").write_text(
+        _json_dumps(_province_summary(report)),
+        encoding="utf-8",
+    )
+    _write_province_csv(report, out_dir / "province_summary.csv")
+    (out_dir / "belgium_alert_heatmap.html").write_text(
+        _render_heatmap_html(report), encoding="utf-8"
+    )
+    (out_dir / "notification_state.json").write_text(
+        _json_dumps(_notification_state(report)), encoding="utf-8"
+    )
+    (out_dir / "replay_metrics.json").write_text(
+        _json_dumps(_replay_metrics(report)), encoding="utf-8"
     )
     (out_dir / "source_status.json").write_text(
         _json_dumps(_source_status(report)), encoding="utf-8"
@@ -2565,10 +2960,19 @@ def _build_report(
             "source_status": "source_status.json",
             "alert_state": "alert_state.json",
             "history": "history.csv",
+            "risk_timeseries": "risk_timeseries.json",
+            "risk_timeline_csv": "risk_timeline.csv",
+            "province_summary_json": "province_summary.json",
+            "province_summary_csv": "province_summary.csv",
+            "heatmap_html": "belgium_alert_heatmap.html",
+            "notification_state": "notification_state.json",
+            "replay_metrics": "replay_metrics.json",
             "manifest": "manifest.json",
         },
         "aggregate": aggregate,
         "components_summary": _components_summary(stations),
+        "timeline_summary": _timeline_summary({"stations": stations}),
+        "province_summary": _province_summary({"stations": stations}),
         "stations": stations,
         "limits": [
             "Ce rapport n’est pas un avertissement météorologique officiel.",
@@ -2719,6 +3123,13 @@ def main(argv: list[str] | None = None) -> int:
         "source_status.json",
         "alert_state.json",
         "history.csv",
+        "risk_timeseries.json",
+        "risk_timeline.csv",
+        "province_summary.json",
+        "province_summary.csv",
+        "belgium_alert_heatmap.html",
+        "notification_state.json",
+        "replay_metrics.json",
         "manifest.json",
     ]:
         path = out_dir / name
