@@ -962,7 +962,7 @@ function fmtTs(ts){
 function fmtAge(ts){
   if(!ts)return'';
   const age=Math.round(Date.now()/1000-ts);
-  if(age<90)return'à l'instant';
+  if(age<90)return"à l'instant";
   if(age<3600)return`il y a ${Math.round(age/60)} min`;
   return`il y a ${Math.round(age/3600)} h`;
 }
@@ -1232,7 +1232,7 @@ async function loadSources(){
     const items=data.items||[];
     const silent=items.filter(i=>i.is_silent).length;
     document.getElementById('stat-silent').textContent=`${silent} silencieuse${silent>1?'s':''}`;
-    if(!items.length){panel.innerHTML='<p style="color:var(--muted);font-size:12px;padding:10px">Aucune donnée d'ingestion.</p>';return}
+    if(!items.length){panel.innerHTML='<p style="color:var(--muted);font-size:12px;padding:10px">Aucune donnée d\\'ingestion.</p>';return}
     panel.innerHTML='<div class="section-title">Santé des sources</div>'+items.map(s=>{
       const stClass=s.is_silent?'src-silent':s.status==='failing'?'src-fail':'src-ok';
       const stLabel=s.is_silent?'Silencieuse':s.status==='failing'?'Erreur':'OK';
