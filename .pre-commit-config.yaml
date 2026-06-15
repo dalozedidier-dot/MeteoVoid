@@ -28,7 +28,7 @@ repos:
     hooks:
       - id: mypy
         name: mypy (src only)
-        entry: mypy --config-file=pyproject.toml
+        entry: mypy --config-file=pyproject.toml src
         language: system
-        types: [python]
-        files: ^src/
+        pass_filenames: false
+        require_serial: true
