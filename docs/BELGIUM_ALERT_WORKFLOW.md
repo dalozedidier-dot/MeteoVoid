@@ -36,8 +36,11 @@ Le workflow écrit ces fichiers dans `_ci_out/belgium_alert/` :
 - `risk_by_station.geojson`
 - `belgium_alert_map.svg`
 - `belgium_alert_map.html`
+- `belgium_alert_dashboard.html`
 
 La carte SVG/HTML est volontairement statique et hors ligne. Elle ne dépend pas de tuiles externes. Les points sont placés selon la latitude et la longitude des stations. La couleur représente la sévérité, et la taille du cercle représente le score.
+
+Le fichier `belgium_alert_dashboard.html` reprend ces mêmes données dans un tableau de bord plus professionnel : barre latérale, cartes KPI, carte intégrée, panneau de lecture opérationnelle, tableau des stations et rappel des sources. Il s’agit d’un rendu HTML autonome, ouvrable directement depuis les artefacts GitHub Actions.
 
 ## Niveaux de sévérité
 
