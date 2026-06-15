@@ -22,6 +22,8 @@ dependencies = [
 
 [project.optional-dependencies]
 live = [
+  "redis>=5.0",
+  "fastapi>=0.135.3",
   "redis>=7.4.0",
   "fastapi>=0.110",
   "uvicorn[standard]>=0.29",
