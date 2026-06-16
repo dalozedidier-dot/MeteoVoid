@@ -1,5 +1,14 @@
 # Changelog
 
+## Belgium public dashboard and GitHub Pages
+
+- Added `tools/build_belgium_public_site.py` to build a cleaner public static dashboard from MeteoVoid Belgium outputs.
+- Added `.github/workflows/belgium_pages.yml` to publish the latest Belgium dashboard through GitHub Pages.
+- Improved advanced weather-layer maps: lower visual opacity, smaller interpolation markers, clearer default layers and safer RainViewer zoom behavior.
+- Added documentation in `docs/BELGIUM_PUBLIC_PAGE.md`.
+- Added public site regression test.
+
+
 ## 0.1.0
 
 - Initial project skeleton.

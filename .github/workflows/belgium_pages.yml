@@ -1,0 +1,154 @@
+name: Belgium Public Dashboard
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_date:
+        description: "auto, today, tomorrow, next-friday or YYYY-MM-DD"
+        required: false
+        default: "auto"
+      offline_demo:
+        description: "Use deterministic demo data instead of Open-Meteo"
+        required: false
+        default: false
+        type: boolean
+      auto_external:
+        description: "Fetch fail-safe IRM/KMI, MeteoAlarm and ESTOFEX confirmations"
+        required: false
+        default: true
+        type: boolean
+      official_forecast_signal:
+        description: "Manual IRM/KMI forecast signal if known"
+        required: false
+        default: "none"
+        type: choice
+        options: [none, heat, instability, thunderstorms, severe_thunderstorms]
+      heat_warning_active:
+        description: "Official heat warning active"
+        required: false
+        default: false
+        type: boolean
+      external_note:
+        description: "Optional external note"
+        required: false
+        default: ""
+  schedule:
+    - cron: "30 */3 * * *"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: belgium-pages
+  cancel-in-progress: true
+
+jobs:
+  build-pages:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      PYTHONUNBUFFERED: "1"
+      METEOVOID_HISTORY_DIR: .meteovoid_history/belgium_alert
+      METEOVOID_RADAR_JSON_URL: ${{ secrets.METEOVOID_RADAR_JSON_URL }}
+      METEOVOID_LIGHTNING_JSON_URL: ${{ secrets.METEOVOID_LIGHTNING_JSON_URL }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Restore MeteoVoid history
+        uses: actions/cache/restore@v4
+        with:
+          path: .meteovoid_history
+          key: belgium-pages-history-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            belgium-pages-history-${{ github.ref_name }}-
+            belgium-alert-history-${{ github.ref_name }}-
+            belgium-alert-history-
+
+      - name: Install
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Generate Belgium report
+        run: |
+          set -euo pipefail
+          mkdir -p _ci_out/belgium_alert "$METEOVOID_HISTORY_DIR"
+          TARGET_DATE="${{ inputs.target_date || 'auto' }}"
+          OFFLINE_DEMO="${{ inputs.offline_demo || 'false' }}"
+          AUTO_EXTERNAL="${{ inputs.auto_external || 'true' }}"
+          OFFICIAL_FORECAST_SIGNAL="${{ inputs.official_forecast_signal || 'none' }}"
+          HEAT_WARNING_ACTIVE="${{ inputs.heat_warning_active || 'false' }}"
+          EXTERNAL_NOTE="${{ inputs.external_note || '' }}"
+
+          cmd=(
+            python tools/generate_belgium_alert_report.py
+            --stations config/stations_belgium.yaml
+            --target-date "$TARGET_DATE"
+            --out-dir _ci_out/belgium_alert
+            --history-dir "$METEOVOID_HISTORY_DIR"
+            --run-id "pages_${{ github.run_id }}_${{ github.run_attempt }}"
+            --official-forecast-signal "$OFFICIAL_FORECAST_SIGNAL"
+            --external-note "$EXTERNAL_NOTE"
+            --external-sources-config config/external_sources_belgium.yaml
+            --calibration-config config/belgium_scoring_calibration.yaml
+            --province-geojson config/belgium_provinces_simplified.geojson
+            --replay-events config/belgium_replay_events.example.csv
+          )
+
+          if [ -n "$METEOVOID_RADAR_JSON_URL" ]; then
+            cmd+=(--radar-json-url "$METEOVOID_RADAR_JSON_URL")
+          fi
+          if [ -n "$METEOVOID_LIGHTNING_JSON_URL" ]; then
+            cmd+=(--lightning-json-url "$METEOVOID_LIGHTNING_JSON_URL")
+          fi
+          if [ "$AUTO_EXTERNAL" = "true" ]; then
+            cmd+=(--auto-external)
+          fi
+          if [ "$OFFLINE_DEMO" = "true" ]; then
+            cmd+=(--offline-demo)
+          fi
+          if [ "$HEAT_WARNING_ACTIVE" = "true" ]; then
+            cmd+=(--heat-warning-active)
+          fi
+          "${cmd[@]}"
+
+      - name: Build static public site
+        run: |
+          set -euo pipefail
+          python tools/build_belgium_public_site.py \
+            --report-dir _ci_out/belgium_alert \
+            --site-dir _site
+          find _site -maxdepth 3 -type f | sort
+
+      - name: Save MeteoVoid history
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .meteovoid_history
+          key: belgium-pages-history-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

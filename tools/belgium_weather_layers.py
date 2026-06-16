@@ -294,7 +294,7 @@ header {{ padding:22px 28px 14px; background:linear-gradient(135deg,#0f1f35,#1f4
 h1 {{ margin:0; font-size:24px; letter-spacing:.2px; }}
 .subtitle {{ margin:8px 0 0; color:#d8e6f7; max-width:980px; }}
 main {{ padding:18px; }}
-.map {{ height:72vh; min-height:560px; border:1px solid var(--line); border-radius:18px; overflow:hidden; box-shadow:0 12px 28px rgba(15,31,53,.12); }}
+.map {{ height:68vh; min-height:520px; border:1px solid var(--line); border-radius:18px; overflow:hidden; box-shadow:0 12px 28px rgba(15,31,53,.12); background:#dce9f3; }}
 .panel {{ background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; margin-bottom:16px; box-shadow:0 8px 22px rgba(15,31,53,.06); }}
 .legend {{ line-height:1.55; font-size:13px; }}
 .dot {{ display:inline-block; width:11px; height:11px; border-radius:50%; margin-right:6px; vertical-align:-1px; }}
@@ -375,10 +375,10 @@ grid.forEach(p => {{
   const v = p['{field}'];
   if (v === null || v === undefined) return;
   L.circleMarker([p.lat, p.lon], {{
-    radius: {radius},
+    radius: Math.max(5, {radius}),
     stroke: false,
     fillColor: colorFor_{field}(v),
-    fillOpacity: .44
+    fillOpacity: .23
   }}).bindPopup(`<strong>${{p.nearest_station || 'zone interpolée'}}</strong><br>{field}: ${{Number(v).toFixed(2)}}`).addTo({layer_name});
 }});
 """
@@ -418,7 +418,10 @@ async function loadRainViewer() {
     const url = `${host}${path}/256/{z}/{x}/{y}/2/1_1.png`;
     L.tileLayer(url, {
       tileSize: 256,
-      opacity: .58,
+      opacity: .36,
+      maxNativeZoom: 6,
+      maxZoom: 10,
+      zIndex: 20,
       attribution: 'Radar: RainViewer'
     }).addTo(radarLayerGroup);
   } catch (err) {
@@ -473,7 +476,7 @@ const stations = {stations_js};
 const grid = {grid_js};
 {_leaflet_base_script()}
 {_station_layer_js()}
-{_heat_layer_js(field, 'heatLayer')}
+{_heat_layer_js(field, 'heatLayer', radius=9)}
 heatLayer.addTo(map);
 stationLayer.addTo(map);
 L.control.layers({{'OpenStreetMap': osm}}, {{'Couche interpolée': heatLayer, 'Stations': stationLayer}}, {{collapsed:false}}).addTo(map);
@@ -500,9 +503,9 @@ const grid = {grid_js};
 {_leaflet_base_script()}
 {_station_layer_js()}
 {_rainviewer_js()}
-{_heat_layer_js('humidity_pct', 'humidityLayer', radius=14)}
-{_heat_layer_js('dew_point_c', 'dewLayer', radius=14)}
-{_heat_layer_js('storm_formation_score', 'stormLayer', radius=17)}
+{_heat_layer_js('humidity_pct', 'humidityLayer', radius=8)}
+{_heat_layer_js('dew_point_c', 'dewLayer', radius=8)}
+{_heat_layer_js('storm_formation_score', 'stormLayer', radius=11)}
 function toggle(btn, layer) {{
   const el = document.getElementById(btn);
   el.addEventListener('click', () => {{
@@ -510,8 +513,6 @@ function toggle(btn, layer) {{
     else {{ layer.addTo(map); el.classList.add('active'); }}
   }});
 }}
-radarLayerGroup.addTo(map);
-humidityLayer.addTo(map);
 stormLayer.addTo(map);
 stationLayer.addTo(map);
 toggle('btnRadar', radarLayerGroup);
