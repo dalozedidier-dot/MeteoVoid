@@ -58,3 +58,13 @@
 - Added `Graphe amont` to the public GitHub Pages dashboard.
 - Made Redis-related imports lazier so base imports are less dependent on the `live` extra.
 - Added `docs/BELGIUM_GRAPH_AND_HARDENING.md`.
+
+## Critical Transition Pack
+
+- Added early warning signals for critical transitions: lag-1 autocorrelation, variance growth, skewness, flickering and station-level transition phase.
+- Added an information graph based on lagged correlations and a transfer-entropy proxy between stations.
+- Added validation metrics scaffold with POD, FAR, CSI, Brier score, cost-loss thresholds and conformal prediction placeholder.
+- Added system self-watchdog outputs for source health, stale run detection, required outputs and graceful degradation.
+- Added extended perception status for satellite, GNSS water vapour, pressure crowd sources, radar and lightning readiness.
+- Added CAP XML test export and a static JSON API for GitHub Pages.
+- Extended the public dashboard with Signaux précoces, Graphe informationnel, Validation and Auto-surveillance tabs.

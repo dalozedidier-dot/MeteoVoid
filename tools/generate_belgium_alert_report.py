@@ -2962,11 +2962,60 @@ def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
             UPSTREAM_GRAPH_OUTPUTS,
             write_upstream_graph_outputs,
         )
+    try:
+        from belgium_early_warning import (
+            EARLY_WARNING_OUTPUTS,
+            write_early_warning_outputs,
+        )
+    except ModuleNotFoundError:  # pragma: no cover - import path used by pytest/package mode
+        from tools.belgium_early_warning import (
+            EARLY_WARNING_OUTPUTS,
+            write_early_warning_outputs,
+        )
+    try:
+        from belgium_information_graph import (
+            INFORMATION_GRAPH_OUTPUTS,
+            write_information_graph_outputs,
+        )
+    except ModuleNotFoundError:  # pragma: no cover - import path used by pytest/package mode
+        from tools.belgium_information_graph import (
+            INFORMATION_GRAPH_OUTPUTS,
+            write_information_graph_outputs,
+        )
+    try:
+        from belgium_validation_metrics import (
+            VALIDATION_OUTPUTS,
+            write_validation_outputs,
+        )
+    except ModuleNotFoundError:  # pragma: no cover - import path used by pytest/package mode
+        from tools.belgium_validation_metrics import (
+            VALIDATION_OUTPUTS,
+            write_validation_outputs,
+        )
+    try:
+        from belgium_system_watchdog import (
+            WATCHDOG_OUTPUTS,
+            write_watchdog_outputs,
+        )
+    except ModuleNotFoundError:  # pragma: no cover - import path used by pytest/package mode
+        from tools.belgium_system_watchdog import (
+            WATCHDOG_OUTPUTS,
+            write_watchdog_outputs,
+        )
+    try:
+        from belgium_cap_export import CAP_OUTPUTS, write_cap_outputs
+    except ModuleNotFoundError:  # pragma: no cover - import path used by pytest/package mode
+        from tools.belgium_cap_export import CAP_OUTPUTS, write_cap_outputs
 
     out_dir.mkdir(parents=True, exist_ok=True)
     if isinstance(report.get("outputs"), dict):
         report["outputs"].update(TRANSITION_OUTPUTS)
         report["outputs"].update(UPSTREAM_GRAPH_OUTPUTS)
+        report["outputs"].update(EARLY_WARNING_OUTPUTS)
+        report["outputs"].update(INFORMATION_GRAPH_OUTPUTS)
+        report["outputs"].update(VALIDATION_OUTPUTS)
+        report["outputs"].update(WATCHDOG_OUTPUTS)
+        report["outputs"].update(CAP_OUTPUTS)
     report_path = out_dir / "belgium_alert_report.json"
     report_path.write_text(_json_dumps(report), encoding="utf-8")
     (out_dir / "belgium_alert_report.md").write_text(_render_markdown(report), encoding="utf-8")
@@ -3022,6 +3071,11 @@ def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
     write_weather_layer_outputs(report, out_dir)
     write_convective_transition_outputs(report, out_dir)
     write_upstream_graph_outputs(report, out_dir)
+    write_early_warning_outputs(report, out_dir)
+    write_information_graph_outputs(report, out_dir)
+    write_validation_outputs(report, out_dir)
+    write_cap_outputs(report, out_dir)
+    write_watchdog_outputs(report, out_dir)
 
     rows = report["stations"]
     csv_path = out_dir / "risk_by_station.csv"
@@ -3418,6 +3472,21 @@ def main(argv: list[str] | None = None) -> int:
         "replay_validation.json",
         "notification_state.json",
         "replay_metrics.json",
+        "early_warning_signals.json",
+        "early_warning_by_station.csv",
+        "early_warning_network.csv",
+        "early_warning_dashboard.html",
+        "information_graph_summary.json",
+        "information_graph_edges.csv",
+        "information_graph.html",
+        "validation_metrics.json",
+        "validation_report.md",
+        "validation_dashboard.html",
+        "self_watchdog.json",
+        "self_watchdog.html",
+        "observation_gap_status.json",
+        "belgium_alert_cap.xml",
+        "meteovoid_api_latest.json",
         "manifest.json",
     ]:
         path = out_dir / name

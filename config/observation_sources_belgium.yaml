@@ -1,0 +1,18 @@
+# Sources de perception étendue préparées pour MeteoVoid Belgique.
+# Les connecteurs ne sont pas activés par défaut afin de garder la CI reproductible.
+satellite:
+  provider: EUMETSAT MTG/RDT
+  enabled: false
+  status: connector_prepared_not_configured
+gnss_water_vapour:
+  provider: E-GVAP GNSS precipitable water vapour
+  enabled: false
+  status: connector_prepared_not_configured
+pressure_crowd:
+  provider: Netatmo-compatible dense pressure mesh
+  enabled: false
+  status: connector_prepared_not_configured
+lightning:
+  provider: community or licensed lightning feed
+  enabled: false
+  status: connector_prepared_not_configured

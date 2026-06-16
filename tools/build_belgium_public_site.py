@@ -11,6 +11,21 @@ PUBLIC_FILES = [
     "belgium_alert_dashboard.html",
     "convective_transition_dashboard.html",
     "upstream_graph.html",
+    "early_warning_dashboard.html",
+    "information_graph.html",
+    "validation_dashboard.html",
+    "self_watchdog.html",
+    "belgium_alert_cap.xml",
+    "meteovoid_api_latest.json",
+    "early_warning_signals.json",
+    "early_warning_by_station.csv",
+    "early_warning_network.csv",
+    "information_graph_summary.json",
+    "information_graph_edges.csv",
+    "validation_metrics.json",
+    "validation_report.md",
+    "self_watchdog.json",
+    "observation_gap_status.json",
     "belgium_alert_map.html",
     "belgium_weather_layers.html",
     "belgium_radar_map.html",
@@ -42,6 +57,10 @@ FRAME_OPTIONS = [
     ("Synthèse", "belgium_alert_dashboard.html"),
     ("Transition convective", "convective_transition_dashboard.html"),
     ("Graphe amont", "upstream_graph.html"),
+    ("Signaux précoces", "early_warning_dashboard.html"),
+    ("Graphe informationnel", "information_graph.html"),
+    ("Validation", "validation_dashboard.html"),
+    ("Auto-surveillance", "self_watchdog.html"),
     ("Carte risque", "belgium_alert_map.html"),
     ("Cartes avancées", "belgium_weather_layers.html"),
     ("Radar", "belgium_radar_map.html"),
@@ -158,6 +177,10 @@ def build_index(report_dir: Path, site_dir: Path) -> None:
     report = _load_json(report_dir / "belgium_alert_report.json")
     alert_state = _load_json(report_dir / "alert_state.json")
     transition = _load_json(report_dir / "convective_transition_report.json")
+    early_warning = _load_json(report_dir / "early_warning_signals.json")
+    information_graph = _load_json(report_dir / "information_graph_summary.json")
+    validation_metrics = _load_json(report_dir / "validation_metrics.json")
+    watchdog = _load_json(report_dir / "self_watchdog.json")
     source_status = _load_json(report_dir / "source_status.json")
     latest_dir = _copy_outputs(report_dir, site_dir)
 
@@ -171,6 +194,11 @@ def build_index(report_dir: Path, site_dir: Path) -> None:
     public_wording = alert_state.get(
         "public_wording",
         "prototype technique non officiel, à utiliser en complément des sources officielles",
+    )
+    ews_summary = early_warning.get("summary") if isinstance(early_warning.get("summary"), dict) else {}
+    info_summary = information_graph.get("summary") if isinstance(information_graph.get("summary"), dict) else {}
+    validation_scores = (
+        validation_metrics.get("scores") if isinstance(validation_metrics.get("scores"), dict) else {}
     )
 
     top_transition_rows = _top_transition(transition)
@@ -248,6 +276,7 @@ th {{ color:var(--muted); font-size:11px; text-transform:uppercase; letter-spaci
     <a class="active" href="#overview">Vue d’ensemble</a>
     <a href="#maps">Cartes</a>
     <a href="#transition">Transition convective</a>
+    <a href="#proof">Preuve & validation</a>
     <a href="#stations">Stations</a>
     <a href="#exports">Exports</a>
   </nav>
@@ -280,6 +309,7 @@ th {{ color:var(--muted); font-size:11px; text-transform:uppercase; letter-spaci
         <div class="insight"><b>1 · Synthèse</b>Score national, niveau opérationnel et zones sensibles. C’est la vue la plus lisible.</div>
         <div class="insight"><b>2 · Transition convective</b>Lecture MeteoVoid : charge, déclencheur, organisation, couvercle, void collapse.</div>
         <div class="insight"><b>3 · Cartes avancées</b>Les couches sont séparées pour éviter l’effet “bouillie de points”. Active une couche à la fois.</div>
+        <div class="insight"><b>4 · Signaux précoces</b>Variance, autocorrélation, flickering et graphes servent à lire la bascule, pas seulement la météo brute.</div>
       </div>
       <div id="transition" class="card" style="margin-top:16px;">
         <h2 class="panel-title">Indices de transition</h2>
@@ -287,6 +317,13 @@ th {{ color:var(--muted); font-size:11px; text-transform:uppercase; letter-spaci
         <ul>{transition_list}</ul>
       </div>
     </div>
+  </section>
+  <section id="proof" class="grid kpis" style="margin-top:18px;">
+    <div class="card"><small>Early warning réseau</small><strong class="big">{html.escape(_fmt(ews_summary.get('network_early_warning_score')))}</strong><span>{html.escape(str(ews_summary.get('interpretation', 'n/a')))}</span></div>
+    <div class="card"><small>Corridor informationnel</small><strong class="big">{html.escape(_fmt(info_summary.get('information_corridor_score')))}</strong><span>{html.escape(str(info_summary.get('interpretation', 'n/a')))}</span></div>
+    <div class="card"><small>Brier</small><strong class="big">{html.escape(_fmt(validation_scores.get('brier_score')))}</strong><span>Score de validation si événements disponibles</span></div>
+    <div class="card"><small>Auto-surveillance</small><strong class="big" style="font-size:20px">{html.escape(str(watchdog.get('state', 'n/a')))}</strong><span>Qualité du run</span></div>
+    <div class="card"><small>CAP</small><strong class="big" style="font-size:20px"><a href="reports/latest/belgium_alert_cap.xml">XML test</a></strong><span>Interopérabilité non officielle</span></div>
   </section>
   <section id="stations" class="card" style="margin-top:18px;">
     <h2 class="panel-title">Stations les plus sensibles</h2>
@@ -300,6 +337,12 @@ th {{ color:var(--muted); font-size:11px; text-transform:uppercase; letter-spaci
       <a href="reports/latest/risk_by_station.csv">CSV stations</a>
       <a href="reports/latest/risk_timeline.csv">Timeline</a>
       <a href="reports/latest/weather_layers_grid.csv">Grille météo</a>
+      <a href="reports/latest/early_warning_signals.json">Signaux précoces JSON</a>
+      <a href="reports/latest/information_graph_summary.json">Graphe informationnel JSON</a>
+      <a href="reports/latest/validation_metrics.json">Validation JSON</a>
+      <a href="reports/latest/self_watchdog.json">Auto-surveillance JSON</a>
+      <a href="reports/latest/meteovoid_api_latest.json">API statique</a>
+      <a href="reports/latest/belgium_alert_cap.xml">CAP XML</a>
       <a href="reports/latest/manifest.json">Manifest</a>
     </div>
   </section>
