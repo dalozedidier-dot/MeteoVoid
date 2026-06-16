@@ -764,7 +764,9 @@ def _aggregate_risk(stations: list[StationRisk]) -> dict[str, Any]:
         "heat_stress_score": round(max(heat_values), 6) if heat_values else 0.0,
         "convective_risk_score": round(max(convective_values), 6) if convective_values else 0.0,
         "heat_stress_mean": round(sum(heat_values) / len(heat_values), 6) if heat_values else 0.0,
-        "convective_risk_mean": round(sum(convective_values) / len(convective_values), 6) if convective_values else 0.0,
+        "convective_risk_mean": (
+            round(sum(convective_values) / len(convective_values), 6) if convective_values else 0.0
+        ),
         "score_layer_contract": "heat_vs_convective_score_layers_v1",
         "source_ok_count": len(ok),
         "source_error_count": len(stations) - len(ok),
@@ -1310,9 +1312,9 @@ def _render_map_html(report: dict[str, Any]) -> str:
       <p>Fond géographique OpenStreetMap, regroupement des points proches et affichage des détails au clic.</p>
     </div>
     <div class="score">
-      <span class="pill">Score {float(aggregate.get('score', 0.0)):.3f}</span>
-      <span class="pill">Sévérité {html.escape(str(aggregate.get('severity', 'n/a')))}</span>
-      <span class="pill">{html.escape(str(target.get('start', 'n/a')))} à {html.escape(str(target.get('end', 'n/a')))}</span>
+      <span class="pill">Score {float(aggregate.get("score", 0.0)):.3f}</span>
+      <span class="pill">Sévérité {html.escape(str(aggregate.get("severity", "n/a")))}</span>
+      <span class="pill">{html.escape(str(target.get("start", "n/a")))} à {html.escape(str(target.get("end", "n/a")))}</span>
     </div>
   </header>
   <div id="map"></div>
@@ -1324,7 +1326,7 @@ def _render_map_html(report: dict[str, Any]) -> str:
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script>
-const severityColors = {{normal:"{SEVERITY_COLORS['normal']}", watch:"{SEVERITY_COLORS['watch']}", medium:"{SEVERITY_COLORS['medium']}", high:"{SEVERITY_COLORS['high']}", alert:"{SEVERITY_COLORS['alert']}"}};
+const severityColors = {{normal:"{SEVERITY_COLORS["normal"]}", watch:"{SEVERITY_COLORS["watch"]}", medium:"{SEVERITY_COLORS["medium"]}", high:"{SEVERITY_COLORS["high"]}", alert:"{SEVERITY_COLORS["alert"]}"}};
 const stations = {stations_json};
 const map = L.map('map', {{ zoomControl: true, scrollWheelZoom: true }}).setView([50.64, 4.65], 8);
 L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
@@ -1445,7 +1447,7 @@ def _render_dashboard_html(report: dict[str, Any]) -> str:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>MeteoVoid Belgique Dashboard</title>
   <style>
-    :root {{ --bg:#f3f6fb; --panel:#ffffff; --ink:#0f213f; --muted:#607089; --line:#dfe7f0; --blue:#2b6fed; --normal:{SEVERITY_COLORS['normal']}; --watch:{SEVERITY_COLORS['watch']}; --medium:{SEVERITY_COLORS['medium']}; --high:{SEVERITY_COLORS['high']}; --alert:{SEVERITY_COLORS['alert']}; --shadow:0 14px 34px rgba(15, 33, 63, 0.08); }}
+    :root {{ --bg:#f3f6fb; --panel:#ffffff; --ink:#0f213f; --muted:#607089; --line:#dfe7f0; --blue:#2b6fed; --normal:{SEVERITY_COLORS["normal"]}; --watch:{SEVERITY_COLORS["watch"]}; --medium:{SEVERITY_COLORS["medium"]}; --high:{SEVERITY_COLORS["high"]}; --alert:{SEVERITY_COLORS["alert"]}; --shadow:0 14px 34px rgba(15, 33, 63, 0.08); }}
     * {{ box-sizing:border-box; }}
     body {{ margin:0; background:var(--bg); color:var(--ink); font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
     .app {{ display:grid; grid-template-columns:228px 1fr; min-height:100vh; }}
@@ -1516,17 +1518,17 @@ def _render_dashboard_html(report: dict[str, Any]) -> str:
       <section class="kpis">
         <article class="card kpi"><small>Score national</small><svg class="spark" viewBox="0 0 110 54"><polyline points="{sparkline}" fill="none" stroke="#2b6fed" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><strong>{score:.3f}</strong><p>Plus le score est élevé, plus la vigilance augmente.</p></article>
         <article class="card kpi"><small>Sévérité nationale</small><strong class="severity-word">{esc(severity)}</strong><p>Niveau dominant issu du scoring modèle.</p></article>
-        <article class="card kpi"><small>Fenêtre de veille</small><strong>{esc(target.get('start', 'n/a'))}<br>au {esc(target.get('end', 'n/a'))}</strong><p>Période couverte par l'analyse.</p></article>
+        <article class="card kpi"><small>Fenêtre de veille</small><strong>{esc(target.get("start", "n/a"))}<br>au {esc(target.get("end", "n/a"))}</strong><p>Période couverte par l'analyse.</p></article>
         <article class="card kpi"><small>Stations évaluées</small><strong>{active_count}</strong><p>{error_count} station(s) en erreur de source.</p></article>
         <article class="card kpi"><small>Dernière heure sensible</small><strong>{esc(_fmt_time(last_sensitive))}</strong><p>Heure sensible la plus récente du top risque.</p></article>
       </section>
       <section class="layout">
         <article class="card map-panel"><div class="panel-title">Carte interactive des risques météo par station</div><div class="map-wrap"><iframe class="map-frame" src="belgium_alert_map.html" title="Carte interactive MeteoVoid Belgique"></iframe></div><div class="map-links"><a href="belgium_alert_map.html">Ouvrir la carte pleine page</a><span>Fond OpenStreetMap, clustering des points proches, détails au clic.</span></div></article>
-        <article class="card"><div class="panel-title">Points clés et lecture opérationnelle</div><div class="insights">{''.join(insight_blocks)}<div class="info-strip">Données basées sur des prévisions modèle. Surveillance active recommandée, confirmation externe nécessaire.</div></div></article>
+        <article class="card"><div class="panel-title">Points clés et lecture opérationnelle</div><div class="insights">{"".join(insight_blocks)}<div class="info-strip">Données basées sur des prévisions modèle. Surveillance active recommandée, confirmation externe nécessaire.</div></div></article>
       </section>
       <section id="stations" class="card table-card">
         <div class="panel-title">Stations et évaluation des risques</div>
-        <table><thead><tr><th>Station</th><th>Sévérité</th><th>Score</th><th>Heure sensible</th><th>Signaux</th></tr></thead><tbody>{''.join(station_rows)}</tbody></table>
+        <table><thead><tr><th>Station</th><th>Sévérité</th><th>Score</th><th>Heure sensible</th><th>Signaux</th></tr></thead><tbody>{"".join(station_rows)}</tbody></table>
       </section>
       <div class="meta"><span>Données : {source_detail} | Mode : {data_mode} | Type : {source_type}</span><span>{esc(integrations_text)}</span></div>
       <footer class="foot"><strong>MeteoVoid Belgique</strong><span>Données non contractuelles. Comparaison indispensable avec IRM/KMI, MeteoAlarm, radar et foudre.</span></footer>
@@ -2105,7 +2107,9 @@ def _components_summary(stations: list[dict[str, Any]]) -> dict[str, Any]:
     )
     summary["native_convective_fields_available_count"] = {
         "mean": round(native_field_count / len(ok), 6) if ok else 0.0,
-        "max": max((len(station.get("native_convective_fields") or []) for station in ok), default=0),
+        "max": max(
+            (len(station.get("native_convective_fields") or []) for station in ok), default=0
+        ),
     }
     return summary
 
@@ -2380,8 +2384,12 @@ def _render_markdown(report: dict[str, Any]) -> str:
         f"`{report['target_window']['end']}`"
     )
     lines.append(f"Score national : `{aggregate['score']:.3f}`")
-    lines.append(f"Stress thermique national : `{float(aggregate.get('heat_stress_score') or 0.0):.3f}`")
-    lines.append(f"Risque convectif national : `{float(aggregate.get('convective_risk_score') or 0.0):.3f}`")
+    lines.append(
+        f"Stress thermique national : `{float(aggregate.get('heat_stress_score') or 0.0):.3f}`"
+    )
+    lines.append(
+        f"Risque convectif national : `{float(aggregate.get('convective_risk_score') or 0.0):.3f}`"
+    )
     lines.append(f"Sévérité modèle : `{aggregate['severity']}`")
     lines.append(f"Niveau opérationnel : `{operational.get('level', 'n/a')}`")
     lines.append(f"Raison : {operational.get('reason', 'n/a')}")
@@ -2784,7 +2792,7 @@ def _render_heatmap_html(report: dict[str, Any]) -> str:
 <div id="map"></div>
 <div class="panel">
   <h1>Heatmap MeteoVoid Belgique</h1>
-  <p>Score national : <strong>{float(aggregate.get('score') or 0.0):.3f}</strong> — sévérité : <strong>{html.escape(str(aggregate.get('severity', 'n/a')))}</strong></p>
+  <p>Score national : <strong>{float(aggregate.get("score") or 0.0):.3f}</strong> — sévérité : <strong>{html.escape(str(aggregate.get("severity", "n/a")))}</strong></p>
   <p>Couche de chaleur basée sur les scores par station. Elle aide à voir la zone de concentration, sans remplacer une carte radar.</p>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -2890,13 +2898,13 @@ def _render_province_map_html(report: dict[str, Any]) -> str:
 <div id="map"></div>
 <div class="panel">
   <h1>Carte administrative MeteoVoid</h1>
-  <p>Score national : <strong>{float(aggregate.get('score') or 0.0):.3f}</strong> — sévérité : <strong>{html.escape(str(aggregate.get('severity', 'n/a')))}</strong></p>
+  <p>Score national : <strong>{float(aggregate.get("score") or 0.0):.3f}</strong> — sévérité : <strong>{html.escape(str(aggregate.get("severity", "n/a")))}</strong></p>
   <p>Couche provinces/approches + stations. Le fond administratif est un GeoJSON simplifié embarqué, remplaçable par un jeu officiel.</p>
 </div>
 <div class="legend" id="legend"></div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-const severityColors = {{normal:"{SEVERITY_COLORS['normal']}", watch:"{SEVERITY_COLORS['watch']}", medium:"{SEVERITY_COLORS['medium']}", high:"{SEVERITY_COLORS['high']}", alert:"{SEVERITY_COLORS['alert']}"}};
+const severityColors = {{normal:"{SEVERITY_COLORS["normal"]}", watch:"{SEVERITY_COLORS["watch"]}", medium:"{SEVERITY_COLORS["medium"]}", high:"{SEVERITY_COLORS["high"]}", alert:"{SEVERITY_COLORS["alert"]}"}};
 const provinces = {provinces_json};
 const stations = {stations_json};
 const map = L.map('map').setView([50.64, 4.65], 8);

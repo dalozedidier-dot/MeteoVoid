@@ -52,7 +52,7 @@ def build_cap_xml(report: dict[str, Any]) -> str:
     )
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <alert xmlns="urn:oasis:names:tc:emergency:cap:1.2">
-  <identifier>{html.escape(str(report.get('run_id') or 'meteovoid-run'))}</identifier>
+  <identifier>{html.escape(str(report.get("run_id") or "meteovoid-run"))}</identifier>
   <sender>meteovoid.local</sender>
   <sent>{html.escape(generated)}</sent>
   <status>Test</status>
@@ -70,8 +70,8 @@ def build_cap_xml(report: dict[str, Any]) -> str:
     <eventCode><valueName>MeteoVoidOperationalLevel</valueName><value>{html.escape(level)}</value></eventCode>
     <headline>{html.escape(_headline(report))}</headline>
     <description>{html.escape(description)}</description>
-    <effective>{html.escape(str(window.get('start') or generated))}</effective>
-    <expires>{html.escape(str(window.get('end') or generated))}</expires>
+    <effective>{html.escape(str(window.get("start") or generated))}</effective>
+    <expires>{html.escape(str(window.get("end") or generated))}</expires>
     <area><areaDesc>Belgique et zones frontalières surveillées par MeteoVoid</areaDesc></area>
   </info>
 </alert>
@@ -83,6 +83,7 @@ def build_static_api(report: dict[str, Any]) -> dict[str, Any]:
     data = build_belgium_public_latest(report)
     data["legacy_alias"] = "meteovoid_api_latest.json"
     return data
+
 
 def write_cap_outputs(report: dict[str, Any], out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
