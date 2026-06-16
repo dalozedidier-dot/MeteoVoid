@@ -79,7 +79,9 @@ def _station_nodes(report: dict[str, Any]) -> list[dict[str, Any]]:
     return nodes
 
 
-def _build_edges(nodes: list[dict[str, Any]], max_distance_km: float = 135.0) -> list[dict[str, Any]]:
+def _build_edges(
+    nodes: list[dict[str, Any]], max_distance_km: float = 135.0
+) -> list[dict[str, Any]]:
     edges: list[dict[str, Any]] = []
     for i, left in enumerate(nodes):
         for right in nodes[i + 1 :]:
@@ -97,7 +99,9 @@ def _build_edges(nodes: list[dict[str, Any]], max_distance_km: float = 135.0) ->
                     "distance_km": round(dist, 2),
                     "bearing_deg": round(bearing_lr, 1),
                     "score_gradient": round(gradient, 4),
-                    "coherence_weight": round((1.0 - min(dist / max_distance_km, 1.0)) * (1.0 - abs(gradient)), 4),
+                    "coherence_weight": round(
+                        (1.0 - min(dist / max_distance_km, 1.0)) * (1.0 - abs(gradient)), 4
+                    ),
                 }
             )
     return edges
@@ -136,7 +140,9 @@ def _graph_metrics(nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> 
         component_count = None
         largest_component_size = None
 
-    upstream_coherence_score = min(1.0, 0.45 * avg_score + 0.25 * max_score + 0.20 * density + 0.10 * high_ratio)
+    upstream_coherence_score = min(
+        1.0, 0.45 * avg_score + 0.25 * max_score + 0.20 * density + 0.10 * high_ratio
+    )
     return {
         "node_count": n,
         "edge_count": len(edges),
@@ -184,14 +190,19 @@ def _write_edges_csv(edges: list[dict[str, Any]], path: Path) -> None:
         writer.writerows(edges)
 
 
-def _render_graph_html(report: dict[str, Any], nodes: list[dict[str, Any]], edges: list[dict[str, Any]], metrics: dict[str, Any]) -> str:
+def _render_graph_html(
+    report: dict[str, Any],
+    nodes: list[dict[str, Any]],
+    edges: list[dict[str, Any]],
+    metrics: dict[str, Any],
+) -> str:
     nodes_json = json.dumps(nodes, ensure_ascii=False)
     edges_json = json.dumps(edges, ensure_ascii=False)
     title = "MeteoVoid Belgique · Graphe amont"
     metric = metrics.get("upstream_coherence_score", 0)
     interp = html.escape(str(metrics.get("interpretation", "")))
     generated_at = html.escape(str(report.get("generated_at") or ""))
-    return f'''<!doctype html>
+    return f"""<!doctype html>
 <html lang="fr">
 <head>
 <meta charset="utf-8" />
@@ -254,7 +265,7 @@ legend.addTo(map);
 </script>
 </body>
 </html>
-'''
+"""
 
 
 def write_upstream_graph_outputs(report: dict[str, Any], out_dir: Path) -> dict[str, Any]:

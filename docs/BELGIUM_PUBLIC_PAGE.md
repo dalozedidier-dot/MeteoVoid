@@ -41,4 +41,3 @@ Les cartes radar et fonds de carte peuvent dépendre de services externes charg�
 ## GitHub Pages
 
 Le workflow `Belgium Public Dashboard` active GitHub Pages via `actions/configure-pages` avec `enablement: true`, puis publie le dossier `_site`. Si la publication échoue encore, vérifier dans `Settings > Pages` que la source est bien **GitHub Actions**.
-

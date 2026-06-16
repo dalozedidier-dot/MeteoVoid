@@ -38,7 +38,7 @@ def _lag1_autocorrelation(values: list[float]) -> float:
     y = values[1:]
     mx = mean(x)
     my = mean(y)
-    num = sum((a - mx) * (b - my) for a, b in zip(x, y))
+    num = sum((a - mx) * (b - my) for a, b in zip(x, y, strict=False))
     den_x = math.sqrt(sum((a - mx) ** 2 for a in x))
     den_y = math.sqrt(sum((b - my) ** 2 for b in y))
     if den_x == 0 or den_y == 0:
@@ -67,14 +67,14 @@ def _slope(values: list[float]) -> float:
     den = sum((x - mx) ** 2 for x in xs)
     if den == 0:
         return 0.0
-    return sum((x - mx) * (y - my) for x, y in zip(xs, values)) / den
+    return sum((x - mx) * (y - my) for x, y in zip(xs, values, strict=False)) / den
 
 
 def _flickering(values: list[float], threshold: float = 0.55) -> float:
     if len(values) < 2:
         return 0.0
     states = [v >= threshold for v in values]
-    flips = sum(1 for a, b in zip(states, states[1:]) if a != b)
+    flips = sum(1 for a, b in zip(states, states[1:], strict=False) if a != b)
     return flips / max(1, len(states) - 1)
 
 
@@ -106,7 +106,7 @@ def _station_ews(station: dict[str, Any]) -> dict[str, Any]:
     score_slope = _slope(values[-18:] if len(values) >= 18 else values)
 
     dew_slope = _slope(dew_values[-18:] if len(dew_values) >= 18 else dew_values)
-    temp_slope = _slope(temp_values[-18:] if len(temp_values) >= 18 else temp_values)
+    _slope(temp_values[-18:] if len(temp_values) >= 18 else temp_values)
     wind_slope = _slope(wind_values[-18:] if len(wind_values) >= 18 else wind_values)
     precip_slope = _slope(precip_values[-18:] if len(precip_values) >= 18 else precip_values)
 
@@ -165,7 +165,9 @@ def _network_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "interpretation": "no_data",
         }
     critical = sum(1 for row in rows if row.get("phase") == "critical_transition_watch")
-    destabilizing = sum(1 for row in rows if row.get("phase") in {"critical_transition_watch", "destabilizing"})
+    destabilizing = sum(
+        1 for row in rows if row.get("phase") in {"critical_transition_watch", "destabilizing"}
+    )
     top = max(scores)
     avg = mean(scores)
     concentration = critical / max(1, len(rows))
@@ -198,7 +200,9 @@ def build_early_warning_report(report: dict[str, Any]) -> dict[str, Any]:
         "run_id": report.get("run_id"),
         "method": "rolling_early_warning_signals",
         "summary": summary,
-        "stations": sorted(rows, key=lambda row: _as_float(row.get("early_warning_score")), reverse=True),
+        "stations": sorted(
+            rows, key=lambda row: _as_float(row.get("early_warning_score")), reverse=True
+        ),
         "notes": [
             "Indicateurs génériques de transition critique : autocorrélation lag-1, variance, asymétrie et flickering.",
             "Ces signaux ne constituent pas une alerte officielle. Ils mesurent une perte de stabilité fonctionnelle dans les séries MeteoVoid.",

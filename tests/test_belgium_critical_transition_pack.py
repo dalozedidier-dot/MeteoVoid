@@ -54,11 +54,25 @@ def test_public_site_includes_critical_transition_tabs(tmp_path: Path) -> None:
     out = tmp_path / "out"
     site = tmp_path / "site"
     subprocess.run(
-        [sys.executable, "tools/generate_belgium_alert_report.py", "--offline-demo", "--out-dir", str(out), "--no-history"],
+        [
+            sys.executable,
+            "tools/generate_belgium_alert_report.py",
+            "--offline-demo",
+            "--out-dir",
+            str(out),
+            "--no-history",
+        ],
         check=True,
     )
     subprocess.run(
-        [sys.executable, "tools/build_belgium_public_site.py", "--report-dir", str(out), "--site-dir", str(site)],
+        [
+            sys.executable,
+            "tools/build_belgium_public_site.py",
+            "--report-dir",
+            str(out),
+            "--site-dir",
+            str(site),
+        ],
         check=True,
     )
     html = (site / "index.html").read_text(encoding="utf-8")

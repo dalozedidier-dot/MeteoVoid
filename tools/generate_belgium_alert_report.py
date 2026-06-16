@@ -766,10 +766,6 @@ def _circle_radius(score: float) -> float:
     return 7.0 + _clamp01(score) * 18.0
 
 
-
-
-
-
 def _render_geojson(report: dict[str, Any]) -> dict[str, Any]:
     """Render a lightweight station GeoJSON for maps.
 
@@ -822,8 +818,6 @@ def _render_geojson(report: dict[str, Any]) -> dict[str, Any]:
         "generated_at": report.get("generated_at"),
         "features": features,
     }
-
-
 
 
 def _severity_badge_label(severity: str) -> str:
@@ -912,10 +906,6 @@ def _dashboard_insights(report: dict[str, Any]) -> list[tuple[str, str, str]]:
             )
         )
     return insights
-
-
-
-
 
 
 # ---------------------------------------------------------------------------

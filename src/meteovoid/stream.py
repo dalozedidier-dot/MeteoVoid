@@ -581,7 +581,7 @@ def run_live_worker(
                     "variable": variable,
                     "payload": payload,
                 }
-                r.xadd(out_stream, out_fields)
+                r.xadd(out_stream, out_fields)  # type: ignore[arg-type]
 
                 _ = maybe_send_alert(report)
 

@@ -195,10 +195,18 @@ def build_index(report_dir: Path, site_dir: Path) -> None:
         "public_wording",
         "prototype technique non officiel, à utiliser en complément des sources officielles",
     )
-    ews_summary = early_warning.get("summary") if isinstance(early_warning.get("summary"), dict) else {}
-    info_summary = information_graph.get("summary") if isinstance(information_graph.get("summary"), dict) else {}
+    ews_summary = (
+        early_warning.get("summary") if isinstance(early_warning.get("summary"), dict) else {}
+    )
+    info_summary = (
+        information_graph.get("summary")
+        if isinstance(information_graph.get("summary"), dict)
+        else {}
+    )
     validation_scores = (
-        validation_metrics.get("scores") if isinstance(validation_metrics.get("scores"), dict) else {}
+        validation_metrics.get("scores")
+        if isinstance(validation_metrics.get("scores"), dict)
+        else {}
     )
 
     top_transition_rows = _top_transition(transition)

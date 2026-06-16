@@ -55,7 +55,7 @@ def _corr(x: list[float], y: list[float]) -> float:
     y = y[:n]
     mx = mean(x)
     my = mean(y)
-    num = sum((a - mx) * (b - my) for a, b in zip(x, y))
+    num = sum((a - mx) * (b - my) for a, b in zip(x, y, strict=False))
     denx = math.sqrt(sum((a - mx) ** 2 for a in x))
     deny = math.sqrt(sum((b - my) ** 2 for b in y))
     if denx == 0 or deny == 0:
@@ -63,7 +63,9 @@ def _corr(x: list[float], y: list[float]) -> float:
     return max(-1.0, min(1.0, num / (denx * deny)))
 
 
-def _best_lag_edge(source: dict[str, Any], target: dict[str, Any], max_lag: int) -> dict[str, Any] | None:
+def _best_lag_edge(
+    source: dict[str, Any], target: dict[str, Any], max_lag: int
+) -> dict[str, Any] | None:
     xs = _series(source)
     ys = _series(target)
     if len(xs) < max_lag + 6 or len(ys) < max_lag + 6:
@@ -77,7 +79,7 @@ def _best_lag_edge(source: dict[str, Any], target: dict[str, Any], max_lag: int)
             best_lag = lag
     if best_corr < 0.25:
         return None
-    src_var = _corr(xs[:-1], xs[1:])
+    _corr(xs[:-1], xs[1:])
     tgt_var = _corr(ys[:-1], ys[1:])
     te_proxy = _clip((best_corr - max(0.0, tgt_var) * 0.35) * 1.15)
     distance = _haversine_km(
@@ -111,7 +113,9 @@ def build_information_graph(report: dict[str, Any], max_lag: int = 4) -> dict[st
             edge = _best_lag_edge(source, target, max_lag=max_lag)
             if edge is not None:
                 edges.append(edge)
-    edges = sorted(edges, key=lambda row: _as_float(row.get("information_weight")), reverse=True)[:80]
+    edges = sorted(edges, key=lambda row: _as_float(row.get("information_weight")), reverse=True)[
+        :80
+    ]
     in_strength: dict[str, float] = {}
     out_strength: dict[str, float] = {}
     for edge in edges:
@@ -120,7 +124,9 @@ def build_information_graph(report: dict[str, Any], max_lag: int = 4) -> dict[st
         tgt = str(edge.get("target_id"))
         out_strength[src] = out_strength.get(src, 0.0) + weight
         in_strength[tgt] = in_strength.get(tgt, 0.0) + weight
-    corridor_score = _clip(mean([_as_float(e.get("information_weight")) for e in edges[:10]]) if edges else 0.0)
+    corridor_score = _clip(
+        mean([_as_float(e.get("information_weight")) for e in edges[:10]]) if edges else 0.0
+    )
     return {
         "generated_at": report.get("generated_at"),
         "run_id": report.get("run_id"),
@@ -129,9 +135,17 @@ def build_information_graph(report: dict[str, Any], max_lag: int = 4) -> dict[st
             "edge_count": len(edges),
             "station_count": len(stations),
             "information_corridor_score": round(corridor_score, 6),
-            "top_upstream_station": max(out_strength, key=out_strength.get) if out_strength else None,
-            "top_downstream_station": max(in_strength, key=in_strength.get) if in_strength else None,
-            "interpretation": "information_corridor_detected" if corridor_score >= 0.55 else "weak_or_fragmented_information_flow",
+            "top_upstream_station": (
+                max(out_strength, key=out_strength.get) if out_strength else None
+            ),
+            "top_downstream_station": (
+                max(in_strength, key=in_strength.get) if in_strength else None
+            ),
+            "interpretation": (
+                "information_corridor_detected"
+                if corridor_score >= 0.55
+                else "weak_or_fragmented_information_flow"
+            ),
         },
         "edges": edges,
     }

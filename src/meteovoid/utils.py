@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:  # pragma: no cover
     from redis.client import Redis
@@ -16,4 +16,4 @@ def make_redis(url: str) -> Redis:
         ) from exc
 
     client: Any = Redis.from_url(url, decode_responses=True)
-    return client
+    return cast("Redis", client)

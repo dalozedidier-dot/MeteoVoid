@@ -33,13 +33,19 @@ def _load_events(path: Path | None) -> list[dict[str, Any]]:
 
 
 def _matches_window(report: dict[str, Any], row: dict[str, Any]) -> bool:
-    start = str(report.get("target_window", {}).get("start") or report.get("window_start") or "")[:10]
+    start = str(report.get("target_window", {}).get("start") or report.get("window_start") or "")[
+        :10
+    ]
     end = str(report.get("target_window", {}).get("end") or report.get("window_end") or "")[:10]
     event_start = str(row.get("date_start") or row.get("start") or row.get("date") or "")[:10]
     event_end = str(row.get("date_end") or row.get("end") or row.get("date") or event_start)[:10]
     if not event_start:
         return False
-    return (start <= event_start <= end) or (start <= event_end <= end) or (event_start <= start <= event_end)
+    return (
+        (start <= event_start <= end)
+        or (start <= event_end <= end)
+        or (event_start <= start <= event_end)
+    )
 
 
 def _brier(prob: float, observed: bool) -> float:
@@ -47,19 +53,28 @@ def _brier(prob: float, observed: bool) -> float:
 
 
 def build_validation_metrics(report: dict[str, Any]) -> dict[str, Any]:
-    replay_path = Path(str(report.get("replay_events") or "")) if report.get("replay_events") else None
+    replay_path = (
+        Path(str(report.get("replay_events") or "")) if report.get("replay_events") else None
+    )
     events = _load_events(replay_path)
     matched = [event for event in events if _matches_window(report, event)]
-    op = report.get("operational_state") if isinstance(report.get("operational_state"), dict) else {}
+    op = (
+        report.get("operational_state") if isinstance(report.get("operational_state"), dict) else {}
+    )
     level = str(op.get("level") or "")
-    prob = max(_as_float(report.get("aggregate", {}).get("national_score")), _as_float(op.get("model_score")))
+    prob = max(
+        _as_float(report.get("aggregate", {}).get("national_score")),
+        _as_float(op.get("model_score")),
+    )
     predicted_positive = level in POSITIVE_LEVELS or prob >= 0.55
 
     evaluated: list[dict[str, Any]] = []
     tp = fp = fn = tn = 0
     brier_values: list[float] = []
     for event in matched:
-        observed = str(event.get("expected_detected") or event.get("observed") or event.get("event") or "").lower() in {
+        observed = str(
+            event.get("expected_detected") or event.get("observed") or event.get("event") or ""
+        ).lower() in {
             "1",
             "true",
             "yes",
@@ -76,7 +91,14 @@ def build_validation_metrics(report: dict[str, Any]) -> dict[str, Any]:
         else:
             tn += 1
         brier_values.append(_brier(prob, observed))
-        evaluated.append({**event, "model_probability": round(prob, 6), "predicted_positive": predicted_positive, "observed_positive": observed})
+        evaluated.append(
+            {
+                **event,
+                "model_probability": round(prob, 6),
+                "predicted_positive": predicted_positive,
+                "observed_positive": observed,
+            }
+        )
 
     pod = tp / (tp + fn) if (tp + fn) else None
     far = fp / (tp + fp) if (tp + fp) else None
@@ -95,7 +117,13 @@ def build_validation_metrics(report: dict[str, Any]) -> dict[str, Any]:
         "event_file": str(replay_path) if replay_path else "",
         "matched_event_count": len(evaluated),
         "confusion": {"tp": tp, "fp": fp, "fn": fn, "tn": tn},
-        "scores": {"pod": pod, "far": far, "csi": csi, "brier_score": brier, "model_probability": round(prob, 6)},
+        "scores": {
+            "pod": pod,
+            "far": far,
+            "csi": csi,
+            "brier_score": brier,
+            "model_probability": round(prob, 6),
+        },
         "decision_theory": {
             "cost_loss_thresholds": [
                 {"cost_loss_ratio": 0.05, "alert_if_probability_ge": 0.05},
@@ -165,7 +193,9 @@ body{{margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:#eef3f8;co
 def write_validation_outputs(report: dict[str, Any], out_dir: Path) -> dict[str, Any]:
     data = build_validation_metrics(report)
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "validation_metrics.json").write_text(json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    (out_dir / "validation_metrics.json").write_text(
+        json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8"
+    )
     (out_dir / "validation_report.md").write_text(_render_markdown(data), encoding="utf-8")
     (out_dir / "validation_dashboard.html").write_text(_render_html(data), encoding="utf-8")
     return data

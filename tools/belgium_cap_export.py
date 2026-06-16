@@ -24,13 +24,17 @@ def _cap_urgency(level: str) -> str:
 
 
 def _headline(report: dict[str, Any]) -> str:
-    op = report.get("operational_state") if isinstance(report.get("operational_state"), dict) else {}
+    op = (
+        report.get("operational_state") if isinstance(report.get("operational_state"), dict) else {}
+    )
     level = str(op.get("level") or report.get("aggregate", {}).get("severity") or "watch")
     return f"MeteoVoid Belgique · {level}"
 
 
 def build_cap_xml(report: dict[str, Any]) -> str:
-    op = report.get("operational_state") if isinstance(report.get("operational_state"), dict) else {}
+    op = (
+        report.get("operational_state") if isinstance(report.get("operational_state"), dict) else {}
+    )
     aggregate = report.get("aggregate") if isinstance(report.get("aggregate"), dict) else {}
     score = float(aggregate.get("national_score") or op.get("model_score") or 0.0)
     level = str(op.get("level") or aggregate.get("severity") or "watch")
@@ -83,4 +87,7 @@ def build_static_api(report: dict[str, Any]) -> dict[str, Any]:
 def write_cap_outputs(report: dict[str, Any], out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "belgium_alert_cap.xml").write_text(build_cap_xml(report), encoding="utf-8")
-    (out_dir / "meteovoid_api_latest.json").write_text(json.dumps(build_static_api(report), ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
+    (out_dir / "meteovoid_api_latest.json").write_text(
+        json.dumps(build_static_api(report), ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )

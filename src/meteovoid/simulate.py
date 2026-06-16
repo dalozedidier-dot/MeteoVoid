@@ -66,5 +66,5 @@ def push_synthetic_stream(
             "variable": str(point["variable"]),
             "value": f"{float(point['value']):.6f}",
         }
-        r.xadd(stream, fields)
+        r.xadd(stream, fields)  # type: ignore[arg-type]
         time.sleep(sleep)
