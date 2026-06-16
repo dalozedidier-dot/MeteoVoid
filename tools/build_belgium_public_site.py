@@ -1036,92 +1036,130 @@ INDEX_TEMPLATE = r"""<!doctype html>
 <title>MeteoVoid Belgique · Veille de bascule convective</title>
 <style>
 :root{
-  --bg:#0d1726; --bg2:#0f1d31; --panel:#ffffff; --panel2:#f4f7fb; --ink:#10243d; --ink2:#0d1726;
-  --muted:#6a7b90; --line:#e1e9f3; --line2:#22344d;
-  --calm:#2f9e6f; --info:#3f76c0; --watch:#d6a426; --elevated:#e07a2e; --high:#dd5a30; --danger:#cf3b3b;
-  --shadow:0 16px 40px rgba(6,18,33,.10);
+  --bg:#e9eef6; --card:#ffffff; --ink:#0e1b2e; --ink-soft:#46586e; --muted:#7d8ba0; --line:#e4eaf2;
+  --shadow-sm:0 4px 14px rgba(13,32,60,.05); --shadow:0 14px 34px rgba(13,32,60,.09); --shadow-lg:0 24px 60px rgba(13,32,60,.16);
+  --f-calm:#1f9d6b; --f-info:#2f6fd0; --f-watch:#e0a31a; --f-elevated:#e2741f; --f-high:#db4f2a; --f-danger:#d4332f;
 }
 *{box-sizing:border-box;}
 html,body{margin:0;}
-body{font-family:Inter,Segoe UI,Roboto,Arial,sans-serif;background:var(--panel2);color:var(--ink);line-height:1.5;}
-a{color:#1f63b8;text-decoration:none;font-weight:600;}
-a:hover{text-decoration:underline;}
-.topbar{background:linear-gradient(160deg,var(--bg),var(--bg2));color:#eaf2fb;padding:18px 22px;}
-.topbar .wrap{max-width:1180px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
-.brand{display:flex;align-items:center;gap:12px;}
-.brand .mark{width:40px;height:40px;border-radius:12px;background:#ffffff1c;display:grid;place-items:center;font-weight:800;letter-spacing:.02em;}
-.brand h1{font-size:18px;margin:0;letter-spacing:-.01em;}
-.brand p{margin:2px 0 0;font-size:12px;color:#b6cae0;}
-.stamp{font-size:12px;color:#b6cae0;text-align:right;}
-.tabs{max-width:1180px;margin:0 auto;display:flex;gap:8px;padding:14px 22px 0;flex-wrap:wrap;}
-.tab{border:0;background:#ffffff14;color:#cfe0f2;padding:10px 16px;border-radius:999px 999px 0 0;font-weight:700;cursor:pointer;font-size:14px;}
-.tab.active{background:var(--panel2);color:var(--ink);}
-main{max-width:1180px;margin:0 auto;padding:22px;}
-.disclaimer{background:#fff7e8;border:1px solid #f0d9a8;border-left:4px solid var(--elevated);border-radius:12px;padding:11px 14px;font-size:13px;margin-bottom:20px;}
-.view{display:none;}
-.view.active{display:block;animation:fade .25s ease;}
-@keyframes fade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
-.hero{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:18px;}
-.bigcard{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:22px;box-shadow:var(--shadow);}
+body{font-family:'Inter',system-ui,Segoe UI,Roboto,Arial,sans-serif;color:var(--ink);line-height:1.5;-webkit-font-smoothing:antialiased;
+  background:radial-gradient(1100px 460px at 82% -12%, #eef4fd, transparent), var(--bg);}
+a{color:#1f59b4;text-decoration:none;font-weight:600;} a:hover{text-decoration:underline;}
+.banner-level,.tile-v,.score,.gauge-num,.ring-num{font-variant-numeric:tabular-nums;}
+.icon{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;display:block;}
+.ac-calm{--ac:#1f9d6b;--aci:#0f7a50;--acw:#e6f6ef;} .ac-info{--ac:#2f6fd0;--aci:#1f59b4;--acw:#e9f1fd;}
+.ac-watch{--ac:#e0a31a;--aci:#946806;--acw:#faf0d2;} .ac-elevated{--ac:#e2741f;--aci:#b85912;--acw:#fcebdd;}
+.ac-high{--ac:#db4f2a;--aci:#b23a1a;--acw:#fce4dc;} .ac-danger{--ac:#d4332f;--aci:#b21f1c;--acw:#fbe1e0;}
+.txt-calm{color:#0f7a50;} .txt-info{color:#1f59b4;} .txt-watch{color:#946806;} .txt-elevated{color:#b85912;} .txt-high{color:#b23a1a;} .txt-danger{color:#b21f1c;}
+/* top bar */
+.topbar{position:sticky;top:0;z-index:5;background:linear-gradient(120deg,#0b1a30,#15315a);color:#eaf2fb;box-shadow:0 10px 30px rgba(8,20,40,.28);}
+.topbar:after{content:"";position:absolute;inset:0;background:radial-gradient(560px 200px at 88% -50%,rgba(120,170,255,.28),transparent);pointer-events:none;}
+.topbar .wrap{max-width:1180px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:15px 22px;position:relative;}
+.brand{display:flex;align-items:center;gap:13px;}
+.brand .mark{width:42px;height:42px;border-radius:13px;background:linear-gradient(135deg,#2f6fd0,#1f9d6b);display:grid;place-items:center;box-shadow:0 6px 16px rgba(20,60,120,.45);}
+.brand .mark svg{width:24px;height:24px;color:#fff;}
+.brand h1{font-size:19px;margin:0;letter-spacing:-.01em;}
+.brand p{margin:2px 0 0;font-size:12px;color:#a9c2dd;}
+.stamp{font-size:12px;color:#a9c2dd;text-align:right;} .stamp strong{color:#eaf2fb;}
+.tabs{max-width:1180px;margin:0 auto;display:flex;gap:4px;padding:0 22px;position:relative;}
+.tab{border:0;background:transparent;color:#bcd2ea;padding:12px 18px;font-weight:700;cursor:pointer;font-size:14px;border-bottom:3px solid transparent;}
+.tab.active{color:#fff;border-bottom-color:#5fa0ff;} .tab:hover{color:#fff;}
+main{max-width:1180px;margin:0 auto;padding:24px 22px 8px;}
+.disclaimer{background:linear-gradient(90deg,#fff7e8,#fffdf8);border:1px solid #f0dcab;border-left:4px solid var(--f-elevated);border-radius:12px;padding:11px 14px;font-size:13px;color:#6b5320;margin-bottom:22px;}
+.view{display:none;} .view.active{display:block;animation:fade .3s ease;}
+@keyframes fade{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+@keyframes up{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
+@keyframes pop{from{opacity:0;transform:scale(.92);}to{opacity:1;transform:none;}}
+.section-title{font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:800;margin:28px 0 12px;}
+.muted{color:var(--muted);font-size:13px;} .lead{color:var(--ink-soft);margin:0 0 12px;}
+/* status banner */
+.banner{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:20px;align-items:center;border:1px solid var(--line);border-left:6px solid var(--ac,#2f6fd0);border-radius:22px;padding:24px 26px;box-shadow:var(--shadow);background:linear-gradient(120deg,#fff 55%,var(--acw,#eef2f8));}
 .kicker{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:800;}
-.level-pill{display:inline-flex;align-items:center;gap:10px;margin-top:10px;}
-.dot{width:16px;height:16px;border-radius:50%;}
-.level-name{font-size:30px;font-weight:800;letter-spacing:-.02em;}
-.synthesis{font-size:17px;margin:16px 0 0;color:var(--ink);}
-.metarow{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-top:18px;}
-.metric{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px 14px;}
-.metric .k{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800;}
-.metric .v{font-size:22px;font-weight:800;margin-top:4px;}
-.metric .s{font-size:12px;color:var(--muted);}
-.grid{display:grid;gap:16px;}
-.cards4{grid-template-columns:repeat(4,minmax(0,1fr));}
-.cards3{grid-template-columns:repeat(3,minmax(0,1fr));}
-.cards2{grid-template-columns:repeat(2,minmax(0,1fr));}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:var(--shadow);}
+.banner-level{font-size:34px;margin:6px 0 8px;letter-spacing:-.025em;color:var(--aci,#1f59b4);}
+.banner-syn{font-size:16px;color:var(--ink-soft);margin:0;max-width:64ch;}
+.banner-tags{margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;}
+.banner-gauge{display:grid;place-items:center;}
+/* metric tiles */
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:18px 0;}
+.tile{display:flex;gap:12px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px;box-shadow:var(--shadow-sm);transition:transform .15s,box-shadow .15s;}
+.tile:hover{transform:translateY(-2px);box-shadow:var(--shadow);}
+.tile-ic{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;background:var(--acw,#eef2f8);color:var(--aci,#1f59b4);flex:none;}
+.tile-ic .icon{width:22px;height:22px;}
+.tile-k{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-weight:800;}
+.tile-v{font-size:21px;font-weight:800;letter-spacing:-.01em;margin:2px 0;}
+.tile-s{font-size:12px;color:var(--muted);}
+/* split panels */
+.split{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:var(--shadow);}
+.panel-h{display:flex;align-items:center;gap:9px;margin-bottom:8px;} .panel-h .icon{width:20px;height:20px;color:var(--muted);} .panel-h h3{margin:0;font-size:16px;}
+.quick{display:flex;flex-direction:column;gap:10px;margin:10px 0;}
+.quick-i{display:flex;align-items:center;gap:10px;font-size:13px;color:var(--ink-soft);}
+.quick-i strong{font-size:18px;min-width:54px;}
+.cta{margin-top:14px;display:inline-flex;align-items:center;gap:8px;border:0;background:var(--ink);color:#fff;border-radius:12px;padding:11px 16px;font-weight:700;cursor:pointer;font-size:14px;}
+.cta .icon{width:18px;height:18px;} .cta:hover{background:#0b1a30;}
+.meter{margin:11px 0;} .meter-top{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;color:var(--ink-soft);}
+.bar{height:8px;border-radius:999px;background:#edf2f8;overflow:hidden;}
+.bar>span{display:block;height:100%;border-radius:999px;background:var(--ac,#2f6fd0);transition:width .85s cubic-bezier(.2,.7,.2,1);}
+/* gauge + ring */
+.gauge-box{filter:drop-shadow(0 10px 18px rgba(16,40,80,.14));}
+.gauge{display:block;animation:pop .5s ease both;}
+.gauge-num{font-size:34px;font-weight:800;letter-spacing:-.02em;}
+.gauge-cap{font-size:11px;fill:var(--muted);text-transform:uppercase;letter-spacing:.09em;font-weight:700;}
+.gauge-sub{font-size:12px;fill:var(--muted);}
+.gauge-arc{transition:stroke-dasharray .9s cubic-bezier(.2,.7,.2,1);}
+.ring{display:block;} .ring-num{font-size:17px;font-weight:800;} .ring-val{transition:stroke-dashoffset .9s cubic-bezier(.2,.7,.2,1);}
+/* transition blocks */
+.blocks{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+.block{background:var(--card);border:1px solid var(--line);border-top:3px solid var(--ac,#2f6fd0);border-radius:16px;padding:16px;box-shadow:var(--shadow-sm);animation:up .45s both;}
+.block-top{display:flex;justify-content:space-between;align-items:center;}
+.block-ic{width:38px;height:38px;border-radius:11px;background:var(--acw);color:var(--aci);display:grid;place-items:center;} .block-ic .icon{width:20px;height:20px;}
+.block h4{margin:10px 0 6px;font-size:15px;} .block-lvl{margin-bottom:6px;}
+/* timeline */
+.timeline{width:100%;height:auto;display:block;}
+.ax{font-size:11px;fill:var(--muted);}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin:10px 2px 2px;font-size:12px;color:var(--muted);}
+.legend i.lg{display:inline-block;width:14px;height:4px;border-radius:2px;vertical-align:middle;margin-right:5px;}
+.legend i.lg.dash{background:repeating-linear-gradient(90deg,#9bb0c8 0 4px,transparent 4px 7px);}
+.tl-narrative{display:flex;flex-direction:column;gap:9px;margin-top:14px;}
+.tl-step{display:flex;gap:10px;align-items:center;font-size:14px;color:var(--ink-soft);}
+.tl-node{width:10px;height:10px;border-radius:50%;background:var(--ac,#2f6fd0);flex:none;box-shadow:0 0 0 3px var(--acw,#e9f1fd);}
+.tl-hour{font-weight:800;min-width:46px;}
+/* alert explanation */
+.alertcard{display:flex;gap:14px;background:var(--card);border:1px solid var(--line);border-left:5px solid var(--ac,#2f6fd0);border-radius:16px;padding:18px 20px;box-shadow:var(--shadow);}
+.alertcard-ic{width:40px;height:40px;border-radius:12px;background:var(--acw);color:var(--aci);display:grid;place-items:center;flex:none;} .alertcard-ic .icon{width:22px;height:22px;}
+.alertcard h3{margin:0 0 8px;font-size:16px;} .alertcard ul{margin:0;padding-left:18px;color:var(--ink-soft);} .alertcard li{margin:6px 0;}
+/* generic cards / badges / tables (expert view) */
+.grid{display:grid;gap:14px;} .cards4{grid-template-columns:repeat(4,1fr);} .cards3{grid-template-columns:repeat(3,1fr);} .cards2{grid-template-columns:repeat(2,1fr);}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:var(--shadow-sm);}
 .card h3{margin:0 0 4px;font-size:15px;}
-.card .score{font-size:30px;font-weight:800;letter-spacing:-.02em;}
-.card .phrase{font-size:13px;color:#33485f;margin:8px 0;}
+.score{font-size:28px;font-weight:800;letter-spacing:-.02em;margin-top:4px;}
+.phrase{font-size:13px;color:var(--ink-soft);margin:8px 0;}
 .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;}
-.chip{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:3px 9px;font-size:12px;color:#41576e;}
-.section-title{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:800;margin:26px 0 12px;}
-.bar{height:7px;border-radius:999px;background:#e7eef6;overflow:hidden;margin-top:10px;}
-.bar > span{display:block;height:100%;border-radius:999px;}
-.badge{display:inline-flex;align-items:center;border-radius:999px;padding:3px 10px;color:#fff;font-weight:700;font-size:12px;}
-.calm{background:var(--calm);} .info{background:var(--info);} .watch{background:var(--watch);color:#3a2f06;}
-.elevated{background:var(--elevated);} .high{background:var(--high);} .danger{background:var(--danger);}
-.txt-calm{color:var(--calm);} .txt-info{color:var(--info);} .txt-watch{color:var(--watch);}
-.txt-elevated{color:var(--elevated);} .txt-high{color:var(--high);} .txt-danger{color:var(--danger);}
-.explain{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px;box-shadow:var(--shadow);}
-.explain h3{margin:0 0 10px;}
-.explain ul{margin:0;padding-left:20px;}
-.explain li{margin:6px 0;}
-.timeline-wrap{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:var(--shadow);}
-svg.timeline{width:100%;height:200px;display:block;}
-.tl-narrative{display:flex;flex-direction:column;gap:8px;margin-top:14px;}
-.tl-step{display:flex;gap:12px;align-items:baseline;font-size:14px;}
-.tl-hour{font-weight:800;min-width:52px;color:var(--ink2);}
-table{width:100%;border-collapse:collapse;font-size:13px;}
-th,td{border-bottom:1px solid var(--line);padding:9px 10px;text-align:left;vertical-align:top;}
-th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
-.subtabs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px;}
-.subtab{border:1px solid #cdd9e8;background:#fff;color:var(--ink);border-radius:999px;padding:7px 13px;font-weight:700;cursor:pointer;font-size:13px;}
-.subtab.active{background:var(--ink2);color:#fff;border-color:var(--ink2);}
+.chip{background:#f3f7fc;border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:12px;color:#46607a;}
+.badge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 11px;font-weight:700;font-size:12px;}
+.badge.calm{background:#e6f6ef;color:#0f7a50;} .badge.info{background:#e9f1fd;color:#1f59b4;} .badge.watch{background:#faf0d2;color:#946806;}
+.badge.elevated{background:#fcebdd;color:#b85912;} .badge.high{background:#fce4dc;color:#b23a1a;} .badge.danger{background:var(--f-danger);color:#fff;}
+.subtabs{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px;}
+.subtab{border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:999px;padding:8px 14px;font-weight:700;cursor:pointer;font-size:13px;transition:.15s;}
+.subtab:hover{border-color:#b9c9dc;} .subtab.active{background:var(--ink);color:#fff;border-color:var(--ink);}
 .frame-wrap{background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--shadow);}
 iframe{width:100%;height:70vh;min-height:560px;border:0;display:block;background:#fff;}
-.links{display:flex;flex-wrap:wrap;gap:8px;}
-.links a{background:#fff;border:1px solid var(--line);border-radius:999px;padding:7px 12px;font-size:13px;}
-.muted{color:var(--muted);font-size:13px;}
-.detail{margin-top:10px;}
-.detail summary{cursor:pointer;font-weight:700;color:var(--ink2);}
-footer{max-width:1180px;margin:10px auto 40px;padding:0 22px;color:var(--muted);font-size:12px;}
-@media(max-width:860px){.hero{grid-template-columns:1fr;}.cards4{grid-template-columns:1fr 1fr;}.cards3{grid-template-columns:1fr;}.cards2{grid-template-columns:1fr;}.metarow{grid-template-columns:1fr;}}
+.links{display:flex;flex-wrap:wrap;gap:8px;} .links a{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px;} .links a:hover{border-color:#b9c9dc;text-decoration:none;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+thead th{position:sticky;top:0;background:#f7fafd;}
+th,td{border-bottom:1px solid var(--line);padding:11px 12px;text-align:left;vertical-align:top;}
+th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+tbody tr:hover{background:#f7fafd;}
+footer{max-width:1180px;margin:24px auto 40px;padding:0 22px;color:var(--muted);font-size:12px;}
+@media(max-width:980px){.tiles{grid-template-columns:1fr 1fr;}.blocks{grid-template-columns:1fr 1fr;}.cards4{grid-template-columns:1fr 1fr;}.cards3{grid-template-columns:1fr;}.split{grid-template-columns:1fr;}.banner{grid-template-columns:1fr;}.banner-gauge{justify-self:start;}}
+@media(max-width:560px){.tiles,.blocks,.cards4{grid-template-columns:1fr;}.banner-level{font-size:28px;}}
 </style>
 </head>
 <body>
 <div class="topbar">
   <div class="wrap">
     <div class="brand">
-      <div class="mark">MV</div>
+      <div class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 17a8 8 0 0 1 16 0"/><path d="M12 17l4.5-4.5"/><circle cx="12" cy="17" r="1.4" fill="currentColor" stroke="none"/></svg></div>
       <div><h1>MeteoVoid Belgique</h1><p>Détecter la bascule, pas seulement afficher la météo.</p></div>
     </div>
     <div class="stamp">Dernière génération<br><strong id="stamp">__GENERATED_AT__</strong></div>
@@ -1146,93 +1184,165 @@ const esc = (s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&l
 const num = (v,d='n/a')=> (v==null||v==='')?d:(typeof v==='number'? (Number.isInteger(v)?v:v.toFixed(2)) : v);
 const pct = (v)=> v==null? '—' : Math.round(Math.max(0,Math.min(1,v))*100)+'%';
 const cls = (m)=> (m&&m.class)||'calm';
-const colorOf = (c)=>({calm:'#2f9e6f',info:'#3f76c0',watch:'#d6a426',elevated:'#e07a2e',high:'#dd5a30',danger:'#cf3b3b'}[c]||'#2f9e6f');
+const colorOf = (c)=>({calm:'#1f9d6b',info:'#2f6fd0',watch:'#e0a31a',elevated:'#e2741f',high:'#db4f2a',danger:'#d4332f'}[c]||'#2f6fd0');
+const inkOf = (c)=>({calm:'#0f7a50',info:'#1f59b4',watch:'#946806',elevated:'#b85912',high:'#b23a1a',danger:'#b21f1c'}[c]||'#1f59b4');
+const clamp01 = (v)=>Math.max(0,Math.min(1,(typeof v==='number'?v:0)||0));
+let GID=0;
 
-function bar(score,c){const w=Math.round(Math.max(0,Math.min(1,score||0))*100);return `<div class="bar"><span style="width:${w}%;background:${colorOf(c)}"></span></div>`;}
+const ICONS={
+  gauge:'<path d="M4 18a8 8 0 0 1 16 0"/><path d="M12 18l4.2-4.2"/><circle cx="12" cy="18" r="1.3" fill="currentColor" stroke="none"/>',
+  shield:'<path d="M12 3l7 3v5c0 4.2-3 7.4-7 9-4-1.6-7-4.8-7-9V6l7-3z"/>',
+  clock:'<circle cx="12" cy="12" r="8.2"/><path d="M12 8v4.3l3 1.8"/>',
+  pin:'<path d="M12 21s-6-5.4-6-10a6 6 0 1 1 12 0c0 4.6-6 10-6 10z"/><circle cx="12" cy="11" r="2.2"/>',
+  flame:'<path d="M12 3c2.2 3 5 4.2 5 8a5 5 0 0 1-10 0c0-2 .9-3.2 2-4.2.4 2 2 2.4 3 2.2-1-2-1.2-4 0-6z"/>',
+  bolt:'<path d="M13 2 5 13h5l-1 9 9-12h-5l1-8z"/>',
+  wind:'<path d="M3 8h10a2.6 2.6 0 1 0-2.6-2.6"/><path d="M3 12.5h14a2.6 2.6 0 1 1-2.6 2.6"/><path d="M3 16.5h7"/>',
+  layers:'<path d="M12 3 3 8l9 5 9-5-9-5z"/><path d="M3.5 13 12 17.7 20.5 13"/>',
+  eye:'<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+  flow:'<path d="M4 12h12"/><path d="M12.5 6.5 19 12l-6.5 5.5"/>',
+  target:'<circle cx="12" cy="12" r="8.2"/><circle cx="12" cy="12" r="3.6"/><circle cx="12" cy="12" r=".9" fill="currentColor" stroke="none"/>',
+  info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><circle cx="12" cy="7.8" r="1" fill="currentColor" stroke="none"/>',
+  chart:'<path d="M4 19V5"/><path d="M4 19h16"/><path d="M7.5 15l3.2-4 3 2 4-5.5"/>'
+};
+function icon(name){return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]||ICONS.info}</svg>`;}
+
+function bar(score,c){const w=Math.round(clamp01(score)*100);return `<div class="bar"><span class="ac-${c||'info'}" style="width:${w}%"></span></div>`;}
+
+function gauge(value,opts){opts=opts||{};
+  const size=opts.size||190, sw=opts.sw||15, cx=size/2, r=(size-sw)/2-2, C=2*Math.PI*r, SPAN=.75;
+  const v=clamp01(value), track=C*SPAN, gap=C-track, val=track*v;
+  const c=opts.cls||'info', col=colorOf(c), ink=inkOf(c), gid='gg'+(GID++);
+  const center=opts.center!=null?opts.center:Math.round(v*100);
+  return `<div class="gauge-box"><svg class="gauge" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" role="img" aria-label="jauge ${esc(center)}">
+    <defs><linearGradient id="${gid}" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="${col}" stop-opacity=".4"/><stop offset="1" stop-color="${col}"/></linearGradient></defs>
+    <g transform="rotate(135 ${cx} ${cx})">
+      <circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="#e8eef6" stroke-width="${sw}" stroke-linecap="round" stroke-dasharray="${track.toFixed(1)} ${gap.toFixed(1)}"/>
+      <circle class="gauge-arc" cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="url(#${gid})" stroke-width="${sw}" stroke-linecap="round" stroke-dasharray="${val.toFixed(1)} ${(C-val).toFixed(1)}" data-arc="${val.toFixed(1)}" data-circ="${C.toFixed(1)}"/>
+    </g>
+    <text x="${cx}" y="${cx-1}" text-anchor="middle" class="gauge-num" style="fill:${ink}">${esc(center)}</text>
+    ${opts.label?`<text x="${cx}" y="${cx+19}" text-anchor="middle" class="gauge-cap">${esc(opts.label)}</text>`:''}
+    ${opts.sub?`<text x="${cx}" y="${cx+34}" text-anchor="middle" class="gauge-sub">${esc(opts.sub)}</text>`:''}
+  </svg></div>`;}
+
+function ring(value,c,size){size=size||64;const sw=7,cx=size/2,r=(size-sw)/2,C=2*Math.PI*r;
+  const v=clamp01(value),off=C*(1-v),col=colorOf(c||'info'),ink=inkOf(c||'info');
+  return `<svg class="ring" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" aria-hidden="true">
+    <circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="#ecf1f8" stroke-width="${sw}"/>
+    <circle class="ring-val" cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="${col}" stroke-width="${sw}" stroke-linecap="round" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" data-off="${off.toFixed(1)}" data-circ="${C.toFixed(1)}" transform="rotate(-90 ${cx} ${cx})"/>
+    <text x="${cx}" y="${cx+5}" text-anchor="middle" class="ring-num" style="fill:${ink}">${Math.round(v*100)}</text>
+  </svg>`;}
+
+function smoothPath(pts){if(pts.length<2)return pts.length?`M ${pts[0][0]} ${pts[0][1]}`:'';
+  let d=`M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
+  for(let i=0;i<pts.length-1;i++){const p0=pts[i-1]||pts[i],p1=pts[i],p2=pts[i+1],p3=pts[i+2]||p2;
+    const c1x=p1[0]+(p2[0]-p0[0])/6,c1y=p1[1]+(p2[1]-p0[1])/6,c2x=p2[0]-(p3[0]-p1[0])/6,c2y=p2[1]-(p3[1]-p1[1])/6;
+    d+=` C ${c1x.toFixed(1)} ${c1y.toFixed(1)}, ${c2x.toFixed(1)} ${c2y.toFixed(1)}, ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;}
+  return d;}
+
+function animateGauges(){try{requestAnimationFrame(()=>{
+  document.querySelectorAll('.gauge-arc').forEach(el=>{const arc=parseFloat(el.getAttribute('data-arc')),circ=parseFloat(el.getAttribute('data-circ'));
+    el.style.strokeDasharray='0 '+circ;requestAnimationFrame(()=>{el.style.strokeDasharray=arc+' '+(circ-arc);});});
+  document.querySelectorAll('.ring-val').forEach(el=>{const off=parseFloat(el.getAttribute('data-off')),circ=parseFloat(el.getAttribute('data-circ'));
+    el.style.strokeDashoffset=circ;requestAnimationFrame(()=>{el.style.strokeDashoffset=off;});});
+});}catch(e){}}
 
 function renderSimple(vm){
-  const s=vm.simple||{}, op=s.operational_level||{}, conf=s.confidence||{}, win=s.critical_window||{}, zone=s.main_zone||{};
-  const c=cls(op);
+  const s=vm.simple||{}, op=s.operational_level||{}, conf=s.confidence||{}, win=s.critical_window||{}, zone=s.main_zone||{}, o=vm.operational||{};
+  const c=cls(op), tc=cls(o.transition_level);
+  const tile=(ic,ac,k,v,sub)=>`<div class="tile ${ac}"><div class="tile-ic">${icon(ic)}</div><div><div class="tile-k">${esc(k)}</div><div class="tile-v">${v}</div><div class="tile-s">${esc(sub)}</div></div></div>`;
   return `
-  <div class="hero">
-    <div class="bigcard">
+  <section class="banner ac-${c}">
+    <div class="banner-main">
       <div class="kicker">Niveau opérationnel</div>
-      <div class="level-pill"><span class="dot" style="background:${colorOf(c)}"></span><span class="level-name txt-${c}">${esc(op.label)}</span></div>
-      <p class="synthesis">${esc(s.synthesis)}</p>
-      <div class="metarow">
-        <div class="metric"><div class="k">Score MeteoVoid</div><div class="v">${num(s.model_score)}</div><div class="s">signal modèle (0–1)</div></div>
-        <div class="metric"><div class="k">Confiance du run</div><div class="v txt-${cls(conf)}">${pct(conf.score)} · ${esc(conf.label)}</div><div class="s">qualité + corroboration</div></div>
-        <div class="metric"><div class="k">Fenêtre critique</div><div class="v">${esc(win.label)}</div><div class="s">heure locale (${esc(vm.meta&&vm.meta.timezone)})</div></div>
-        <div class="metric"><div class="k">Zone principale</div><div class="v" style="font-size:18px">${esc(zone.name)}</div><div class="s">${esc(zone.top_station||'')}</div></div>
-      </div>
+      <h2 class="banner-level">${esc(op.label)}</h2>
+      <p class="banner-syn">${esc(s.synthesis)}</p>
+      ${(s.headline_signals&&s.headline_signals.length)?'<div class="banner-tags">'+s.headline_signals.map(x=>`<span class="chip">${esc(x)}</span>`).join('')+'</div>':''}
     </div>
-    <div class="bigcard">
-      <div class="kicker">Que faut-il retenir ?</div>
-      <p class="muted" style="margin-top:8px">${esc(s.reason||s.public_wording||'')}</p>
-      ${(s.headline_signals&&s.headline_signals.length)?'<div class="chips">'+s.headline_signals.map(x=>`<span class="chip">${esc(x)}</span>`).join('')+'</div>':''}
-      <div class="section-title" style="margin-top:18px">Facteurs de confiance</div>
-      ${(conf.factors||[]).map(f=>`<div style="margin:8px 0"><div style="display:flex;justify-content:space-between;font-size:13px"><span>${esc(f.name)}</span><strong>${pct(f.value)}</strong></div>${bar(f.value,'info')}</div>`).join('')}
-      <button class="subtab" style="margin-top:16px" onclick="go('operational')">Voir l’analyse complète →</button>
-    </div>
+    <div class="banner-gauge">${gauge(o.void_collapse_signal,{cls:tc,center:num(o.void_collapse_signal),label:'void collapse',sub:(o.transition_level||{}).label})}</div>
+  </section>
+  <div class="tiles">
+    ${tile('gauge','ac-'+c,'Score MeteoVoid',num(s.model_score),'signal modèle (0–1)')}
+    ${tile('shield','ac-'+cls(conf),'Confiance du run',pct(conf.score)+' · '+esc(conf.label),'qualité + corroboration')}
+    ${tile('clock','ac-info','Fenêtre critique',esc(win.label),'heure locale '+((vm.meta&&vm.meta.timezone)||''))}
+    ${tile('pin','ac-info','Zone principale',esc(zone.name),zone.top_station||'—')}
   </div>
-  <div class="section-title">Lecture rapide</div>
-  <div class="grid cards3">
-    <div class="card"><div class="kicker">Sévérité dominante</div><div style="margin-top:8px"><span class="badge ${cls(s.severity)}">${esc((s.severity||{}).label)}</span></div><p class="phrase">Classe de risque modèle la plus marquée.</p></div>
-    <div class="card"><div class="kicker">Bascule (void collapse)</div><div class="score txt-${cls(vm.operational&&vm.operational.transition_level)}">${num(vm.operational&&vm.operational.void_collapse_signal)}</div><p class="phrase">${esc((vm.operational&&vm.operational.transition_level||{}).label)}</p></div>
-    <div class="card"><div class="kicker">Fenêtre sensible</div><div class="score">${esc(win.start_hour||'—')}</div><p class="phrase">${win.status==='available'?('jusqu’à '+esc(win.end_hour)+', pic '+esc(win.peak_hour)):'pas de fenêtre high identifiée'}</p></div>
+  <div class="split">
+    <div class="panel">
+      <div class="panel-h">${icon('info')}<h3>Que faut-il retenir ?</h3></div>
+      <p class="lead">${esc(s.reason||s.public_wording||'')}</p>
+      <div class="quick">
+        <div class="quick-i"><span class="badge ${cls(s.severity)}">${esc((s.severity||{}).label)}</span><span>sévérité modèle dominante</span></div>
+        <div class="quick-i"><strong class="txt-${tc}">${num(o.void_collapse_signal)}</strong><span>signal de bascule — ${esc((o.transition_level||{}).label)}</span></div>
+        <div class="quick-i"><strong>${esc(win.start_hour||'—')}</strong><span>${win.status==='available'?('fenêtre jusqu’à '+esc(win.end_hour)+', pic '+esc(win.peak_hour)):'pas de fenêtre sensible identifiée'}</span></div>
+      </div>
+      <button class="cta" onclick="go('operational')">Voir l’analyse complète ${icon('flow')}</button>
+    </div>
+    <div class="panel">
+      <div class="panel-h">${icon('shield')}<h3>Confiance du signal</h3></div>
+      ${(conf.factors||[]).map(f=>`<div class="meter ac-info"><div class="meter-top"><span>${esc(f.name)}</span><strong>${pct(f.value)}</strong></div><div class="bar"><span class="ac-info" style="width:${Math.round(clamp01(f.value)*100)}%"></span></div></div>`).join('')}
+      <p class="muted" style="margin-top:8px">Score global ${pct(conf.score)} (${esc(conf.label)}) : combinaison qualité des sources, cohérence interne, confirmation externe et cohérence spatiale.</p>
+    </div>
   </div>`;
 }
 
 function renderOperational(vm){
   const o=vm.operational||{}, blocks=o.blocks||[], tl=o.timeline||{}, ax=o.alert_explanation||{};
-  const blockCards = blocks.map(b=>{
-    const c=cls(b.level);
-    return `<div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:baseline"><h3>${esc(b.title)}</h3><span class="badge ${c}">${esc((b.level||{}).label)}</span></div>
-      <div class="score txt-${c}">${num(b.score)}</div>
-      ${bar(b.score,c)}
+  const BI={charge:'flame',declencheur:'bolt',organisation:'wind',couvercle:'layers',observation:'eye',amont:'flow',void:'target'};
+  const blockCards = blocks.map((b,i)=>{const c=cls(b.level);
+    return `<div class="block ac-${c}" style="animation-delay:${i*45}ms">
+      <div class="block-top"><div class="block-ic">${icon(BI[b.key]||'chart')}</div>${ring(b.score,c,64)}</div>
+      <h4>${esc(b.title)}</h4>
+      <div class="block-lvl"><span class="badge ${c}">${esc((b.level||{}).label)}</span></div>
       <p class="phrase">${esc(b.phrase)}</p>
       ${(b.drivers&&b.drivers.length)?'<div class="chips">'+b.drivers.map(d=>`<span class="chip">${esc(d)}</span>`).join('')+'</div>':''}
     </div>`;}).join('');
+  const tc=cls(o.transition_level), ac=cls((vm.simple||{}).operational_level);
   return `
-  <div class="bigcard" style="margin-bottom:18px">
-    <div class="kicker">Tableau de bord · Convective Transition</div>
-    <div class="level-pill"><span class="dot" style="background:${colorOf(cls(o.transition_level))}"></span><span class="level-name txt-${cls(o.transition_level)}">${esc((o.transition_level||{}).label)}</span><span class="muted">signal ${num(o.void_collapse_signal)}</span></div>
-    <p class="synthesis" style="font-size:15px">${esc(o.interpretation)}</p>
-  </div>
-  <div class="section-title">Jauge de bascule</div>
-  <div class="grid cards4">${blockCards}</div>
+  <section class="banner ac-${tc}">
+    <div class="banner-main">
+      <div class="kicker">Tableau de bord · Convective Transition</div>
+      <h2 class="banner-level">${esc((o.transition_level||{}).label)}</h2>
+      <p class="banner-syn">${esc(o.interpretation)}</p>
+    </div>
+    <div class="banner-gauge">${gauge(o.void_collapse_signal,{cls:tc,center:num(o.void_collapse_signal),label:'void collapse signal'})}</div>
+  </section>
+  <div class="section-title">Jauge de bascule · 7 composantes</div>
+  <div class="blocks">${blockCards}</div>
   <div class="section-title">Timeline horaire</div>
-  <div class="timeline-wrap">
+  <div class="panel">
     ${renderTimelineSvg(tl)}
-    <div class="tl-narrative">${(tl.narrative||[]).map(n=>`<div class="tl-step"><span class="tl-hour txt-${({watch:'watch',elevated:'elevated',peak:'danger',end:'info',calm:'calm'}[n.kind]||'info')}">${esc(n.hour)}</span><span>${esc(n.text)}</span></div>`).join('')}</div>
-    <p class="muted" style="margin-top:10px">${esc(tl.summary||'')}</p>
+    <div class="legend"><span><i class="lg" style="background:var(--f-info)"></i>score modèle (max horaire)</span><span><i class="lg dash"></i>fenêtre sensible</span><span><i class="lg" style="background:var(--f-danger)"></i>pic</span></div>
+    <div class="tl-narrative">${(tl.narrative||[]).map(n=>{const k=({watch:'watch',elevated:'elevated',peak:'danger',end:'info',calm:'calm'}[n.kind]||'info');return `<div class="tl-step ac-${k}"><span class="tl-node"></span><span class="tl-hour txt-${k}">${esc(n.hour)}</span><span>${esc(n.text)}</span></div>`;}).join('')}</div>
+    <p class="muted" style="margin-top:8px">${esc(tl.summary||'')}</p>
   </div>
   <div class="section-title">Pourquoi cette alerte ?</div>
-  <div class="explain">
-    <h3>${esc(ax.title)}</h3>
-    <ul>${(ax.bullets||[]).map(b=>`<li>${esc(b)}</li>`).join('')}</ul>
+  <div class="alertcard ac-${ac}">
+    <div class="alertcard-ic">${icon('info')}</div>
+    <div><h3>${esc(ax.title)}</h3><ul>${(ax.bullets||[]).map(b=>`<li>${esc(b)}</li>`).join('')}</ul></div>
   </div>`;
 }
 
 function renderTimelineSvg(tl){
   const hours=(tl.hours||[]).filter(h=>h.max_score!=null);
   if(!hours.length) return '<p class="muted">Timeline horaire indisponible pour ce run.</p>';
-  const W=1000,H=180,pad=28;
-  const n=hours.length;
-  const x=i=> pad + (W-2*pad)*(n<=1?0.5:i/(n-1));
-  const y=v=> (H-pad) - (H-2*pad)*Math.max(0,Math.min(1,v));
-  let path='', area='';
-  hours.forEach((h,i)=>{const px=x(i),py=y(h.max_score);path+=(i?'L':'M')+px.toFixed(1)+' '+py.toFixed(1)+' ';});
-  area = `M ${x(0).toFixed(1)} ${(H-pad)} `+hours.map((h,i)=>'L '+x(i).toFixed(1)+' '+y(h.max_score).toFixed(1)).join(' ')+` L ${x(n-1).toFixed(1)} ${(H-pad)} Z`;
-  const dots=hours.map((h,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${y(h.max_score).toFixed(1)}" r="3" fill="${colorOf(h.class)}"></circle>`).join('');
-  const ticks=hours.map((h,i)=> (i%3===0)?`<text x="${x(i).toFixed(1)}" y="${H-6}" font-size="10" text-anchor="middle" fill="#6a7b90">${esc(h.hour)}</text>`:'').join('');
-  const markers=(tl.markers||[]).map(m=>{const idx=hours.findIndex(h=>h.time===m.time);if(idx<0)return '';const px=x(idx);return `<line x1="${px.toFixed(1)}" y1="${pad-6}" x2="${px.toFixed(1)}" y2="${H-pad}" stroke="${m.kind==='peak'?'#cf3b3b':'#9fb2c8'}" stroke-dasharray="3 3"></line>`;}).join('');
-  return `<svg class="timeline" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Timeline horaire du score">
-    <line x1="${pad}" y1="${y(0.65).toFixed(1)}" x2="${W-pad}" y2="${y(0.65).toFixed(1)}" stroke="#f0d9a8"></line>
-    <path d="${area}" fill="#3f76c022"></path>
-    <path d="${path}" fill="none" stroke="#3f76c0" stroke-width="2.5"></path>
-    ${markers}${dots}${ticks}
+  const W=1000,H=210,padX=36,padT=22,padB=28,n=hours.length;
+  const x=i=> padX + (W-2*padX)*(n<=1?0.5:i/(n-1));
+  const y=v=> (H-padB) - (H-padT-padB)*clamp01(v);
+  const pts=hours.map((h,i)=>[x(i),y(h.max_score)]);
+  const line=smoothPath(pts);
+  const area=line+` L ${x(n-1).toFixed(1)} ${(H-padB)} L ${x(0).toFixed(1)} ${(H-padB)} Z`;
+  const grid=[0,.25,.5,.75,1].map(g=>`<line x1="${padX}" y1="${y(g).toFixed(1)}" x2="${W-padX}" y2="${y(g).toFixed(1)}" stroke="#eef3f9"/>`).join('');
+  const thr=`<line x1="${padX}" y1="${y(.65).toFixed(1)}" x2="${W-padX}" y2="${y(.65).toFixed(1)}" stroke="#e7c98f" stroke-dasharray="4 4"/><text x="${(W-padX).toFixed(1)}" y="${(y(.65)-5).toFixed(1)}" text-anchor="end" class="ax">seuil élevé</text>`;
+  const markers=(tl.markers||[]).map(m=>{const idx=hours.findIndex(h=>h.time===m.time);if(idx<0)return '';const px=x(idx);const col=m.kind==='peak'?colorOf('danger'):'#9bb0c8';
+    return `<line x1="${px.toFixed(1)}" y1="${padT}" x2="${px.toFixed(1)}" y2="${(H-padB).toFixed(1)}" stroke="${col}" stroke-dasharray="3 4"/><text x="${px.toFixed(1)}" y="${(padT-6).toFixed(1)}" text-anchor="middle" class="ax" style="fill:${col}">${esc(m.hour)}</text>`;}).join('');
+  const dots=hours.map((h,i)=>`<circle cx="${x(i).toFixed(1)}" cy="${y(h.max_score).toFixed(1)}" r="${(h.class==='danger'||h.class==='high')?4:3}" fill="${colorOf(h.class)}" stroke="#fff" stroke-width="1.5"/>`).join('');
+  const ticks=hours.map((h,i)=> (i%3===0)?`<text x="${x(i).toFixed(1)}" y="${H-8}" text-anchor="middle" class="ax">${esc(h.hour)}</text>`:'').join('');
+  return `<svg class="timeline" viewBox="0 0 ${W} ${H}" role="img" aria-label="Timeline horaire du score modèle">
+    <defs><linearGradient id="tlfill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${colorOf('info')}" stop-opacity=".26"/><stop offset="1" stop-color="${colorOf('info')}" stop-opacity="0"/></linearGradient></defs>
+    ${grid}${thr}${markers}
+    <path d="${area}" fill="url(#tlfill)"/>
+    <path d="${line}" fill="none" stroke="${colorOf('info')}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>
+    ${dots}${ticks}
   </svg>`;
 }
 
@@ -1316,6 +1426,7 @@ function paint(){
   document.getElementById('view-operational').innerHTML = renderOperational(VM);
   document.getElementById('view-expert').innerHTML = renderExpert(VM);
   wireExpert();
+  animateGauges();
   document.getElementById('footer').innerHTML = `MeteoVoid Belgique · run <code>${esc((VM.meta&&VM.meta.run_id)||'')}</code> · mode ${esc((VM.meta&&VM.meta.data_mode)||'')} · ${esc((VM.meta&&VM.meta.disclaimer)||'')}`;
 }
 function go(view){
