@@ -8,7 +8,8 @@ version = "0.3.0"
 description = "Graph-based upstream weather silence & anomaly detector – voids before the storm"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {file = "LICENSE"}
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{name = "MeteoVoid contributors"}]
 dependencies = [
   "numpy>=1.26,<3",
@@ -56,7 +57,10 @@ meteovoid = "meteovoid.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-packages = ["meteovoid"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["meteovoid*"]
 
 [tool.ruff]
 target-version = "py311"

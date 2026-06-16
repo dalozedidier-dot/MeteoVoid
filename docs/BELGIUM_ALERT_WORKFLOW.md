@@ -41,9 +41,9 @@ Niveaux opérationnels possibles :
 - `watch` : signal à surveiller.
 - `watch_reinforced` : signal modèle élevé sans confirmation suffisante.
 - `pre_alert_confirmed` : signal modèle élevé et confirmation externe partielle.
-- `alert_confirmed` : signal modèle très élevé et confirmation externe partielle ou forte.
+- `alert_confirmed` : signal modèle très élevé avec confirmation externe forte. Ce niveau reste un signal technique et non une alerte officielle.
 
-Même en `alert_confirmed`, le rapport reste non officiel. Le texte public doit renvoyer vers l’IRM/KMI, MeteoAlarm, le radar et la foudre.
+Le vocabulaire public évite désormais « alerte confirmée » sauf reprise explicite d’une source officielle. MeteoVoid doit parler de signal technique, de veille ou de pré-alerte, et renvoyer vers l’IRM/KMI, MeteoAlarm, le radar et la foudre.
 
 ## Confirmation externe manuelle
 
@@ -113,7 +113,7 @@ Le webhook générique utilise `METEOVOID_ALERT_WEBHOOK_URL`. Il envoie :
 - tendance
 - stations principales
 
-Pour éviter les alertes excessives, le workflow peut être lancé avec `min_severity`. Si le niveau opérationnel passe en `pre_alert_confirmed` ou `alert_confirmed`, la notification est traitée comme une alerte interne.
+Pour éviter les alertes excessives, le workflow peut être lancé avec `min_severity`. Si le niveau opérationnel passe en `pre_alert_confirmed` ou `alert_confirmed`, la notification est traitée comme une alerte interne. Le message public reste non officiel et doit préciser le niveau de confirmation externe.
 
 ## Limites
 

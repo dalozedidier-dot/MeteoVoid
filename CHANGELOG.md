@@ -1,5 +1,42 @@
 # Changelog
 
+## Belgium public interface — visual refresh and interactive location map
+
+- Visual redesign of the three views: a radial (270°) "void collapse" gauge in the
+  banners, the seven convective-transition components rendered as progress-ring cards
+  with icons, severity-tinted status banners, icon metric tiles, confidence meters, a
+  smoothed timeline (gradient area, high-threshold line, timestamped markers) and a
+  refreshed dark header. Sober palette: red reserved for real danger.
+- New **Carte** tab with an interactive Leaflet map (CARTO Voyager basemap): one marker
+  per MeteoVoid station, sized by score and coloured by severity, an optional RainViewer
+  radar overlay (off by default) and a **location selector**. Choosing a place (or
+  clicking a marker) recenters the map and opens a detail panel with that location's
+  operational readout (score, drivers, hourly sparkline, signals). Degrades gracefully:
+  if the basemap cannot load, the selector and detail panel still work.
+- `api/stations.json` now exposes every station with `lat`/`lon`, driver metrics and a
+  compact hourly score trace so the map and external clients can render locations.
+
+## Belgium public interface redesign — three reading levels + static JSON API
+
+- Rebuilt `tools/build_belgium_public_site.py` around three reading levels instead of
+  showing every card at once:
+  - **Vue simple** — operational level, MeteoVoid score, run confidence, critical window,
+    main zone and an automatic synthesis sentence.
+  - **Vue opérationnelle** — a *Convective Transition* gauge with seven blocks (charge,
+    déclencheur, organisation, couvercle, observation, propagation amont, void collapse
+    signal), each with a score, colour, explanatory sentence and the responsible drivers;
+    an hourly timeline (SVG curve + automatic narrative) and an automatic "why this alert"
+    explanation.
+  - **Vue expert** — stations/zones, emerging-observation channels, scientific validation,
+    source health and the existing maps/graphs/exports, grouped by usage and behind tabs.
+- Added a clean static JSON API under `_site/api/`: `latest.json`, `stations.json`,
+  `timeline.json`, `transition.json`, `sources.json`, `validation.json` and an
+  `index.json` manifest. The page reads these files when served over HTTP and falls back
+  to an inlined view-model offline.
+- Sober design: light/night-blue palette, white cards, red reserved for real danger,
+  orange for watch, blue/grey for information.
+- Added `tests/test_build_public_site.py` (API shape, colour mapping, empty-run robustness).
+
 ## Belgium public dashboard and GitHub Pages
 
 - Added `tools/build_belgium_public_site.py` to build a cleaner public static dashboard from MeteoVoid Belgium outputs.

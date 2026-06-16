@@ -2119,6 +2119,8 @@ def _operational_state(report: dict[str, Any]) -> dict[str, Any]:
     model_severity = str(aggregate.get("severity", "normal"))
     external = report.get("external_confirmation", {})
     external_score = float(external.get("score") or 0.0) if isinstance(external, dict) else 0.0
+    external_inputs = external.get("inputs", {}) if isinstance(external, dict) else {}
+    external_inputs = external_inputs if isinstance(external_inputs, dict) else {}
     trend = report.get("trend", {})
     trend_status = (
         str(trend.get("status", "no_history")) if isinstance(trend, dict) else "no_history"
@@ -2129,10 +2131,31 @@ def _operational_state(report: dict[str, Any]) -> dict[str, Any]:
     model_high = float(op_thresholds.get("model_high", 0.65))
     model_alert = float(op_thresholds.get("model_alert", 0.78))
     external_partial = float(op_thresholds.get("external_partial", 0.40))
+    external_strong = float(op_thresholds.get("external_strong", 0.75))
 
-    if model_score >= model_alert and external_score >= external_partial:
+    irm_level = str(external_inputs.get("irm_warning_level", "none"))
+    metealarm_level = str(external_inputs.get("metealarm_level", "none"))
+    estofex_level = str(external_inputs.get("estofex_level", "none"))
+    radar_confirmation = str(external_inputs.get("radar_confirmation", "none"))
+    lightning_confirmation = str(external_inputs.get("lightning_confirmation", "none"))
+
+    official_alert = irm_level in {"yellow", "orange", "red"} or metealarm_level in {
+        "yellow",
+        "orange",
+        "red",
+    }
+    strong_external_confirmation = (
+        external_score >= external_strong
+        or irm_level in {"orange", "red"}
+        or metealarm_level in {"orange", "red"}
+        or estofex_level in {"level2", "level3"}
+        or radar_confirmation == "strong"
+        or lightning_confirmation == "confirmed"
+    )
+
+    if model_score >= model_alert and strong_external_confirmation:
         level = "alert_confirmed"
-        reason = "signal modèle très élevé et confirmation externe partielle ou forte"
+        reason = "signal modèle très élevé et confirmation externe forte"
     elif model_score >= model_high and external_score >= external_partial:
         level = "pre_alert_confirmed"
         reason = "signal modèle élevé et confirmation externe partielle"
@@ -2153,20 +2176,21 @@ def _operational_state(report: dict[str, Any]) -> dict[str, Any]:
         reason = f"{reason}. Attention : qualité source dégradée"
     if trend_status in {"rising", "rising_fast"} and level in {"watch", "watch_reinforced"}:
         reason = f"{reason}. Tendance en hausse"
+
     notification_allowed = level in {
         "watch_reinforced",
         "pre_alert_confirmed",
         "alert_confirmed",
     }
-    official_alert = False
     public_wording_by_level = {
         "normal": "veille technique normale, non officielle",
         "low_watch": "veille technique faible, non officielle",
         "watch": "veille technique, non officielle",
         "watch_reinforced": "veille renforcée, non officielle",
         "pre_alert_confirmed": "pré-alerte technique confirmée, non officielle",
-        "alert_confirmed": "alerte technique confirmée, non officielle",
+        "alert_confirmed": "signal technique fortement confirmé, non officiel",
     }
+    public_alert_allowed = level in {"pre_alert_confirmed", "alert_confirmed"}
 
     return {
         "level": level,
@@ -2179,7 +2203,8 @@ def _operational_state(report: dict[str, Any]) -> dict[str, Any]:
         "notification_allowed": notification_allowed,
         "public_wording": public_wording_by_level.get(level, "veille technique, non officielle"),
         "official_alert": official_alert,
-        "public_alert_allowed": level in {"pre_alert_confirmed", "alert_confirmed"},
+        "strong_external_confirmation": bool(strong_external_confirmation),
+        "public_alert_allowed": public_alert_allowed,
         "public_alert_caution": (
             "Ne jamais publier comme alerte officielle. "
             "Comparer avec IRM/KMI, MeteoAlarm, radar et foudre."

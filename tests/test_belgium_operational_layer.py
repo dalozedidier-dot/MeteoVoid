@@ -53,3 +53,67 @@ def test_calibration_changes_severity_threshold(tmp_path: Path) -> None:
         assert _severity_from_score(0.61) == "high"
     finally:
         _set_active_calibration({})
+
+
+def test_partial_external_confirmation_stays_pre_alert() -> None:
+    from tools.generate_belgium_alert_report import _operational_state
+
+    report = {
+        "aggregate": {
+            "score": 0.86,
+            "severity": "alert",
+            "source_ok_count": 1,
+            "source_error_count": 0,
+        },
+        "external_confirmation": {
+            "score": 0.45,
+            "inputs": {
+                "irm_warning_level": "none",
+                "metealarm_level": "none",
+                "estofex_level": "none",
+                "radar_confirmation": "none",
+                "lightning_confirmation": "none",
+            },
+        },
+        "trend": {"status": "stable"},
+        "source_status": {"source_health_score": 1.0},
+    }
+
+    state = _operational_state(report)
+
+    assert state["level"] == "pre_alert_confirmed"
+    assert state["official_alert"] is False
+    assert state["strong_external_confirmation"] is False
+    assert state["public_wording"] != "alerte technique confirmée, non officielle"
+
+
+def test_strong_external_confirmation_allows_confirmed_signal() -> None:
+    from tools.generate_belgium_alert_report import _operational_state
+
+    report = {
+        "aggregate": {
+            "score": 0.86,
+            "severity": "alert",
+            "source_ok_count": 1,
+            "source_error_count": 0,
+        },
+        "external_confirmation": {
+            "score": 0.82,
+            "inputs": {
+                "irm_warning_level": "orange",
+                "metealarm_level": "none",
+                "estofex_level": "none",
+                "radar_confirmation": "none",
+                "lightning_confirmation": "none",
+            },
+        },
+        "trend": {"status": "stable"},
+        "source_status": {"source_health_score": 1.0},
+    }
+
+    state = _operational_state(report)
+
+    assert state["level"] == "alert_confirmed"
+    assert state["official_alert"] is True
+    assert state["strong_external_confirmation"] is True
+    assert state["public_alert_allowed"] is True
