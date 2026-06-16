@@ -13,6 +13,27 @@ app = typer.Typer(
 )
 
 
+def push_synthetic_stream(
+    redis_url: str,
+    stream: str,
+    station_id: str,
+    variable: str,
+    steps: int,
+    sleep: float,
+) -> None:
+    """Compatibility wrapper; lazy-loads the live/simulate implementation."""
+    from .simulate import push_synthetic_stream as _push_synthetic_stream
+
+    _push_synthetic_stream(redis_url, stream, station_id, variable, steps, sleep)
+
+
+def run_live_worker(redis_url: str, in_stream: str, out_stream: str) -> None:
+    """Compatibility wrapper; lazy-loads the Redis worker implementation."""
+    from .stream import run_live_worker as _run_live_worker
+
+    _run_live_worker(redis_url, in_stream, out_stream)
+
+
 @app.command()
 def scan(
     csv_path: Path = typer.Argument(..., exists=True, dir_okay=False, readable=True),
@@ -42,8 +63,6 @@ def simulate(
     sleep: float = 0.01,
 ) -> None:
     """Publish synthetic observations into a Redis Stream."""
-    from .simulate import push_synthetic_stream
-
     push_synthetic_stream(redis_url, stream, station_id, variable, steps, sleep)
 
 
@@ -54,8 +73,6 @@ def live(
     out_stream: str = "meteovoid:reports",
 ) -> None:
     """Consume observations from Redis Streams and emit live reports."""
-    from .stream import run_live_worker
-
     run_live_worker(redis_url, in_stream, out_stream)
 
 
