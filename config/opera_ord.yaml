@@ -1,0 +1,18 @@
+# MeteoVoid OPERA ORD / MeteoGate connector.
+# Live fetch is disabled by default. Enable it explicitly with --enable-opera-ord.
+# Documentation: https://eumetnet.github.io/openradardata-documentation/
+
+contract: opera_ord_connector_config_v1
+base_url: "https://api.meteogate.eu/eu-eumetnet-weather-radar"
+api_key_env: METEOVOID_METEOGATE_API_KEY
+queries:
+  - id: opera_example_single_site_dbzh
+    collection: observations
+    location_id: "0-578-0-nohur"
+    standard_name: DBZH
+    level: "../5.0"
+    format: ODIM
+    method: scan
+    f: CoverageJSON
+    datetime: ""
+    product_hint: "Single-site OPERA ODIM DBZH example; set datetime before operational use."

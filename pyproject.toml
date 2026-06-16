@@ -38,6 +38,11 @@ viz = [
   "matplotlib>=3.8",
 ]
 
+radar = [
+  "wradlib>=2.2,<3",
+  "pysteps>=1.10,<2",
+]
+
 
 dev = [
   "pytest>=8",

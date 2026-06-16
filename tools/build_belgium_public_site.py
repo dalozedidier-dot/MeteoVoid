@@ -45,6 +45,13 @@ PUBLIC_FILES = [
     "european_upstream_map.html",
     "upstream_corridors.csv",
     "european_radar_sources_status.json",
+    "radar_stack.json",
+    "radar_stack_report.md",
+    "rainviewer_radar_map.html",
+    "rainviewer_status.json",
+    "opera_ord_status.json",
+    "radar_processing_status.json",
+    "pysteps_nowcast_status.json",
     "early_warning_signals.json",
     "early_warning_by_station.csv",
     "early_warning_network.csv",
@@ -93,6 +100,7 @@ EXPERT_FRAMES = [
     ("Cartes", "Point de rosée", "belgium_dewpoint_map.html"),
     ("Cartes", "Formation orageuse", "belgium_storm_formation_map.html"),
     ("Cartes", "Radar / observation", "belgium_radar_map.html"),
+    ("Cartes", "Radar RainViewer", "rainviewer_radar_map.html"),
     ("Cartes", "Couches avancées", "belgium_weather_layers.html"),
     ("Analyse", "Synthèse détaillée", "belgium_alert_dashboard.html"),
     ("Analyse", "Transition convective", "convective_transition_dashboard.html"),
@@ -118,7 +126,9 @@ EXPORTS = [
     ("API sources JSON", "../api/sources.json"),
     ("API validation JSON", "../api/validation.json"),
     ("API upstream JSON", "../api/upstream.json"),
+    ("API radar JSON", "../api/radar.json"),
     ("Rapport Europe amont", "upstream_watch_report.md"),
+    ("Rapport radar stack", "radar_stack_report.md"),
     ("Corridors amont CSV", "upstream_corridors.csv"),
     ("CAP XML (test)", "belgium_alert_cap.xml"),
     ("Méthodologie", "../../methodology.html"),
@@ -798,6 +808,7 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
     obs_gap = _load_json(report_dir / "observation_gap_status.json")
     nowcast = _load_json(report_dir / "nowcast_status.json")
     upstream = _load_json(report_dir / "upstream_watch.json")
+    radar_stack = _load_json(report_dir / "radar_stack.json")
 
     operational = report.get("operational_state")
     operational = operational if isinstance(operational, dict) else alert_state
@@ -846,6 +857,7 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
             "sources": "api/sources.json",
             "validation": "api/validation.json",
             "upstream": "api/upstream.json",
+            "radar": "api/radar.json",
         },
     }
 
@@ -913,6 +925,9 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
         ),
         "upstream_watch": (
             upstream.get("summary") if isinstance(upstream.get("summary"), dict) else {}
+        ),
+        "radar_stack": (
+            radar_stack.get("summary") if isinstance(radar_stack.get("summary"), dict) else {}
         ),
         "frames": [
             {"group": group, "label": label, "file": "reports/latest/" + file}
@@ -1074,11 +1089,16 @@ def build_api(vm: dict[str, Any], site_dir: Path) -> None:
         {"generated_at": generated_at, **vm["expert"].get("upstream_watch", {})},
     )
     _write_json(
+        api_dir / "radar.json",
+        {"generated_at": generated_at, **vm["expert"].get("radar_stack", {})},
+    )
+    _write_json(
         api_dir / "index.json",
         {
             "generated_at": generated_at,
             "description": "MeteoVoid Belgique static API",
             "endpoints": meta.get("endpoints"),
+            "extra_endpoints": {"radar": "api/radar.json"},
             "disclaimer": meta.get("disclaimer"),
         },
     )

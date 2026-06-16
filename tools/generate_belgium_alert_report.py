@@ -3363,6 +3363,13 @@ def _build_report(
             "european_upstream_map_html": "european_upstream_map.html",
             "upstream_corridors_csv": "upstream_corridors.csv",
             "european_radar_sources_status": "european_radar_sources_status.json",
+            "radar_stack": "radar_stack.json",
+            "radar_stack_report": "radar_stack_report.md",
+            "rainviewer_radar_map_html": "rainviewer_radar_map.html",
+            "rainviewer_status": "rainviewer_status.json",
+            "opera_ord_status": "opera_ord_status.json",
+            "radar_processing_status": "radar_processing_status.json",
+            "pysteps_nowcast_status": "pysteps_nowcast_status.json",
         },
         "aggregate": aggregate,
         "components_summary": _components_summary(stations),
@@ -3518,6 +3525,37 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Do not generate the European upstream watch outputs",
     )
+    parser.add_argument(
+        "--opera-config",
+        default="config/opera_ord.yaml",
+        help="OPERA ORD / MeteoGate connector config",
+    )
+    parser.add_argument(
+        "--radar-frame",
+        action="append",
+        default=[],
+        help="Optional local radar frame file (.npy/.csv/.json) for wradlib/numeric processing",
+    )
+    parser.add_argument(
+        "--enable-rainviewer-live",
+        action="store_true",
+        help="Fetch RainViewer metadata server-side; the HTML overlay works client-side without this",
+    )
+    parser.add_argument(
+        "--enable-opera-ord",
+        action="store_true",
+        help="Enable live OPERA ORD / MeteoGate discovery and configured queries",
+    )
+    parser.add_argument(
+        "--enable-pysteps-nowcast",
+        action="store_true",
+        help="Run optional pySTEPS optical flow when at least 3 local radar frames are provided",
+    )
+    parser.add_argument(
+        "--disable-radar-stack",
+        action="store_true",
+        help="Do not generate RainViewer/OPERA/wradlib/pySTEPS radar stack outputs",
+    )
     args = parser.parse_args(argv)
 
     calibration_path = Path(args.calibration_config) if args.calibration_config.strip() else None
@@ -3596,6 +3634,26 @@ def main(argv: list[str] | None = None) -> int:
                 encoding="utf-8",
             )
 
+    if not args.disable_radar_stack:
+        try:
+            from meteovoid.belgium.radar_stack import write_radar_stack_outputs
+
+            radar_stack = write_radar_stack_outputs(
+                out_dir,
+                opera_config_path=args.opera_config,
+                radar_frame_paths=list(args.radar_frame or []),
+                enable_rainviewer_live=bool(args.enable_rainviewer_live and not args.offline_demo),
+                enable_opera_ord=bool(args.enable_opera_ord and not args.offline_demo),
+                enable_pysteps=bool(args.enable_pysteps_nowcast),
+                timeout_s=float(args.timeout_s),
+            )
+            report["radar_stack"] = radar_stack.get("summary", {})
+        except (OSError, ValueError, RuntimeError) as exc:
+            (out_dir / "radar_stack_error.json").write_text(
+                _json_dumps({"status": "error", "detail": str(exc)}),
+                encoding="utf-8",
+            )
+
     if not args.no_history:
         _sync_history_outputs(report, out_dir, history_dir, run_id)
     else:
@@ -3663,6 +3721,13 @@ def main(argv: list[str] | None = None) -> int:
         "european_upstream_map.html",
         "upstream_corridors.csv",
         "european_radar_sources_status.json",
+        "radar_stack.json",
+        "radar_stack_report.md",
+        "rainviewer_radar_map.html",
+        "rainviewer_status.json",
+        "opera_ord_status.json",
+        "radar_processing_status.json",
+        "pysteps_nowcast_status.json",
         "manifest.json",
     ]:
         path = out_dir / name

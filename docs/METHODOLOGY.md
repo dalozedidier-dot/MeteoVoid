@@ -32,3 +32,14 @@ Le fichier canonique est `belgium_public_latest.json` avec le contrat `belgium_p
 ## Validation historique
 
 `config/belgium_verified_storm_events.csv` sert de base d’événements vérifiés pour le replay. L’objectif est de documenter les vrais positifs, faux positifs, faux négatifs et délais de détection.
+
+## Couche radar européenne et nowcasting
+
+MeteoVoid distingue désormais quatre niveaux qui ne doivent pas être confondus.
+
+1. **RainViewer** sert à afficher rapidement une carte radar publique dans le navigateur. Cette carte aide à lire le contexte, mais elle ne devient pas automatiquement une confirmation machine.
+2. **OPERA ORD / MeteoGate** est le connecteur prévu pour les vraies données radar européennes lorsque l’accès est activé et conforme aux licences. Si le connecteur n’est pas configuré ou échoue, le rapport l’indique.
+3. **wradlib** peut analyser des fichiers radar locaux fournis à MeteoVoid. Cette étape est optionnelle et dépend des formats disponibles.
+4. **pySTEPS** peut calculer un mouvement/nowcasting à partir d’une séquence réelle de trames radar. Il n’est jamais lancé sans données suffisantes.
+
+La règle est stricte : si aucune donnée radar fine, licite et exploitable n’est disponible, MeteoVoid écrit explicitement `no_machine_radar_data`. Le système peut afficher une carte visuelle, mais il ne la transforme pas en preuve radar ni en alerte officielle.
