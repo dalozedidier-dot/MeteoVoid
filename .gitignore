@@ -29,3 +29,10 @@ Thumbs.db
 # Local outputs
 _ci_out/
 *.log
+# Patch delivery artifacts. Do not commit generated patches.
+*.diff
+*.patch
+*_patch.zip
+mv_*_patch/
+PATCH_NOTES_*.md
+README_APPLY_*.md

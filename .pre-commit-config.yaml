@@ -1,6 +1,10 @@
 exclude: |
   (?x)^(
-    \.hypothesis/
+    \.hypothesis/|
+    .*\.diff$|
+    .*\.patch$|
+    mv_.*_patch/|
+    .*_patch\.zip$
   )
 
 repos:
