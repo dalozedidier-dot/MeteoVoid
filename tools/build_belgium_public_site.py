@@ -311,6 +311,34 @@ def _stations(report: dict[str, Any], limit: int | None = None) -> list[dict[str
     return usable[:limit] if limit else usable
 
 
+def _station_card(s: dict[str, Any]) -> dict[str, Any]:
+    """A map/panel-ready station record with location, drivers and a compact hourly trace."""
+    hourly = []
+    for h in s.get("hourly_risk") or []:
+        if isinstance(h, dict):
+            hourly.append({"h": _hour_label(h.get("time")), "s": _round(h.get("score"))})
+    return {
+        "name": s.get("name"),
+        "station_id": s.get("station_id"),
+        "region": s.get("region"),
+        "score": _round(s.get("score")),
+        "severity": _meta(s.get("severity")),
+        "worst_time": s.get("worst_time"),
+        "lat": _num(s.get("lat")),
+        "lon": _num(s.get("lon")),
+        "signals": (s.get("signals") or [])[:5],
+        "drivers": {
+            "temperature_c": _round(s.get("max_temperature_c"), 1),
+            "dew_point_c": _round(s.get("max_dew_point_c"), 1),
+            "precip_prob_pct": _round(s.get("max_precip_probability_pct"), 0),
+            "pressure_drop_hpa": _round(s.get("max_pressure_drop_6h_hpa"), 1),
+            "wind_gust_ms": _round(s.get("max_wind_gust_ms"), 0),
+            "humidity_pct": _round(s.get("max_relative_humidity_pct"), 0),
+        },
+        "hourly": hourly,
+    }
+
+
 def _network_drivers(report: dict[str, Any]) -> dict[str, float]:
     """Network-wide maxima of the human-readable weather drivers."""
     keys = [
@@ -806,20 +834,7 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
     }
 
     expert = {
-        "stations": [
-            {
-                "name": s.get("name"),
-                "station_id": s.get("station_id"),
-                "region": s.get("region"),
-                "score": _round(s.get("score")),
-                "severity": _meta(s.get("severity")),
-                "worst_time": s.get("worst_time"),
-                "lat": s.get("lat"),
-                "lon": s.get("lon"),
-                "signals": (s.get("signals") or [])[:4],
-            }
-            for s in _stations(report, 12)
-        ],
+        "stations": [_station_card(s) for s in _stations(report)],
         "provinces": [
             {
                 "province": p.get("province"),
@@ -1097,6 +1112,8 @@ main{max-width:1180px;margin:0 auto;padding:24px 22px 8px;}
 .quick-i strong{font-size:18px;min-width:54px;}
 .cta{margin-top:14px;display:inline-flex;align-items:center;gap:8px;border:0;background:var(--ink);color:#fff;border-radius:12px;padding:11px 16px;font-weight:700;cursor:pointer;font-size:14px;}
 .cta .icon{width:18px;height:18px;} .cta:hover{background:#0b1a30;}
+.cta-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;} .cta-row .cta{margin-top:0;}
+.cta.ghost{background:#fff;color:var(--ink);border:1px solid var(--line);} .cta.ghost:hover{background:#f3f7fc;border-color:#b9c9dc;}
 .meter{margin:11px 0;} .meter-top{display:flex;justify-content:space-between;font-size:13px;margin-bottom:5px;color:var(--ink-soft);}
 .bar{height:8px;border-radius:999px;background:#edf2f8;overflow:hidden;}
 .bar>span{display:block;height:100%;border-radius:999px;background:var(--ac,#2f6fd0);transition:width .85s cubic-bezier(.2,.7,.2,1);}
@@ -1153,7 +1170,29 @@ tbody tr:hover{background:#f7fafd;}
 footer{max-width:1180px;margin:24px auto 40px;padding:0 22px;color:var(--muted);font-size:12px;}
 @media(max-width:980px){.tiles{grid-template-columns:1fr 1fr;}.blocks{grid-template-columns:1fr 1fr;}.cards4{grid-template-columns:1fr 1fr;}.cards3{grid-template-columns:1fr;}.split{grid-template-columns:1fr;}.banner{grid-template-columns:1fr;}.banner-gauge{justify-self:start;}}
 @media(max-width:560px){.tiles,.blocks,.cards4{grid-template-columns:1fr;}.banner-level{font-size:28px;}}
+/* interactive map */
+.map-bar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:14px;}
+.map-pick{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--line);border-radius:12px;padding:7px 12px;box-shadow:var(--shadow-sm);}
+.map-pick label{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;} .map-pick .icon{width:16px;height:16px;}
+#locsel{border:0;font-size:14px;font-weight:700;color:var(--ink);background:transparent;max-width:240px;cursor:pointer;}
+.map-toggle{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600;color:var(--ink-soft);background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 12px;box-shadow:var(--shadow-sm);cursor:pointer;}
+.map-legend{display:flex;gap:13px;flex-wrap:wrap;margin-left:auto;font-size:12px;color:var(--muted);}
+.map-legend i{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:5px;vertical-align:middle;}
+.map-wrap{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:16px;}
+.mvmap{height:66vh;min-height:440px;border-radius:18px;overflow:hidden;border:1px solid var(--line);box-shadow:var(--shadow);z-index:0;background:#dfe6ef;}
+.map-detail{background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px;box-shadow:var(--shadow);max-height:66vh;overflow:auto;}
+.map-fallback{display:grid;place-items:center;height:100%;color:var(--muted);padding:24px;text-align:center;}
+.md-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;border-left:4px solid var(--ac,#2f6fd0);padding-left:11px;margin-bottom:10px;}
+.md-head h3{margin:2px 0 0;font-size:18px;}
+.md-score{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:4px 0 10px;}
+.spark{display:block;}
+.dl{display:flex;justify-content:space-between;font-size:13px;padding:7px 0;border-bottom:1px solid var(--line);} .dl span{color:var(--muted);}
+.md-sig{margin:6px 0 0;padding-left:18px;color:var(--ink-soft);font-size:13px;} .md-sig li{margin:4px 0;}
+.leaflet-container{font:inherit;}
+@media(max-width:980px){.map-wrap{grid-template-columns:1fr;}.mvmap{height:52vh;}.map-detail{max-height:none;}.map-legend{margin-left:0;}}
 </style>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 </head>
 <body>
 <div class="topbar">
@@ -1167,6 +1206,7 @@ footer{max-width:1180px;margin:24px auto 40px;padding:0 22px;color:var(--muted);
   <div class="tabs">
     <button class="tab active" data-view="simple">Vue simple</button>
     <button class="tab" data-view="operational">Vue opérationnelle</button>
+    <button class="tab" data-view="map">Carte</button>
     <button class="tab" data-view="expert">Vue expert</button>
   </div>
 </div>
@@ -1174,6 +1214,7 @@ footer{max-width:1180px;margin:24px auto 40px;padding:0 22px;color:var(--muted);
   <div class="disclaimer" id="disclaimer"></div>
   <section class="view active" id="view-simple"></section>
   <section class="view" id="view-operational"></section>
+  <section class="view" id="view-map"></section>
   <section class="view" id="view-expert"></section>
 </main>
 <footer id="footer"></footer>
@@ -1275,7 +1316,7 @@ function renderSimple(vm){
         <div class="quick-i"><strong class="txt-${tc}">${num(o.void_collapse_signal)}</strong><span>signal de bascule — ${esc((o.transition_level||{}).label)}</span></div>
         <div class="quick-i"><strong>${esc(win.start_hour||'—')}</strong><span>${win.status==='available'?('fenêtre jusqu’à '+esc(win.end_hour)+', pic '+esc(win.peak_hour)):'pas de fenêtre sensible identifiée'}</span></div>
       </div>
-      <button class="cta" onclick="go('operational')">Voir l’analyse complète ${icon('flow')}</button>
+      <div class="cta-row"><button class="cta" onclick="go('operational')">Voir l’analyse complète ${icon('flow')}</button><button class="cta ghost" onclick="go('map')">Ouvrir la carte ${icon('pin')}</button></div>
     </div>
     <div class="panel">
       <div class="panel-h">${icon('shield')}<h3>Confiance du signal</h3></div>
@@ -1351,7 +1392,7 @@ function renderExpert(vm){
   const groups={};
   (e.frames||[]).forEach(f=>{(groups[f.group]=groups[f.group]||[]).push(f);});
   const groupNames=Object.keys(groups);
-  const stationRows=(e.stations||[]).map(s=>`<tr><td><strong>${esc(s.name)}</strong><div class="muted">${esc(s.region||'')}</div></td><td><span class="badge ${cls(s.severity)}">${esc((s.severity||{}).label)}</span></td><td>${num(s.score)}</td><td>${esc(s.worst_time||'—')}</td><td class="muted">${esc((s.signals||[]).join(' · '))}</td></tr>`).join('');
+  const stationRows=(e.stations||[]).slice(0,12).map(s=>`<tr><td><strong>${esc(s.name)}</strong><div class="muted">${esc(s.region||'')}</div></td><td><span class="badge ${cls(s.severity)}">${esc((s.severity||{}).label)}</span></td><td>${num(s.score)}</td><td>${esc(s.worst_time||'—')}</td><td class="muted">${esc((s.signals||[]).join(' · '))}</td></tr>`).join('');
   const provRows=(e.provinces||[]).map(p=>`<tr><td>${esc(p.province)}</td><td><span class="badge ${cls(p.severity)}">${esc((p.severity||{}).label)}</span></td><td>${num(p.max_score)}</td><td class="muted">${esc(p.top_station||'')}</td></tr>`).join('');
   const val=e.validation||{}, vs=val.scores||{}, cf=val.confusion||{};
   const obs=e.observation||{}, channels=obs.channels||[];
@@ -1418,20 +1459,121 @@ function renderExpert(vm){
   </div>`;
 }
 
+// ---- interactive location map ----
+const REGION={belgium_center:'Centre',belgium_west:'Ouest',belgium_east:'Est',belgium_north:'Nord',belgium_south:'Sud',belgium_coast:'Littoral',belgium_ardennes:'Ardenne',belgium_brussels:'Bruxelles'};
+function regionLabel(r){r=String(r||'');if(REGION[r])return REGION[r];return r.replace(/^belgium_/,'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase())||'Autre';}
+let MAP={inst:null,markers:{},radarLayer:null,booted:false};
+
+function renderMap(vm){
+  const st=(vm.expert&&vm.expert.stations)||[];
+  const groups={'Belgique':[],'Approches frontalières':[]};
+  st.forEach(s=>{(String(s.region||'').indexOf('belgium')===0?groups['Belgique']:groups['Approches frontalières']).push(s);});
+  const opts=Object.keys(groups).filter(g=>groups[g].length).map(g=>`<optgroup label="${esc(g)}">`+
+    groups[g].map(s=>`<option value="${esc(s.station_id)}">${esc(s.name)} — ${num(s.score)}</option>`).join('')+'</optgroup>').join('');
+  const leg={calm:'faible',watch:'modéré',elevated:'élevé',danger:'critique'};
+  return `
+  <div class="map-bar">
+    <div class="map-pick"><label>${icon('pin')}<span>Choisir un lieu</span></label><select id="locsel" aria-label="Choisir un lieu">${opts}</select></div>
+    <label class="map-toggle"><input type="checkbox" id="radartog"> Radar pluie (RainViewer)</label>
+    <div class="map-legend">${['calm','watch','elevated','danger'].map(c=>`<span><i style="background:${colorOf(c)}"></i>${leg[c]}</span>`).join('')}</div>
+  </div>
+  <div class="map-wrap">
+    <div id="mvmap" class="mvmap"></div>
+    <aside id="mapdetail" class="map-detail"><p class="muted">Choisis un lieu dans la liste ou clique un point sur la carte.</p></aside>
+  </div>
+  <p class="muted" style="margin-top:8px">Les marqueurs sont la grille de stations MeteoVoid (taille selon le score). Le radar est une couche d’observation optionnelle, désactivée par défaut.</p>`;
+}
+
+function miniSpark(hourly){
+  const v=(hourly||[]).map(x=>x.s).filter(x=>x!=null);
+  if(v.length<2) return '';
+  const W=160,H=46,n=v.length;
+  const pts=v.map((s,i)=>[6+(W-12)*i/(n-1), H-5-(H-12)*clamp01(s)]);
+  const line=smoothPath(pts);
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true"><path d="${line} L ${pts[n-1][0].toFixed(1)} ${H-5} L ${pts[0][0].toFixed(1)} ${H-5} Z" fill="${colorOf('info')}22"/><path d="${line}" fill="none" stroke="${colorOf('info')}" stroke-width="2"/></svg>`;
+}
+
+function renderLocationDetail(s){
+  const c=cls(s.severity), d=s.drivers||{};
+  const row=(k,v,u)=> (v==null||v==='')?'':`<div class="dl"><span>${esc(k)}</span><strong>${esc(v)}${esc(u||'')}</strong></div>`;
+  const wh=s.worst_time?String(s.worst_time).split('T').pop():'';
+  return `<div class="md-head ac-${c}"><div><div class="kicker">${esc(regionLabel(s.region))}</div><h3>${esc(s.name)}</h3></div><span class="badge ${c}">${esc((s.severity||{}).label)}</span></div>
+    <div class="md-score"><div><div class="kicker">Score MeteoVoid</div><div class="score txt-${c}">${num(s.score)}</div></div>${miniSpark(s.hourly)}</div>
+    <div class="dlist">
+      ${row('Heure sensible',wh||'—')}
+      ${row('Température',d.temperature_c,' °C')}
+      ${row('Point de rosée',d.dew_point_c,' °C')}
+      ${row('Proba pluie',d.precip_prob_pct,' %')}
+      ${row('Chute pression 6h',d.pressure_drop_hpa,' hPa')}
+      ${row('Rafales',d.wind_gust_ms,' m/s')}
+    </div>
+    ${(s.signals&&s.signals.length)?'<div class="kicker" style="margin-top:12px">Signaux</div><ul class="md-sig">'+s.signals.map(x=>`<li>${esc(x)}</li>`).join('')+'</ul>':''}`;
+}
+
+function selectLocation(id){
+  const st=((VM.expert&&VM.expert.stations)||[]).find(s=>s.station_id===id);
+  if(!st) return;
+  const sel=document.getElementById('locsel'); if(sel&&sel.value!==id) sel.value=id;
+  if(MAP.inst&&st.lat!=null&&st.lon!=null){MAP.inst.flyTo([st.lat,st.lon],9,{duration:.6});const m=MAP.markers[id];if(m&&m.openTooltip)m.openTooltip();}
+  const det=document.getElementById('mapdetail'); if(det) det.innerHTML=renderLocationDetail(st);
+}
+
+function toggleRadar(on){
+  if(!MAP.inst||!window.L) return;
+  if(!on){if(MAP.radarLayer){MAP.inst.removeLayer(MAP.radarLayer);MAP.radarLayer=null;}return;}
+  fetch('https://api.rainviewer.com/public/weather-maps.json',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+    const host=d.host||'https://tilecache.rainviewer.com';
+    const frames=((d.radar&&d.radar.past)||[]).concat((d.radar&&d.radar.nowcast)||[]);
+    const last=frames.length?frames[frames.length-1]:null; if(!last)return;
+    MAP.radarLayer=L.tileLayer(host+last.path+'/256/{z}/{x}/{y}/4/1_1.png',{opacity:.6,attribution:'RainViewer'}).addTo(MAP.inst);
+  }).catch(()=>{const t=document.getElementById('radartog');if(t)t.checked=false;});
+}
+
+function initMap(){
+  const host=document.getElementById('mvmap'); if(!host) return;
+  if(!window.L){
+    host.innerHTML='<div class="map-fallback">Fond de carte indisponible (réseau). La sélection de lieu et le détail ci-contre restent utilisables.</div>';
+    const sel=document.getElementById('locsel'); if(sel&&!sel._wired){sel._wired=true;sel.addEventListener('change',()=>selectLocation(sel.value));}
+    const st=(VM.expert&&VM.expert.stations)||[]; if(st.length)selectLocation(st[0].station_id);
+    return;
+  }
+  if(MAP.booted){if(MAP.inst)MAP.inst.invalidateSize();return;}
+  MAP.booted=true;
+  const map=L.map(host,{zoomControl:true,scrollWheelZoom:true}).setView([50.6,4.7],7);
+  MAP.inst=map;
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,attribution:'&copy; OpenStreetMap, &copy; CARTO'}).addTo(map);
+  const st=(VM.expert&&VM.expert.stations)||[];
+  st.forEach(s=>{if(s.lat==null||s.lon==null)return;
+    const c=cls(s.severity),r=8+Math.round(clamp01(s.score)*14);
+    const m=L.circleMarker([s.lat,s.lon],{radius:r,color:'#fff',weight:1.5,fillColor:colorOf(c),fillOpacity:.85});
+    m.addTo(map);m.on('click',()=>selectLocation(s.station_id));
+    m.bindTooltip(esc(s.name)+' · '+num(s.score),{direction:'top'});
+    MAP.markers[s.station_id]=m;});
+  const sel=document.getElementById('locsel'); if(sel)sel.addEventListener('change',()=>selectLocation(sel.value));
+  const tog=document.getElementById('radartog'); if(tog)tog.addEventListener('change',()=>toggleRadar(tog.checked));
+  if(st.length)selectLocation(st[0].station_id);
+  setTimeout(()=>map.invalidateSize(),60);
+}
+
 let VM = FALLBACK;
 function paint(){
   document.getElementById('disclaimer').innerHTML = '<strong>Prototype non officiel.</strong> '+esc((VM.meta&&VM.meta.disclaimer)||'');
   document.getElementById('stamp').textContent = (VM.meta&&VM.meta.generated_at)||'';
   document.getElementById('view-simple').innerHTML = renderSimple(VM);
   document.getElementById('view-operational').innerHTML = renderOperational(VM);
+  document.getElementById('view-map').innerHTML = renderMap(VM);
   document.getElementById('view-expert').innerHTML = renderExpert(VM);
   wireExpert();
   animateGauges();
+  try{if(MAP.inst)MAP.inst.remove();}catch(e){}
+  MAP.inst=null;MAP.markers={};MAP.radarLayer=null;MAP.booted=false;
+  if(document.getElementById('view-map').classList.contains('active'))initMap();
   document.getElementById('footer').innerHTML = `MeteoVoid Belgique · run <code>${esc((VM.meta&&VM.meta.run_id)||'')}</code> · mode ${esc((VM.meta&&VM.meta.data_mode)||'')} · ${esc((VM.meta&&VM.meta.disclaimer)||'')}`;
 }
 function go(view){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.view===view));
   document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id==='view-'+view));
+  if(view==='map') initMap();
   window.scrollTo({top:0,behavior:'smooth'});
 }
 function wireExpert(){

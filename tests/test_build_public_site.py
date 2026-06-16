@@ -198,6 +198,25 @@ def test_level_meta_reserves_red_for_real_danger() -> None:
     assert site._meta(None)["class"] == "calm"
 
 
+def test_map_scaffolding_and_enriched_stations(tmp_path: Path) -> None:
+    report_dir = _minimal_report_dir(tmp_path)
+    site_dir = tmp_path / "site"
+    site.build_index(report_dir, site_dir)
+
+    index_html = (site_dir / "index.html").read_text(encoding="utf-8")
+    for token in ['data-view="map"', "renderMap", "initMap", "locsel", "leaflet"]:
+        assert token in index_html, token
+
+    stations = json.loads((site_dir / "api" / "stations.json").read_text(encoding="utf-8"))[
+        "stations"
+    ]
+    assert stations, "stations must be exposed for the map"
+    first = stations[0]
+    assert first["lat"] is not None and first["lon"] is not None
+    assert "drivers" in first and "temperature_c" in first["drivers"]
+    assert isinstance(first["hourly"], list)
+
+
 def test_build_is_robust_to_empty_report_dir(tmp_path: Path) -> None:
     """The builder must never fail silently: an empty run still yields a page."""
     report_dir = tmp_path / "empty"
