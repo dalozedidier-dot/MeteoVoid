@@ -1,0 +1,61 @@
+# MeteoVoid Convective Transition Engine
+# Experimental non-official diagnostic layer.
+# The weights describe how MeteoVoid combines currently available proxy variables.
+version: 1
+indices:
+  convective_load_index:
+    description: "Energy/moisture loading proxy. Uses heat, dew point, moisture, precipitation and model score."
+    weights:
+      heat: 0.30
+      moisture: 0.42
+      model_score: 0.16
+      precipitation: 0.12
+  trigger_readiness_index:
+    description: "Trigger proxy. Uses precipitation probability, pressure drop, thunderstorm code and gusts."
+    weights:
+      precipitation: 0.34
+      pressure_drop: 0.28
+      weather_code: 0.26
+      wind_gust: 0.12
+  storm_organization_potential:
+    description: "Organization proxy. Uses gusts, convective weather code, precipitation and model score."
+    weights:
+      wind_gust: 0.42
+      weather_code: 0.24
+      precipitation: 0.20
+      model_score: 0.14
+  lid_fragility_index:
+    description: "Cap erosion proxy. Placeholder until CIN/LFC/700 hPa temperature are available."
+    weights:
+      convective_load: 0.36
+      pressure_drop: 0.28
+      weather_code: 0.22
+      precipitation: 0.14
+  void_collapse_signal:
+    description: "Final signal measuring transition from latent potential to organized convective risk."
+    weights:
+      convective_coherence_index: 0.30
+      transition_pressure_index: 0.24
+      observed_emergence_index: 0.18
+      model_score: 0.18
+      inverse_latent_risk_gap: 0.10
+levels:
+  stable: [0.0, 0.36]
+  watch: [0.36, 0.52]
+  latent_unstable: [0.52, 0.68]
+  transition_probable: [0.68, 0.82]
+  void_collapse: [0.82, 1.0]
+future_native_inputs:
+  - CAPE
+  - CIN
+  - shear_0_6km
+  - shear_0_3km
+  - srh_0_1km
+  - srh_0_3km
+  - lcl
+  - lfc
+  - theta_e
+  - pwat
+  - satellite_cloud_top_cooling
+  - lightning_rate
+  - radar_cell_growth

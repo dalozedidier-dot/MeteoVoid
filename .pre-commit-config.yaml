@@ -1,10 +1,15 @@
 exclude: |
   (?x)^(
     \.hypothesis/|
-    .*\.diff$|
+    apply_.*\.py$|
+    fix_meteovoid_.*\.py$|
+    fix_.*_patch.*\.py$|
+    MeteoVoid_.*\.diff$|
     .*\.patch$|
-    mv_.*_patch/|
-    .*_patch\.zip$
+    README_APPLY.*\.md$|
+    PATCH_NOTES.*\.md$|
+    .*_patch/|
+    patch_.*/
   )
 
 repos:

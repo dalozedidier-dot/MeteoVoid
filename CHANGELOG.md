@@ -33,3 +33,11 @@
 - Added `convective_parameters.json`.
 - Added optional Windy comparison page that does not expose API keys by default.
 - Added targeted weather layer tests.
+## MeteoVoid Convective Transition Engine
+
+- Added an experimental convective transition diagnostic layer for Belgium.
+- New outputs: `convective_transition_report.json`, `convective_transition_by_station.csv`, `convective_transition_report.md`, `convective_transition_dashboard.html`.
+- Added six systemic indices: convective load, trigger readiness, storm organization potential, lid fragility, latent risk gap, and void collapse signal.
+- Added `config/convective_transition_engine.yaml` to document weights, thresholds and future native inputs.
+- Added tests for the transition engine and integrated the outputs in the Belgium report workflow.
+

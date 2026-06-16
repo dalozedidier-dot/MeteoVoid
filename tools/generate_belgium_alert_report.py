@@ -2765,6 +2765,21 @@ def _operational_state(report: dict[str, Any]) -> dict[str, Any]:
         reason = f"{reason}. Attention : qualité source dégradée"
     if trend_status in {"rising", "rising_fast"} and level in {"watch", "watch_reinforced"}:
         reason = f"{reason}. Tendance en hausse"
+    notification_allowed = level in {
+        "watch_reinforced",
+        "pre_alert_confirmed",
+        "alert_confirmed",
+    }
+    official_alert = False
+    public_wording_by_level = {
+        "normal": "veille technique normale, non officielle",
+        "low_watch": "veille technique faible, non officielle",
+        "watch": "veille technique, non officielle",
+        "watch_reinforced": "veille renforcée, non officielle",
+        "pre_alert_confirmed": "pré-alerte technique confirmée, non officielle",
+        "alert_confirmed": "alerte technique confirmée, non officielle",
+    }
+
     return {
         "level": level,
         "reason": reason,
@@ -2773,8 +2788,14 @@ def _operational_state(report: dict[str, Any]) -> dict[str, Any]:
         "external_confirmation_score": round(external_score, 6),
         "source_health_score": round(float(source_health), 6),
         "trend_status": trend_status,
+        "notification_allowed": notification_allowed,
+        "public_wording": public_wording_by_level.get(level, "veille technique, non officielle"),
+        "official_alert": official_alert,
         "public_alert_allowed": level in {"pre_alert_confirmed", "alert_confirmed"},
-        "public_alert_caution": "Ne jamais publier comme alerte officielle. Comparer avec IRM/KMI, MeteoAlarm, radar et foudre.",
+        "public_alert_caution": (
+            "Ne jamais publier comme alerte officielle. "
+            "Comparer avec IRM/KMI, MeteoAlarm, radar et foudre."
+        ),
     }
 
 
@@ -2970,6 +2991,8 @@ def _render_markdown(report: dict[str, Any]) -> str:
     lines.append("- `belgium_windy_compare.html`")
     lines.append("- `weather_layers_grid.csv`")
     lines.append("- `convective_parameters.json`")
+    lines.append("- `convective_transition_report.json`")
+    lines.append("- `convective_transition_dashboard.html`")
     lines.append("- `official_sources_status.json`")
     lines.append("- `nowcast_status.json`")
     lines.append("- `calibration_report.json`")
@@ -3228,8 +3251,17 @@ def _notification_state(report: dict[str, Any], history_dir: Path | None = None)
         "generated_at": report.get("generated_at"),
         "should_notify": should_notify,
         "cooldown_hours": cooldown_hours,
-        "dedupe_key": f"{level}:{severity}:{report.get('target_window', {}).get('start')}:{report.get('target_window', {}).get('end')}",
+        "dedupe_key": (
+            f"{level}:{severity}:"
+            f"{report.get('target_window', {}).get('start')}:"
+            f"{report.get('target_window', {}).get('end')}"
+        ),
         "reason": reason,
+        "notification_allowed": bool(operational.get("notification_allowed", should_notify)),
+        "public_wording": str(
+            operational.get("public_wording", "veille technique, non officielle")
+        ),
+        "official_alert": bool(operational.get("official_alert", False)),
         "public_alert_allowed": bool(operational.get("public_alert_allowed", False)),
         "message_title": "MeteoVoid Belgique - veille météo",
         "message_summary": operational.get("reason", "n/a"),
@@ -3512,8 +3544,20 @@ def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
         from belgium_weather_layers import write_weather_layer_outputs
     except ModuleNotFoundError:  # pragma: no cover - import path used by pytest/package mode
         from tools.belgium_weather_layers import write_weather_layer_outputs
+    try:
+        from belgium_convective_transition import (
+            TRANSITION_OUTPUTS,
+            write_convective_transition_outputs,
+        )
+    except ModuleNotFoundError:  # pragma: no cover - import path used by pytest/package mode
+        from tools.belgium_convective_transition import (
+            TRANSITION_OUTPUTS,
+            write_convective_transition_outputs,
+        )
 
     out_dir.mkdir(parents=True, exist_ok=True)
+    if isinstance(report.get("outputs"), dict):
+        report["outputs"].update(TRANSITION_OUTPUTS)
     report_path = out_dir / "belgium_alert_report.json"
     report_path.write_text(_json_dumps(report), encoding="utf-8")
     (out_dir / "belgium_alert_report.md").write_text(_render_markdown(report), encoding="utf-8")
@@ -3567,6 +3611,7 @@ def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
         _json_dumps(report.get("operational_state", {})), encoding="utf-8"
     )
     write_weather_layer_outputs(report, out_dir)
+    write_convective_transition_outputs(report, out_dir)
 
     rows = report["stations"]
     csv_path = out_dir / "risk_by_station.csv"
