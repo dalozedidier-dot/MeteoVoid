@@ -1,5 +1,21 @@
 # Changelog
 
+## Belgium public interface — visual refresh and interactive location map
+
+- Visual redesign of the three views: a radial (270°) "void collapse" gauge in the
+  banners, the seven convective-transition components rendered as progress-ring cards
+  with icons, severity-tinted status banners, icon metric tiles, confidence meters, a
+  smoothed timeline (gradient area, high-threshold line, timestamped markers) and a
+  refreshed dark header. Sober palette: red reserved for real danger.
+- New **Carte** tab with an interactive Leaflet map (CARTO Voyager basemap): one marker
+  per MeteoVoid station, sized by score and coloured by severity, an optional RainViewer
+  radar overlay (off by default) and a **location selector**. Choosing a place (or
+  clicking a marker) recenters the map and opens a detail panel with that location's
+  operational readout (score, drivers, hourly sparkline, signals). Degrades gracefully:
+  if the basemap cannot load, the selector and detail panel still work.
+- `api/stations.json` now exposes every station with `lat`/`lon`, driver metrics and a
+  compact hourly score trace so the map and external clients can render locations.
+
 ## Belgium public interface redesign — three reading levels + static JSON API
 
 - Rebuilt `tools/build_belgium_public_site.py` around three reading levels instead of
