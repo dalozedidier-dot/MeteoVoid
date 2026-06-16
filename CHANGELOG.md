@@ -40,4 +40,3 @@
 - Added six systemic indices: convective load, trigger readiness, storm organization potential, lid fragility, latent risk gap, and void collapse signal.
 - Added `config/convective_transition_engine.yaml` to document weights, thresholds and future native inputs.
 - Added tests for the transition engine and integrated the outputs in the Belgium report workflow.
-
