@@ -3,13 +3,18 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from importlib import import_module
 from typing import Any
 from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from . import db as _db
+from .log import get_logger
+from .stations_config import StationSpec, load_stations_config
+
 try:  # pragma: no cover - exercised indirectly when live extra is installed
-    import redis as redis
+    _redis_obj: Any = import_module("redis")
 except ModuleNotFoundError:  # pragma: no cover - basic install without live extra
 
     class _RedisCompat:
@@ -23,11 +28,12 @@ except ModuleNotFoundError:  # pragma: no cover - basic install without live ext
     class _RedisModuleCompat:
         Redis = _RedisCompat
 
-    redis = _RedisModuleCompat()
+    _redis_obj = _RedisModuleCompat()
 
-from . import db as _db
-from .log import get_logger
-from .stations_config import StationSpec, load_stations_config
+# Kept as a module-level attribute for backwards compatibility with tests and
+# callers that monkeypatch ``ingest_europe.redis.Redis.from_url``.
+redis: Any = _redis_obj
+
 
 _log = get_logger(__name__)
 
@@ -114,7 +120,7 @@ def _extract_current(obj: dict[str, Any]) -> tuple[int | None, dict[str, float]]
 
 
 def _publish_observation(
-    r: redis.Redis,
+    r: Any,
     *,
     out_stream: str,
     station_id: str,
@@ -140,7 +146,7 @@ def _publish_observation(
         r.xadd(per, fields, maxlen=50000, approximate=True)
 
 
-def _update_last_seen(r: redis.Redis, station_id: str, silence_threshold_s: int) -> None:
+def _update_last_seen(r: Any, station_id: str, silence_threshold_s: int) -> None:
     """Record current time as last-seen and clear any silence flag."""
     now_s = int(time.time())
     key = _LAST_SEEN_KEY.format(station_id=station_id)
@@ -150,7 +156,7 @@ def _update_last_seen(r: redis.Redis, station_id: str, silence_threshold_s: int)
 
 
 def check_station_silence(
-    r: redis.Redis,
+    r: Any,
     station_id: str,
     *,
     silence_threshold_s: int = _DEFAULT_SILENCE_S,
@@ -174,7 +180,7 @@ def check_station_silence(
 
 def ingest_once(
     *,
-    r: redis.Redis,
+    r: Any,
     station: StationSpec,
     out_stream: str,
     per_stream: bool,
