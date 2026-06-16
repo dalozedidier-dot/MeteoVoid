@@ -1,0 +1,248 @@
+contract: european_upstream_regions_v1
+scope:
+  center: Belgium
+  bbox:
+  - -5.5
+  - 43.0
+  - 11.0
+  - 55.8
+  principle: source -> transport -> accumulation -> triggering -> propagation -> confirmation
+regions:
+- id: ATLANTIC_BISCAY
+  name: Golfe de Gascogne / Atlantique proche
+  role: upstream
+  weight: 0.7
+  probe:
+    lat: 45.4
+    lon: -2.8
+  notes: Réservoir d'humidité et trajectoire sud-ouest avant remontée vers la France.
+- id: FR_SOUTHWEST
+  name: Sud-ouest France
+  role: upstream
+  weight: 0.75
+  probe:
+    lat: 44.85
+    lon: 0.4
+  notes: Advection chaude et humide, souvent en amont des épisodes orageux organisés.
+- id: FR_PARIS_BASIN
+  name: Bassin parisien
+  role: upstream
+  weight: 0.85
+  probe:
+    lat: 48.85
+    lon: 2.35
+  notes: Zone de transit sud-ouest -> nord-est vers Hauts-de-France et Belgique.
+  station_ids:
+  - FR_LILLE
+- id: FR_HAUTS_DE_FRANCE
+  name: Hauts-de-France / Lille
+  role: upstream
+  weight: 1.0
+  probe:
+    lat: 50.63
+    lon: 3.06
+  notes: Couloir direct vers Hainaut, Brabant wallon, Bruxelles.
+  station_ids:
+  - FR_LILLE
+- id: FR_CHAMPAGNE_ARDENNE
+  name: Champagne-Ardenne
+  role: upstream
+  weight: 0.92
+  probe:
+    lat: 49.25
+    lon: 4.03
+  notes: Couloir sud / sud-est vers Namur, Luxembourg belge, Liège.
+  station_ids:
+  - LU_LUXEMBOURG
+  - BE_ARLON
+- id: ENGLISH_CHANNEL
+  name: Manche / Pas-de-Calais
+  role: upstream
+  weight: 0.72
+  probe:
+    lat: 50.55
+    lon: 0.2
+  notes: Entrées maritimes, lignes frontales, convection côtière.
+  station_ids:
+  - BE_KOKSIJDE
+  - FR_LILLE
+- id: NL_SOUTH
+  name: Sud Pays-Bas
+  role: upstream
+  weight: 0.82
+  probe:
+    lat: 51.45
+    lon: 5.25
+  notes: Propagation nord / nord-est vers Anvers, Limbourg, Bruxelles selon flux.
+  station_ids:
+  - NL_MAASTRICHT
+- id: DE_RHINELAND
+  name: Rhénanie / Eifel
+  role: upstream
+  weight: 0.82
+  probe:
+    lat: 50.85
+    lon: 6.1
+  notes: Retour est / nord-est vers Liège, Limbourg, Ardennes selon régimes.
+  station_ids:
+  - DE_AACHEN
+- id: LU_GRAND_DUCHY
+  name: Luxembourg / approche sud-est
+  role: upstream
+  weight: 0.78
+  probe:
+    lat: 49.61
+    lon: 6.13
+  notes: Approche vers Luxembourg belge et Ardennes.
+  station_ids:
+  - LU_LUXEMBOURG
+- id: BE_CENTER
+  name: Belgique centre
+  role: target
+  weight: 1.0
+  probe:
+    lat: 50.72
+    lon: 4.87
+  notes: 'Point cible de cohérence nationale : Brabant wallon / Bruxelles / Namur.'
+  station_ids:
+  - BE_JODOIGNE
+  - BE_UCCLE
+  - BE_NAMUR
+- id: BE_WEST
+  name: Belgique ouest / Hainaut
+  role: target
+  weight: 1.0
+  probe:
+    lat: 50.45
+    lon: 3.96
+  notes: Entrée classique depuis Hauts-de-France.
+  station_ids:
+  - BE_MONS
+  - BE_CHARLEROI
+- id: BE_EAST
+  name: Belgique est / Liège-Limbourg
+  role: target
+  weight: 1.0
+  probe:
+    lat: 50.63
+    lon: 5.58
+  notes: Cible est, sensible aux retours depuis Rhénanie/Eifel.
+  station_ids:
+  - BE_LIEGE
+  - BE_HASSELT
+  - BE_ARLON
+corridors:
+- id: FR_NORD_TO_BE_WEST_CENTER
+  name: Hauts-de-France -> Hainaut / Brabant wallon / Bruxelles
+  source_region: FR_HAUTS_DE_FRANCE
+  target_region: BE_WEST
+  target_zones:
+  - Hainaut
+  - Brabant wallon
+  - Bruxelles
+  expected_bearing_deg: 55
+  distance_km: 130
+  lead_time_hours:
+  - 1.5
+  - 4.0
+  weight: 1.0
+- id: PARIS_TO_BE_CENTER
+  name: Bassin parisien -> centre Belgique
+  source_region: FR_PARIS_BASIN
+  target_region: BE_CENTER
+  target_zones:
+  - Hainaut
+  - Brabant wallon
+  - Bruxelles
+  - Namur
+  expected_bearing_deg: 35
+  distance_km: 260
+  lead_time_hours:
+  - 3.0
+  - 7.0
+  weight: 0.9
+- id: CHAMPAGNE_TO_BE_SOUTH_EAST
+  name: Champagne-Ardenne -> Namur / Luxembourg / Liège
+  source_region: FR_CHAMPAGNE_ARDENNE
+  target_region: BE_EAST
+  target_zones:
+  - Namur
+  - Luxembourg
+  - Liège
+  expected_bearing_deg: 35
+  distance_km: 190
+  lead_time_hours:
+  - 2.0
+  - 5.0
+  weight: 0.92
+- id: CHANNEL_TO_FLANDERS_CENTER
+  name: Manche -> Flandre / Bruxelles
+  source_region: ENGLISH_CHANNEL
+  target_region: BE_CENTER
+  target_zones:
+  - Flandre occidentale
+  - Flandre orientale
+  - Bruxelles
+  expected_bearing_deg: 70
+  distance_km: 220
+  lead_time_hours:
+  - 2.0
+  - 6.0
+  weight: 0.78
+- id: NL_SOUTH_TO_BE_NORTH_EAST
+  name: Sud Pays-Bas -> Anvers / Limbourg / Liège
+  source_region: NL_SOUTH
+  target_region: BE_EAST
+  target_zones:
+  - Anvers
+  - Limbourg
+  - Liège
+  expected_bearing_deg: 205
+  distance_km: 120
+  lead_time_hours:
+  - 1.0
+  - 3.5
+  weight: 0.72
+- id: RHINELAND_TO_BE_EAST
+  name: Rhénanie / Eifel -> Liège / Limbourg
+  source_region: DE_RHINELAND
+  target_region: BE_EAST
+  target_zones:
+  - Liège
+  - Limbourg
+  - Luxembourg
+  expected_bearing_deg: 260
+  distance_km: 110
+  lead_time_hours:
+  - 1.0
+  - 3.0
+  weight: 0.7
+- id: LUX_TO_BE_ARDENNES
+  name: Luxembourg -> Ardennes belges / Namur
+  source_region: LU_GRAND_DUCHY
+  target_region: BE_EAST
+  target_zones:
+  - Luxembourg
+  - Namur
+  - Liège
+  expected_bearing_deg: 310
+  distance_km: 105
+  lead_time_hours:
+  - 1.0
+  - 3.0
+  weight: 0.74
+- id: BISCAY_TO_FRANCE_CHAIN
+  name: Gascogne / Sud-ouest -> Bassin parisien -> Belgique
+  source_region: ATLANTIC_BISCAY
+  target_region: BE_CENTER
+  target_zones:
+  - Hainaut
+  - Brabant wallon
+  - Bruxelles
+  - Namur
+  expected_bearing_deg: 45
+  distance_km: 620
+  lead_time_hours:
+  - 8.0
+  - 18.0
+  weight: 0.58

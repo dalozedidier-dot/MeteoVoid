@@ -1,0 +1,47 @@
+# Optional interfaces for European radar/lightning sources.
+# No source is used unless a licensed endpoint URL is explicitly configured.
+# MeteoVoid must never fabricate radar confirmation when these endpoints are absent.
+
+contract: european_radar_interface_optional_v1
+sources:
+  - id: opera_cirrus
+    name: OPERA / EUMETNET radar mosaic interface
+    kind: radar
+    public_info_url: "https://www.eumetnet.eu/observations/opera-radar-animation/"
+    endpoint_env: METEOVOID_OPERA_RADAR_JSON_URL
+    license_note: "Use only if access/licence allows automated retrieval. Expected JSON may expose status/confirmation/product/last_update."
+
+  - id: kmi_radar
+    name: IRM/KMI radar interface
+    kind: radar
+    public_info_url: "https://www.meteo.be/"
+    endpoint_env: METEOVOID_KMI_RADAR_JSON_URL
+    license_note: "Optional connector endpoint; MeteoVoid does not scrape or bypass access restrictions."
+
+  - id: france_radar
+    name: France upstream radar interface
+    kind: radar
+    public_info_url: "https://meteofrance.com/"
+    endpoint_env: METEOVOID_FRANCE_RADAR_JSON_URL
+    license_note: "Optional licensed connector for Hauts-de-France / Champagne upstream confirmation."
+
+  - id: netherlands_radar
+    name: KNMI / Netherlands radar interface
+    kind: radar
+    public_info_url: "https://www.knmi.nl/"
+    endpoint_env: METEOVOID_KNMI_RADAR_JSON_URL
+    license_note: "Optional licensed connector for southern Netherlands upstream confirmation."
+
+  - id: germany_radar
+    name: DWD / Germany radar interface
+    kind: radar
+    public_info_url: "https://www.dwd.de/"
+    endpoint_env: METEOVOID_DWD_RADAR_JSON_URL
+    license_note: "Optional licensed connector for Rhineland/Eifel upstream confirmation."
+
+  - id: european_lightning
+    name: European lightning interface
+    kind: lightning
+    public_info_url: "https://www.eumetsat.int/meteosat-third-generation-instruments"
+    endpoint_env: METEOVOID_EU_LIGHTNING_JSON_URL
+    license_note: "Optional connector for lightning clusters, MTG LI or other licensed lightning feeds."

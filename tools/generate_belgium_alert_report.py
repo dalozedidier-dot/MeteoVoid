@@ -3358,6 +3358,11 @@ def _build_report(
             "windy_compare_html": "belgium_windy_compare.html",
             "belgium_public_latest": "belgium_public_latest.json",
             "legacy_meteovoid_api_latest": "meteovoid_api_latest.json",
+            "upstream_watch": "upstream_watch.json",
+            "upstream_watch_report": "upstream_watch_report.md",
+            "european_upstream_map_html": "european_upstream_map.html",
+            "upstream_corridors_csv": "upstream_corridors.csv",
+            "european_radar_sources_status": "european_radar_sources_status.json",
         },
         "aggregate": aggregate,
         "components_summary": _components_summary(stations),
@@ -3487,6 +3492,32 @@ def main(argv: list[str] | None = None) -> int:
         default="config/belgium_verified_storm_events.csv",
         help="CSV of known events used for replay validation when history is present",
     )
+    parser.add_argument(
+        "--upstream-config",
+        default="config/upstream_regions.yaml",
+        help="YAML config for European upstream regions and Belgium approach corridors",
+    )
+    parser.add_argument(
+        "--radar-sources-config",
+        default="config/european_radar_sources.yaml",
+        help="Optional radar/lightning interface config; endpoints must be configured explicitly",
+    )
+    parser.add_argument(
+        "--enable-upstream-openmeteo",
+        action="store_true",
+        help="Enable live Open-Meteo fallback for upstream airflow/pressure-level diagnostics",
+    )
+    parser.add_argument(
+        "--upstream-forecast-hours",
+        type=int,
+        default=12,
+        help="Forecast horizon used by the upstream Open-Meteo fallback",
+    )
+    parser.add_argument(
+        "--disable-upstream-watch",
+        action="store_true",
+        help="Do not generate the European upstream watch outputs",
+    )
     args = parser.parse_args(argv)
 
     calibration_path = Path(args.calibration_config) if args.calibration_config.strip() else None
@@ -3543,6 +3574,27 @@ def main(argv: list[str] | None = None) -> int:
     report["trend"] = _trend_from_history(report, history_dir)
     report["operational_state"] = _operational_state(report)
     _write_outputs(report, out_dir)
+
+    if not args.disable_upstream_watch:
+        try:
+            from meteovoid.belgium.upstream_watch import write_upstream_watch_outputs
+
+            upstream_watch = write_upstream_watch_outputs(
+                report,
+                out_dir,
+                upstream_config_path=args.upstream_config,
+                radar_sources_config_path=args.radar_sources_config,
+                openmeteo_enabled=bool(args.enable_upstream_openmeteo and not args.offline_demo),
+                forecast_hours=int(args.upstream_forecast_hours),
+                timezone_name=args.timezone,
+                timeout_s=float(args.timeout_s),
+            )
+            report["upstream_watch"] = upstream_watch.get("summary", {})
+        except (OSError, ValueError, RuntimeError) as exc:
+            (out_dir / "upstream_watch_error.json").write_text(
+                _json_dumps({"status": "error", "detail": str(exc)}),
+                encoding="utf-8",
+            )
 
     if not args.no_history:
         _sync_history_outputs(report, out_dir, history_dir, run_id)
@@ -3606,6 +3658,11 @@ def main(argv: list[str] | None = None) -> int:
         "belgium_alert_cap.xml",
         "belgium_public_latest.json",
         "meteovoid_api_latest.json",
+        "upstream_watch.json",
+        "upstream_watch_report.md",
+        "european_upstream_map.html",
+        "upstream_corridors.csv",
+        "european_radar_sources_status.json",
         "manifest.json",
     ]:
         path = out_dir / name

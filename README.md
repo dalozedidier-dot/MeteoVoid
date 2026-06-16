@@ -73,6 +73,42 @@ python tools/build_belgium_public_site.py --report-dir _out/belgium --site-dir _
 
 Le vocabulaire public est volontairement prudent : MeteoVoid parle de veille, de pré-alerte technique ou de signal technique confirmé. Le mot « alerte » doit rester lié aux sources officielles ou à une confirmation externe forte clairement affichée.
 
+## Europe amont / Upstream Watch
+
+MeteoVoid peut générer une couche amont européenne pour suivre les régions sources et les couloirs de propagation vers la Belgique. Cette couche ne simule pas de radar : les interfaces radar/foudre européennes restent optionnelles et ne sont utilisées que si un endpoint licite est configuré dans l’environnement.
+
+Sorties principales :
+
+```text
+upstream_watch.json
+upstream_watch_report.md
+european_upstream_map.html
+upstream_corridors.csv
+european_radar_sources_status.json
+```
+
+Mode intégré, sans accès réseau :
+
+```bash
+python tools/generate_belgium_alert_report.py --offline-demo --out-dir _out/belgium
+```
+
+Mode intégré avec fallback Open-Meteo pour les flux et niveaux de pression :
+
+```bash
+python tools/generate_belgium_alert_report.py --out-dir _out/belgium --enable-upstream-openmeteo
+```
+
+Outil dédié :
+
+```bash
+python tools/generate_european_upstream_watch.py \
+  --report-json _out/belgium/belgium_alert_report.json \
+  --out-dir _out/belgium
+```
+
+Voir `docs/UPSTREAM_WATCH.md`.
+
 ## Méthodologie courte
 
 MeteoVoid sépare trois niveaux de lecture :

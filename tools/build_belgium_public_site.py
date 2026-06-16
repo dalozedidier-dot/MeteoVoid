@@ -40,6 +40,11 @@ PUBLIC_FILES = [
     "belgium_alert_cap.xml",
     "belgium_public_latest.json",
     "meteovoid_api_latest.json",
+    "upstream_watch.json",
+    "upstream_watch_report.md",
+    "european_upstream_map.html",
+    "upstream_corridors.csv",
+    "european_radar_sources_status.json",
     "early_warning_signals.json",
     "early_warning_by_station.csv",
     "early_warning_network.csv",
@@ -92,6 +97,7 @@ EXPERT_FRAMES = [
     ("Analyse", "Synthèse détaillée", "belgium_alert_dashboard.html"),
     ("Analyse", "Transition convective", "convective_transition_dashboard.html"),
     ("Analyse", "Graphe amont", "upstream_graph.html"),
+    ("Analyse", "Europe amont", "european_upstream_map.html"),
     ("Analyse", "Graphe informationnel", "information_graph.html"),
     ("Preuve", "Signaux précoces", "early_warning_dashboard.html"),
     ("Preuve", "Validation", "validation_dashboard.html"),
@@ -111,6 +117,9 @@ EXPORTS = [
     ("API transition JSON", "../api/transition.json"),
     ("API sources JSON", "../api/sources.json"),
     ("API validation JSON", "../api/validation.json"),
+    ("API upstream JSON", "../api/upstream.json"),
+    ("Rapport Europe amont", "upstream_watch_report.md"),
+    ("Corridors amont CSV", "upstream_corridors.csv"),
     ("CAP XML (test)", "belgium_alert_cap.xml"),
     ("Méthodologie", "../../methodology.html"),
     ("Manifest", "manifest.json"),
@@ -788,6 +797,7 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
     source_status = _load_json(report_dir / "source_status.json")
     obs_gap = _load_json(report_dir / "observation_gap_status.json")
     nowcast = _load_json(report_dir / "nowcast_status.json")
+    upstream = _load_json(report_dir / "upstream_watch.json")
 
     operational = report.get("operational_state")
     operational = operational if isinstance(operational, dict) else alert_state
@@ -835,6 +845,7 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
             "transition": "api/transition.json",
             "sources": "api/sources.json",
             "validation": "api/validation.json",
+            "upstream": "api/upstream.json",
         },
     }
 
@@ -899,6 +910,9 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
         ),
         "information_graph": (
             info_graph.get("summary") if isinstance(info_graph.get("summary"), dict) else {}
+        ),
+        "upstream_watch": (
+            upstream.get("summary") if isinstance(upstream.get("summary"), dict) else {}
         ),
         "frames": [
             {"group": group, "label": label, "file": "reports/latest/" + file}
@@ -1056,6 +1070,10 @@ def build_api(vm: dict[str, Any], site_dir: Path) -> None:
         {"generated_at": generated_at, **vm["expert"]["validation"]},
     )
     _write_json(
+        api_dir / "upstream.json",
+        {"generated_at": generated_at, **vm["expert"].get("upstream_watch", {})},
+    )
+    _write_json(
         api_dir / "index.json",
         {
             "generated_at": generated_at,
@@ -1085,6 +1103,7 @@ body{margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:#f5f7fb;col
 <div class="card"><h2>Séparation des scores</h2><p>Le score global est complété par deux couches distinctes : <code>heat_stress_score</code> pour la lourdeur thermique et <code>convective_risk_score</code> pour le risque convectif. Cela évite de confondre une atmosphère chaude et humide avec un orage violent déjà probable.</p></div>
 <div class="card"><h2>Indices convectifs natifs</h2><p>Le contrat <code>native_convective_fields_optional_v1</code> prépare l’intégration de champs comme CAPE, CIN, Lifted Index, cisaillement 0-6 km, SRH, LCL, LFC, eau précipitable et lapse rate. Si le fournisseur météo ne livre pas ces champs, MeteoVoid conserve un mode proxy explicite.</p></div>
 <div class="card"><h2>Validation historique</h2><p>Le fichier <code>config/belgium_verified_storm_events.csv</code> sert de registre d’événements vérifiés pour mesurer vrais positifs, faux positifs, faux négatifs et délai de détection. Sans événements vérifiés, le replay indique que la validation historique reste à compléter.</p></div>
+<div class="card"><h2>Europe amont</h2><p>La couche <code>European Upstream Watch</code> suit des régions sources et des couloirs de propagation vers la Belgique. Elle peut utiliser Open‑Meteo comme fallback pour les flux et les niveaux de pression. Les cartes radar européennes ou la foudre ne sont intégrées que si une interface/licence explicite est configurée ; sinon le rapport indique <code>interface_only_unconfigured</code> et n’invente aucune confirmation.</p></div>
 <div class="card"><h2>Contrats publics</h2><p>Le fichier canonique de statut public est <code>belgium_public_latest.json</code>. L’ancien <code>meteovoid_api_latest.json</code> reste disponible comme alias de compatibilité.</p></div>
 </main></body></html>"""
     (site_dir / "methodology.html").write_text(html_page, encoding="utf-8")
@@ -1525,7 +1544,7 @@ function renderExpert(vm){
   <div class="sub" data-sub="exports" style="display:none">
     <div class="section-title">Exports & API statique</div>
     <div class="links">${(e.exports||[]).map(x=>`<a href="${esc(x.file)}">${esc(x.label)}</a>`).join('')}</div>
-    <p class="muted" style="margin-top:10px">L’API JSON (<code>api/latest.json</code>, <code>stations</code>, <code>timeline</code>, <code>transition</code>, <code>sources</code>, <code>validation</code>) est lue par cette page et réutilisable par d’autres clients.</p>
+    <p class="muted" style="margin-top:10px">L’API JSON (<code>api/latest.json</code>, <code>stations</code>, <code>timeline</code>, <code>transition</code>, <code>sources</code>, <code>validation</code>, <code>upstream</code>) est lue par cette page et réutilisable par d’autres clients.</p>
   </div>`;
 }
 
