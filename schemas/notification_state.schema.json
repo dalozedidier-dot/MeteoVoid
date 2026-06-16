@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MeteoVoid Belgium notification state minimal contract",
+  "type": "object",
+  "required": ["generated_at", "should_notify", "cooldown_hours", "dedupe_key", "notification_allowed", "public_wording", "official_alert"]
+}

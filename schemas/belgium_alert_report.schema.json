@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MeteoVoid Belgium alert report minimal contract",
+  "type": "object",
+  "required": ["generated_at", "target_window", "aggregate", "stations", "data_mode", "source_type", "external_confirmation", "operational_state"],
+  "properties": {
+    "generated_at": {"type": "string"},
+    "target_window": {"type": "object"},
+    "aggregate": {
+      "type": "object",
+      "required": ["score", "severity", "source_ok_count", "source_error_count"]
+    },
+    "stations": {"type": "array"},
+    "data_mode": {"type": "string"},
+    "source_type": {"type": "string"},
+    "external_confirmation": {"type": "object"},
+    "operational_state": {"type": "object"}
+  }
+}

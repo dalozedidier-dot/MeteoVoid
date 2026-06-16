@@ -56,7 +56,7 @@ meteovoid = "meteovoid.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-packages = ["meteovoid"]
+packages = ["meteovoid", "meteovoid.belgium"]
 
 [tool.ruff]
 target-version = "py311"

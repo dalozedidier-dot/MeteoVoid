@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MeteoVoid Belgium source status minimal contract",
+  "type": "object",
+  "required": ["source_health_score", "source_ok_count", "source_error_count"]
+}

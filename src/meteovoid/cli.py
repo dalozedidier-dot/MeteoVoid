@@ -6,8 +6,6 @@ from pathlib import Path
 import typer
 
 from .core import scan_series_for_voids
-from .simulate import push_synthetic_stream
-from .stream import run_live_worker
 
 app = typer.Typer(
     add_completion=False,
@@ -44,6 +42,8 @@ def simulate(
     sleep: float = 0.01,
 ) -> None:
     """Publish synthetic observations into a Redis Stream."""
+    from .simulate import push_synthetic_stream
+
     push_synthetic_stream(redis_url, stream, station_id, variable, steps, sleep)
 
 
@@ -54,6 +54,8 @@ def live(
     out_stream: str = "meteovoid:reports",
 ) -> None:
     """Consume observations from Redis Streams and emit live reports."""
+    from .stream import run_live_worker
+
     run_live_worker(redis_url, in_stream, out_stream)
 
 
