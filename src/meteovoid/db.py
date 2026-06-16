@@ -426,24 +426,28 @@ def query_ingest_health(*, limit_per_station: int = 1) -> list[dict[str, Any]]:
         try:
             with conn.cursor() as cur:
                 # Most recent successful report per station
-                cur.execute("""
+                cur.execute(
+                    """
                     SELECT DISTINCT ON (station_id)
                            station_id, ts_ingest, 'ok' AS status, NULL AS error
                     FROM reports
                     ORDER BY station_id, ts_ingest DESC
-                    """)
+                    """
+                )
                 success_rows = {
                     r[0]: {"station_id": r[0], "last_success": r[1], "status": "ok"}
                     for r in cur.fetchall()
                 }
 
                 # Most recent failure per station
-                cur.execute("""
+                cur.execute(
+                    """
                     SELECT DISTINCT ON (station_id)
                            station_id, ts, error
                     FROM ingest_failures
                     ORDER BY station_id, ts DESC
-                    """)
+                    """
+                )
                 for r in cur.fetchall():
                     sid = r[0]
                     entry = success_rows.setdefault(sid, {"station_id": sid, "last_success": None})
