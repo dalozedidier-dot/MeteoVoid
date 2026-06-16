@@ -1,0 +1,23 @@
+version: belgium_map_layers_v1
+leaflet:
+  default_center: [50.64, 4.66]
+  default_zoom: 8
+  bounds:
+    south_west: [49.45, 2.45]
+    north_east: [51.55, 6.55]
+rainviewer:
+  enabled: true
+  metadata_url: https://api.rainviewer.com/public/weather-maps.json
+  tile_format: png
+  opacity: 0.58
+openmeteo_derived_layers:
+  enabled: true
+  grid_step_degrees: 0.12
+  layers:
+    - humidity_pct
+    - dew_point_c
+    - storm_formation_score
+windy:
+  enabled: false
+  safe_mode: manual_browser_key_only
+  note: "Do not embed Windy API keys in public GitHub artifacts. Use the generated local comparison page."

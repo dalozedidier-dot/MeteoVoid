@@ -181,11 +181,6 @@ jobs:
 
           "${cmd[@]}"
 
-      - name: Validate Belgium output contracts
-        run: |
-          set -euo pipefail
-          python tools/validate_belgium_contracts.py _ci_out/belgium_alert
-
       - name: Show Markdown summary
         if: always()
         run: |

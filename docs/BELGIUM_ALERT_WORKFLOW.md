@@ -230,3 +230,22 @@ python tools/generate_belgium_alert_report.py \
 ```
 
 Les connecteurs externes restent volontairement prudents : ils renforcent le score de confirmation quand les sources convergent, mais MeteoVoid continue d'indiquer que seul l'IRM/KMI et les autorités compétentes publient des avertissements officiels.
+
+## Cartes météo avancées
+
+La couche Belgique génère aussi un pack de cartes météo opérationnelles inspiré des outils de veille type Windy, sans rendre Windy obligatoire.
+
+Fichiers ajoutés :
+
+- `belgium_weather_layers.html` : carte multi-couches avec radar pluie, humidité, point de rosée, indice de formation orageuse et stations.
+- `belgium_radar_map.html` : carte Leaflet avec surcouche radar RainViewer côté navigateur.
+- `belgium_humidity_map.html` : humidité relative interpolée depuis les stations.
+- `belgium_dewpoint_map.html` : point de rosée interpolé, utile pour repérer les masses d'air lourdes.
+- `belgium_storm_formation_map.html` : indice MeteoVoid de formation orageuse, dérivé du score station, de l'humidité, des précipitations, des codes météo, des rafales et de la pression.
+- `belgium_windy_compare.html` : page optionnelle pour comparer localement avec Windy sans stocker de clé API dans les artefacts.
+- `weather_layers_grid.csv` : grille interpolée Belgique.
+- `convective_parameters.json` : synthèse des paramètres convectifs disponibles et des limites actuelles.
+
+La couche radar RainViewer est chargée dans le navigateur, donc le rapport n'archive pas les tuiles radar. La heatmap humidité, point de rosée et formation orageuse reste une interpolation légère depuis les stations. Elle aide la lecture spatiale, mais ne remplace pas un champ de modèle officiel.
+
+Le comparateur Windy est volontairement optionnel. Une clé Windy Map Forecast API peut être saisie localement dans la page `belgium_windy_compare.html`, mais MeteoVoid ne l'insère pas automatiquement dans les artefacts pour éviter d'exposer un secret GitHub.

@@ -7,8 +7,6 @@ WORKDIR /app
 
 COPY pyproject.toml README.md LICENSE /app/
 COPY src/ /app/src/
-COPY config/ /app/config/
-COPY tools/ /app/tools/
 
 RUN python -m pip install -U pip \
   && python -m pip install -e ".[live]"
