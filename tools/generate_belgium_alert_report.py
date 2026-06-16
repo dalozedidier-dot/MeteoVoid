@@ -766,193 +766,37 @@ def _circle_radius(score: float) -> float:
     return 7.0 + _clamp01(score) * 18.0
 
 
-def _render_map_svg(report: dict[str, Any]) -> str:
-    stations = report.get("stations", [])
-    stations = [s for s in stations if isinstance(s, dict)]
-    aggregate = report.get("aggregate", {})
-    target = report.get("target_window", {})
-    width = 1120
-    height = 780
-    pad = 72
-    bounds = _map_bounds(stations)
-
-    def esc(value: Any) -> str:
-        return html.escape(str(value), quote=True)
-
-    def point(lon: float, lat: float) -> str:
-        x, y = _project_point(lon, lat, bounds=bounds, width=width, height=height, pad=pad)
-        return f"{x:.1f},{y:.1f}"
-
-    outline_points = " ".join(point(lon, lat) for lon, lat in BE_OUTLINE_LON_LAT)
-    lines: list[str] = []
-    lines.append('<?xml version="1.0" encoding="UTF-8"?>')
-    lines.append(
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
-        f'viewBox="0 0 {width} {height}" role="img" aria-labelledby="title desc">'
-    )
-    lines.append('<title id="title">MeteoVoid Belgium Alert Map</title>')
-    lines.append(
-        '<desc id="desc">Carte statique des scores de risque par station pour la Belgique et les approches frontalières.</desc>'
-    )
-    lines.append('<rect width="100%" height="100%" fill="#f7f5ef"/>')
-    lines.append(
-        '<rect x="28" y="28" width="1064" height="724" rx="24" fill="#ffffff" stroke="#d9d4c8"/>'
-    )
-    lines.append(
-        '<text x="56" y="70" font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700" fill="#222">'
-        "MeteoVoid Belgique, carte de veille</text>"
-    )
-    lines.append(
-        f'<text x="56" y="102" font-family="Arial, Helvetica, sans-serif" font-size="16" fill="#555">'
-        f'Score national {float(aggregate.get("score", 0.0)):.3f}, sévérité {esc(aggregate.get("severity", "n/a"))}, '
-        f'fenêtre {esc(target.get("start", "n/a"))} à {esc(target.get("end", "n/a"))}</text>'
-    )
-
-    for frac in (0.0, 0.25, 0.5, 0.75, 1.0):
-        x = pad + frac * (width - 2 * pad)
-        y = pad + frac * (height - 2 * pad)
-        lines.append(
-            f'<line x1="{x:.1f}" y1="{pad}" x2="{x:.1f}" y2="{height-pad}" stroke="#eee8dc"/>'
-        )
-        lines.append(
-            f'<line x1="{pad}" y1="{y:.1f}" x2="{width-pad}" y2="{y:.1f}" stroke="#eee8dc"/>'
-        )
-
-    lines.append(
-        f'<polygon points="{outline_points}" fill="#eef2f0" stroke="#9aa9a2" stroke-width="2" opacity="0.95"/>'
-    )
-    lines.append(
-        '<text x="88" y="720" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#777">'
-        "Carte schématique sans fond géographique externe. Points dimensionnés par score, couleurs par sévérité.</text>"
-    )
-
-    ordered = sorted(stations, key=lambda x: float(x.get("score") or 0.0), reverse=True)
-    for item in ordered:
-        lon = _safe_float(item.get("lon"))
-        lat = _safe_float(item.get("lat"))
-        if lon is None or lat is None:
-            continue
-        x, y = _project_point(lon, lat, bounds=bounds, width=width, height=height, pad=pad)
-        severity = str(item.get("severity", "normal"))
-        score = float(item.get("score") or 0.0)
-        color = "#888888" if not item.get("source_ok", True) else _severity_color(severity)
-        radius = _circle_radius(score)
-        stroke = "#333333" if item.get("source_ok", True) else "#777777"
-        station_name = esc(item.get("name", item.get("station_id", "station")))
-        station_id = esc(item.get("station_id", ""))
-        title = esc(
-            f"{item.get('name', station_id)} | score {score:.3f} | {severity} | {item.get('worst_time') or 'n/a'}"
-        )
-        lines.append(f'<g class="station station-{esc(severity)}">')
-        lines.append(f"<title>{title}</title>")
-        lines.append(
-            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{radius:.1f}" fill="{color}" '
-            f'fill-opacity="0.82" stroke="{stroke}" stroke-width="1.4"/>'
-        )
-        lines.append(
-            f'<text x="{x + radius + 5:.1f}" y="{y + 4:.1f}" font-family="Arial, Helvetica, sans-serif" '
-            f'font-size="12" fill="#242424">{station_name}</text>'
-        )
-        lines.append("</g>")
-
-    legend_x = 820
-    legend_y = 134
-    lines.append(f'<g transform="translate({legend_x},{legend_y})">')
-    lines.append(
-        '<rect x="0" y="0" width="232" height="178" rx="14" fill="#ffffff" stroke="#d9d4c8"/>'
-    )
-    lines.append(
-        '<text x="18" y="28" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700" fill="#333">Légende</text>'
-    )
-    for idx, sev in enumerate(["normal", "watch", "medium", "high", "alert"]):
-        y = 54 + idx * 23
-        lines.append(f'<circle cx="24" cy="{y}" r="8" fill="{_severity_color(sev)}"/>')
-        lines.append(
-            f'<text x="42" y="{y + 4}" font-family="Arial, Helvetica, sans-serif" font-size="13" fill="#333">{sev}</text>'
-        )
-    lines.append(
-        '<text x="18" y="164" font-family="Arial, Helvetica, sans-serif" font-size="12" fill="#666">Plus le cercle est grand, plus le score est élevé.</text>'
-    )
-    lines.append("</g>")
-    lines.append("</svg>")
-    return "\n".join(lines) + "\n"
 
 
-def _render_map_html(report: dict[str, Any]) -> str:
-    svg = _render_map_svg(report)
-    aggregate = report.get("aggregate", {})
-    stations = report.get("stations", [])
-    ordered = sorted(
-        [s for s in stations if isinstance(s, dict)],
-        key=lambda x: float(x.get("score") or 0.0),
-        reverse=True,
-    )
-    rows: list[str] = []
-    for item in ordered[:15]:
-        signals = "; ".join(str(x) for x in item.get("signals", []))
-        rows.append(
-            "<tr>"
-            f"<td>{html.escape(str(item.get('name', '')))}</td>"
-            f"<td>{html.escape(str(item.get('severity', '')))}</td>"
-            f"<td>{float(item.get('score') or 0.0):.3f}</td>"
-            f"<td>{html.escape(str(item.get('worst_time') or 'n/a'))}</td>"
-            f"<td>{html.escape(signals)}</td>"
-            "</tr>"
-        )
-    return (
-        """<!doctype html>
-<html lang=\"fr\">
-<head>
-  <meta charset=\"utf-8\">
-  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
-  <title>MeteoVoid Belgium Alert Map</title>
-  <style>
-    body { font-family: Arial, Helvetica, sans-serif; margin: 24px; background: #f7f5ef; color: #222; }
-    main { max-width: 1180px; margin: 0 auto; }
-    .panel { background: #fff; border: 1px solid #d9d4c8; border-radius: 18px; padding: 20px; margin-bottom: 18px; }
-    svg { width: 100%; height: auto; display: block; }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th, td { border-bottom: 1px solid #e7e1d7; padding: 8px; text-align: left; vertical-align: top; }
-    th { background: #fbfaf6; }
-    code { background: #f1ece1; padding: 2px 5px; border-radius: 5px; }
-  </style>
-</head>
-<body>
-<main>
-  <section class=\"panel\">
-    <h1>MeteoVoid Belgium Alert Watch</h1>
-    <p>Score national : <code>"""
-        + f"{float(aggregate.get('score', 0.0)):.3f}"
-        + """</code>. Sévérité : <code>"""
-        + html.escape(str(aggregate.get("severity", "n/a")))
-        + """</code>.</p>
-    <p>Carte statique hors ligne. Elle ne dépend d’aucune tuile externe.</p>
-  </section>
-  <section class=\"panel\">
-"""
-        + svg
-        + """
-  </section>
-  <section class=\"panel\">
-    <h2>Stations</h2>
-    <table>
-      <thead><tr><th>Station</th><th>Sévérité</th><th>Score</th><th>Heure sensible</th><th>Signaux</th></tr></thead>
-      <tbody>
-"""
-        + "\n".join(rows)
-        + """
-      </tbody>
-    </table>
-  </section>
-</main>
-</body>
-</html>
-"""
-    )
 
 
 def _render_geojson(report: dict[str, Any]) -> dict[str, Any]:
+    """Render a lightweight station GeoJSON for maps.
+
+    The detailed hourly signal lives in risk_timeseries.json. Keeping it out of
+    the station GeoJSON avoids shipping hundreds of kilobytes of duplicated data
+    to the public dashboard.
+    """
     features: list[dict[str, Any]] = []
+    keep_keys = {
+        "station_id",
+        "name",
+        "region",
+        "province",
+        "score",
+        "severity",
+        "worst_time",
+        "signals",
+        "source",
+        "source_ok",
+        "source_error",
+        "max_temperature_c",
+        "max_dew_point_c",
+        "max_relative_humidity_pct",
+        "max_precip_probability_pct",
+        "max_wind_gust_ms",
+    }
+    component_keys = {"heat", "moisture", "precipitation", "wind_gust", "pressure_drop"}
     for item in report.get("stations", []):
         if not isinstance(item, dict):
             continue
@@ -960,27 +804,11 @@ def _render_geojson(report: dict[str, Any]) -> dict[str, Any]:
         lat = _safe_float(item.get("lat"))
         if lon is None or lat is None:
             continue
-        props = {k: v for k, v in item.items() if k not in {"lat", "lon", "components"}}
-        props["component_heat"] = (
-            item.get("components", {}).get("heat")
-            if isinstance(item.get("components"), dict)
-            else None
-        )
-        props["component_moisture"] = (
-            item.get("components", {}).get("moisture")
-            if isinstance(item.get("components"), dict)
-            else None
-        )
-        props["component_precipitation"] = (
-            item.get("components", {}).get("precipitation")
-            if isinstance(item.get("components"), dict)
-            else None
-        )
-        props["component_wind_gust"] = (
-            item.get("components", {}).get("wind_gust")
-            if isinstance(item.get("components"), dict)
-            else None
-        )
+        props = {k: item.get(k) for k in keep_keys if k in item}
+        components = item.get("components")
+        if isinstance(components, dict):
+            for key in component_keys:
+                props[f"component_{key}"] = components.get(key)
         features.append(
             {
                 "type": "Feature",
@@ -996,127 +824,6 @@ def _render_geojson(report: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _render_markdown(report: dict[str, Any]) -> str:
-    aggregate = report["aggregate"]
-    stations = report["stations"]
-    data_mode = report.get("data_mode", "unknown")
-    source_type = report.get("source_type", "unknown")
-    source_detail = report.get("source_detail", report.get("source", "unknown"))
-    integrations = report.get("integrations", {})
-
-    lines: list[str] = []
-    lines.append("# MeteoVoid Belgium Alert Watch")
-    lines.append("")
-    lines.append(f"Généré le : `{report['generated_at']}`")
-    lines.append(
-        f"Fenêtre analysée : `{report['target_window']['start']}` à "
-        f"`{report['target_window']['end']}`"
-    )
-    lines.append(f"Score national : `{aggregate['score']:.3f}`")
-    lines.append(f"Sévérité : `{aggregate['severity']}`")
-    lines.append("")
-    lines.append("## Source et limites")
-    lines.append("")
-    lines.append(f"Source principale : `{source_detail}`")
-    lines.append(f"Mode de données : `{data_mode}`")
-    lines.append(f"Type de source : `{source_type}`")
-    lines.append(
-        "Données récupérées au moment de l’exécution"
-        if data_mode == "live_forecast_api"
-        else "Données de démonstration déterministes, sans accès réseau"
-    )
-    lines.append("")
-    lines.append("Intégrations externes actuellement actives :")
-    lines.append(
-        f"- Signal officiel IRM/KMI renseigné : `{bool(integrations.get('official_warning_integrated', False))}`"
-    )
-    lines.append(
-        f"- Prévision texte IRM/KMI intégrée : `{bool(integrations.get('official_forecast_integrated', False))}`"
-    )
-    lines.append(
-        f"- Avertissement chaleur intégré : `{bool(integrations.get('heat_warning_integrated', False))}`"
-    )
-    lines.append(f"- MeteoAlarm : `{bool(integrations.get('metealarm_integrated', False))}`")
-    lines.append(f"- ESTOFEX : `{bool(integrations.get('estofex_integrated', False))}`")
-    lines.append(f"- Radar : `{bool(integrations.get('radar_integrated', False))}`")
-    lines.append(f"- Foudre : `{bool(integrations.get('lightning_integrated', False))}`")
-    lines.append("")
-    timeline_summary = report.get("timeline_summary", {})
-    province_rows = report.get("province_summary", [])
-    lines.append("## Fenêtre horaire")
-    lines.append("")
-    lines.append(
-        f"Résumé : {timeline_summary.get('summary', 'n/a') if isinstance(timeline_summary, dict) else 'n/a'}"
-    )
-    lines.append("")
-    lines.append("## Synthèse par province / zone")
-    lines.append("")
-    lines.append("| Zone | Sévérité | Score max | Score moyen | Station dominante |")
-    lines.append("|---|---:|---:|---:|---|")
-    for row in province_rows[:10] if isinstance(province_rows, list) else []:
-        lines.append(
-            f"| {row.get('province')} | {row.get('severity')} | {float(row.get('max_score') or 0.0):.3f} | {float(row.get('mean_score') or 0.0):.3f} | {row.get('top_station') or 'n/a'} |"
-        )
-    lines.append("")
-    lines.append(
-        "Ce rapport est une veille basée sur modèle. Ce n’est pas une alerte officielle. "
-        "Pour la sécurité publique, il doit toujours être comparé avec l’IRM/KMI, "
-        "MeteoAlarm, le radar et le nowcast foudre."
-    )
-    lines.append("")
-    lines.append("## Carte")
-    lines.append("")
-    lines.append(
-        "Une carte statique est générée avec le rapport : `belgium_alert_map.svg` et "
-        "`belgium_alert_map.html`. Un tableau de bord professionnel est aussi généré : `belgium_alert_dashboard.html`. Un fichier SIG est aussi produit : `risk_by_station.geojson`."
-    )
-    lines.append("")
-    lines.append("## Stations les plus sensibles")
-    lines.append("")
-    lines.append(
-        "| Station | Région | Sévérité | Score | Heure sensible | Tmax °C | Point de rosée °C | "
-        "Précip % | Précip mm/h | Rafales m/s | Baisse hPa/6h | Signaux |"
-    )
-    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|")
-    ordered = sorted(stations, key=lambda x: float(x["score"]), reverse=True)
-    for item in ordered[:12]:
-        signals = "; ".join(item.get("signals", []))
-        lines.append(
-            "| "
-            + " | ".join(
-                [
-                    str(item["name"]),
-                    str(item["region"]),
-                    str(item["severity"]),
-                    f"{float(item['score']):.3f}",
-                    str(item.get("worst_time") or "n/a"),
-                    _fmt(item.get("max_temperature_c")),
-                    _fmt(item.get("max_dew_point_c")),
-                    _fmt(item.get("max_precip_probability_pct"), 0),
-                    _fmt(item.get("max_precipitation_mm_h")),
-                    _fmt(item.get("max_wind_gust_ms")),
-                    _fmt(item.get("max_pressure_drop_6h_hpa")),
-                    signals.replace("|", "/"),
-                ]
-            )
-            + " |"
-        )
-    lines.append("")
-    lines.append("## Notes opérationnelles")
-    lines.append("")
-    lines.append("- `watch` : garder la situation sous surveillance rapprochée.")
-    lines.append("- `medium` : comparer avec les avertissements officiels et l’évolution radar.")
-    lines.append(
-        "- `high` : préparer un message d’alerte clair si les signaux externes confirment."
-    )
-    lines.append("- `alert` : publier seulement après confirmation externe.")
-    lines.append("")
-    lines.append(
-        "Vérifications externes recommandées : avertissements IRM/KMI, MeteoAlarm, "
-        "ESTOFEX, radar, foudre."
-    )
-    lines.append("")
-    return "\n".join(lines)
 
 
 def _severity_badge_label(severity: str) -> str:
@@ -1207,317 +914,8 @@ def _dashboard_insights(report: dict[str, Any]) -> list[tuple[str, str, str]]:
     return insights
 
 
-def _render_dashboard_map_svg(report: dict[str, Any]) -> str:
-    stations = _station_rows(report)
-    width = 1060
-    height = 520
-    pad = 58
-    bounds = _map_bounds(stations)
-
-    def esc(value: Any) -> str:
-        return html.escape(str(value), quote=True)
-
-    def point(lon: float, lat: float) -> str:
-        x, y = _project_point(lon, lat, bounds=bounds, width=width, height=height, pad=pad)
-        return f"{x:.1f},{y:.1f}"
-
-    outline_points = " ".join(point(lon, lat) for lon, lat in BE_OUTLINE_LON_LAT)
-    lines: list[str] = []
-    lines.append(
-        f'<svg class="mv-map-svg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" role="img" aria-labelledby="map-title map-desc">'
-    )
-    lines.append('<title id="map-title">Carte des risques MeteoVoid Belgique</title>')
-    lines.append(
-        '<desc id="map-desc">Carte professionnelle des scores par station pour la Belgique et les approches frontalières.</desc>'
-    )
-    lines.append("<defs>")
-    lines.append(
-        '<linearGradient id="mvSea" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#d9efff"/><stop offset="1" stop-color="#f8fbff"/></linearGradient>'
-    )
-    lines.append(
-        '<linearGradient id="mvLand" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#f3f6e8"/><stop offset="1" stop-color="#edf4df"/></linearGradient>'
-    )
-    lines.append(
-        '<filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#12213a" flood-opacity="0.14"/></filter>'
-    )
-    lines.append(
-        '<filter id="markerShadow" x="-80%" y="-80%" width="260%" height="260%"><feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#172033" flood-opacity="0.22"/></filter>'
-    )
-    lines.append("</defs>")
-    lines.append('<rect width="100%" height="100%" rx="18" fill="#f8fbff"/>')
-    lines.append('<path d="M0,0 L250,0 C205,54 128,88 0,96 Z" fill="url(#mvSea)" opacity="0.88"/>')
-    lines.append('<g opacity="0.50" stroke="#cfe3ef" stroke-width="1">')
-    for frac in (0.18, 0.36, 0.54, 0.72, 0.90):
-        x = pad + frac * (width - 2 * pad)
-        y = pad + frac * (height - 2 * pad)
-        lines.append(f'<line x1="{x:.1f}" y1="{pad}" x2="{x:.1f}" y2="{height-pad}"/>')
-        lines.append(f'<line x1="{pad}" y1="{y:.1f}" x2="{width-pad}" y2="{y:.1f}"/>')
-    lines.append("</g>")
-    lines.append('<text x="110" y="390" class="mv-country">FRANCE</text>')
-    lines.append('<text x="860" y="110" class="mv-country">PAYS-BAS</text>')
-    lines.append('<text x="870" y="325" class="mv-country">ALLEMAGNE</text>')
-    lines.append('<text x="760" y="458" class="mv-country">LUXEMBOURG</text>')
-    lines.append(
-        f'<polygon points="{outline_points}" fill="url(#mvLand)" stroke="#b9c7a8" stroke-width="2.2" filter="url(#softShadow)"/>'
-    )
-    lines.append('<g stroke="#a8d5e7" stroke-width="1" opacity="0.55" fill="none">')
-    lines.append('<path d="M258 222 C360 245, 476 247, 590 230 S780 225, 890 252"/>')
-    lines.append('<path d="M410 136 C480 170, 555 172, 630 155 S760 150, 830 185"/>')
-    lines.append('<path d="M520 332 C590 348, 650 382, 706 426"/>')
-    lines.append("</g>")
-
-    for item in reversed(stations):
-        lon = _safe_float(item.get("lon"))
-        lat = _safe_float(item.get("lat"))
-        if lon is None or lat is None:
-            continue
-        x, y = _project_point(lon, lat, bounds=bounds, width=width, height=height, pad=pad)
-        severity = str(item.get("severity", "normal"))
-        score = float(item.get("score") or 0.0)
-        radius = 8.5 + _clamp01(score) * 16.0
-        color = "#94a3b8" if not item.get("source_ok", True) else _severity_color(severity)
-        name = esc(item.get("name", item.get("station_id", "station")))
-        title = esc(
-            f"{item.get('name', '')} | score {score:.3f} | {severity} | {_fmt_time(item.get('worst_time'))}"
-        )
-        label_dx = radius + 7
-        label_dy = 4
-        if x > width * 0.76:
-            label_dx = -radius - 7
-        anchor = "start" if label_dx > 0 else "end"
-        lines.append('<g class="mv-station">')
-        lines.append(f"<title>{title}</title>")
-        lines.append(
-            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{radius + 5:.1f}" fill="{color}" opacity="0.14"/>'
-        )
-        lines.append(
-            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{radius:.1f}" fill="{color}" stroke="#ffffff" stroke-width="4" filter="url(#markerShadow)"/>'
-        )
-        lines.append(
-            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{max(3.0, radius * 0.23):.1f}" fill="#ffffff" opacity="0.55"/>'
-        )
-        lines.append(
-            f'<text x="{x + label_dx:.1f}" y="{y + label_dy:.1f}" text-anchor="{anchor}" class="mv-label">{name}</text>'
-        )
-        lines.append("</g>")
-
-    lines.append('<g class="mv-legend" transform="translate(26,320)">')
-    lines.append(
-        '<rect x="0" y="0" width="170" height="174" rx="14" fill="#ffffff" stroke="#d8e0ea" filter="url(#softShadow)"/>'
-    )
-    lines.append('<text x="18" y="28" class="mv-legend-title">Sévérité</text>')
-    for idx, sev in enumerate(["normal", "watch", "medium", "high", "alert"]):
-        y = 54 + idx * 21
-        lines.append(f'<circle cx="24" cy="{y}" r="7" fill="{_severity_color(sev)}"/>')
-        lines.append(f'<text x="42" y="{y + 4}" class="mv-legend-text">{sev}</text>')
-    lines.append('<line x1="18" y1="150" x2="152" y2="150" stroke="#e5ebf2"/>')
-    lines.append('<text x="18" y="166" class="mv-note">Taille = score</text>')
-    lines.append("</g>")
-    lines.append("</svg>")
-    return "\n".join(lines)
 
 
-def _render_dashboard_html(report: dict[str, Any]) -> str:
-    aggregate = report.get("aggregate", {})
-    target = report.get("target_window", {})
-    rows = _station_rows(report)
-    generated_at = str(report.get("generated_at", "n/a"))
-    score = float(aggregate.get("score") or 0.0)
-    severity = str(aggregate.get("severity", "normal"))
-    source_detail = html.escape(str(report.get("source_detail", "unknown")))
-    source_type = html.escape(str(report.get("source_type", "unknown")))
-    data_mode = html.escape(str(report.get("data_mode", "unknown")))
-    last_sensitive = next((str(r.get("worst_time")) for r in rows if r.get("worst_time")), "n/a")
-    active_count = int(aggregate.get("source_ok_count") or 0)
-    error_count = int(aggregate.get("source_error_count") or 0)
-    top_scores = [float(r.get("score") or 0.0) for r in rows[:6]] or [0.0]
-    spark_points = []
-    for i, val in enumerate(top_scores):
-        x = 8 + i * (88 / max(1, len(top_scores) - 1))
-        y = 48 - val * 34
-        spark_points.append(f"{x:.1f},{y:.1f}")
-    sparkline = " ".join(spark_points)
-
-    def esc(value: Any) -> str:
-        return html.escape(str(value), quote=True)
-
-    def badge(sev: Any) -> str:
-        sev_s = str(sev)
-        return f'<span class="badge badge-{esc(sev_s)}">{esc(_severity_badge_label(sev_s))}</span>'
-
-    station_rows: list[str] = []
-    for item in rows:
-        signals = "; ".join(str(x) for x in item.get("signals", []))
-        station_rows.append(
-            "<tr>"
-            f"<td><strong>{esc(item.get('name', ''))}</strong><span>{esc(item.get('region', ''))}</span></td>"
-            f"<td>{badge(item.get('severity', 'normal'))}</td>"
-            f"<td class=\"num\">{float(item.get('score') or 0.0):.3f}</td>"
-            f"<td>{esc(_fmt_time(item.get('worst_time')))}</td>"
-            f"<td>{esc(signals)}</td>"
-            "</tr>"
-        )
-
-    insight_blocks: list[str] = []
-    icon_map = {"heat": "☀", "storm": "ϟ", "rain": "☔"}
-    for title, text, kind in _dashboard_insights(report):
-        insight_blocks.append(
-            f'<article class="insight insight-{esc(kind)}"><div class="insight-icon">{icon_map.get(kind, "i")}</div>'
-            f"<div><h3>{esc(title)}</h3><p>{esc(text)}</p></div></article>"
-        )
-
-    official_states = (
-        report.get("integrations", {}) if isinstance(report.get("integrations"), dict) else {}
-    )
-    integrations_text = ", ".join(
-        [
-            f"IRM/KMI: {bool(official_states.get('official_warning_integrated', False))}",
-            f"MeteoAlarm: {bool(official_states.get('metealarm_integrated', False))}",
-            f"ESTOFEX: {bool(official_states.get('estofex_integrated', False))}",
-            f"Radar: {bool(official_states.get('radar_integrated', False))}",
-            f"Foudre: {bool(official_states.get('lightning_integrated', False))}",
-        ]
-    )
-
-    return f"""<!doctype html>
-<html lang="fr">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MeteoVoid Belgique Dashboard</title>
-  <style>
-    :root {{
-      --bg: #f3f6fb;
-      --panel: #ffffff;
-      --ink: #0f213f;
-      --muted: #607089;
-      --line: #dfe7f0;
-      --blue: #2b6fed;
-      --normal: {SEVERITY_COLORS['normal']};
-      --watch: {SEVERITY_COLORS['watch']};
-      --medium: {SEVERITY_COLORS['medium']};
-      --high: {SEVERITY_COLORS['high']};
-      --alert: {SEVERITY_COLORS['alert']};
-      --shadow: 0 14px 34px rgba(15, 33, 63, 0.08);
-    }}
-    * {{ box-sizing: border-box; }}
-    body {{ margin: 0; background: var(--bg); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
-    .app {{ display: grid; grid-template-columns: 228px 1fr; min-height: 100vh; }}
-    aside {{ background: linear-gradient(180deg, #0b1d37 0%, #102b4f 100%); color: #dbe7ff; padding: 24px 18px; display: flex; flex-direction: column; gap: 28px; }}
-    .brand {{ display: flex; align-items: center; gap: 12px; font-weight: 800; letter-spacing: 0.2px; }}
-    .logo {{ width: 46px; height: 46px; border-radius: 15px; display: grid; place-items: center; background: rgba(255,255,255,0.12); font-size: 24px; }}
-    nav {{ display: grid; gap: 9px; }}
-    nav a {{ color: #cbd7ee; text-decoration: none; padding: 12px 14px; border-radius: 13px; font-weight: 650; }}
-    nav a.active {{ background: rgba(43,111,237,0.28); color: #fff; outline: 1px solid rgba(137,172,255,0.45); }}
-    .status {{ margin-top: auto; border: 1px solid rgba(210,226,255,0.20); background: rgba(255,255,255,0.07); border-radius: 16px; padding: 14px; font-size: 13px; }}
-    .dot {{ display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #65c466; margin-right: 8px; }}
-    main {{ padding: 28px 34px 24px; }}
-    header {{ display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 20px; }}
-    h1 {{ margin: 0; font-size: 38px; line-height: 1; letter-spacing: -1.2px; }}
-    .subtitle {{ margin: 8px 0 0; color: var(--muted); font-size: 16px; }}
-    .header-actions {{ display: flex; align-items: center; gap: 16px; }}
-    .refresh {{ border: 1px solid var(--line); background: #fff; border-radius: 12px; padding: 10px 16px; font-weight: 700; color: var(--blue); box-shadow: 0 6px 18px rgba(15,33,63,0.05); }}
-    .stamp {{ color: var(--muted); text-align: right; font-size: 14px; line-height: 1.4; }}
-    .kpis {{ display: grid; grid-template-columns: 1.15fr 1fr 1.15fr 0.9fr 1.15fr; gap: 14px; margin-bottom: 16px; }}
-    .card {{ background: var(--panel); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); }}
-    .kpi {{ padding: 18px 20px; min-height: 116px; }}
-    .kpi small {{ color: var(--muted); font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }}
-    .kpi strong {{ display: block; margin-top: 8px; font-size: 32px; line-height: 1; }}
-    .kpi p {{ color: var(--muted); margin: 10px 0 0; font-size: 13px; }}
-    .severity-word {{ color: var(--high); }}
-    .spark {{ float: right; margin-top: 4px; width: 110px; height: 54px; }}
-    .layout {{ display: grid; grid-template-columns: minmax(640px, 1.9fr) minmax(300px, 0.9fr); gap: 16px; align-items: stretch; }}
-    .panel-title {{ padding: 16px 18px 0; font-size: 16px; font-weight: 800; }}
-    .map-panel {{ overflow: hidden; }}
-    .map-wrap {{ padding: 10px 14px 14px; }}
-    .mv-map-svg {{ width: 100%; height: auto; display: block; }}
-    .mv-country {{ font-size: 13px; fill: #738196; letter-spacing: .08em; font-weight: 800; }}
-    .mv-label {{ font-size: 12px; fill: #172033; font-weight: 800; paint-order: stroke; stroke: #fff; stroke-width: 4px; stroke-linejoin: round; }}
-    .mv-legend-title {{ font-size: 14px; fill: #172033; font-weight: 800; }}
-    .mv-legend-text {{ font-size: 12px; fill: #34445b; }}
-    .mv-note {{ font-size: 11px; fill: #607089; }}
-    .insights {{ padding: 16px; display: grid; gap: 12px; }}
-    .insight {{ display: grid; grid-template-columns: 54px 1fr; gap: 13px; align-items: center; border: 1px solid var(--line); border-radius: 16px; padding: 14px; background: linear-gradient(180deg, #fff, #fbfdff); }}
-    .insight-icon {{ width: 46px; height: 46px; border-radius: 15px; display: grid; place-items: center; font-size: 23px; font-weight: 900; }}
-    .insight-heat .insight-icon {{ color: var(--high); background: rgba(216,86,70,.10); }}
-    .insight-storm .insight-icon {{ color: var(--medium); background: rgba(229,147,58,.12); }}
-    .insight-rain .insight-icon {{ color: var(--alert); background: rgba(110,63,160,.10); }}
-    .insight h3 {{ margin: 0 0 5px; font-size: 15px; }}
-    .insight p {{ margin: 0; color: #34445b; font-size: 13px; line-height: 1.35; }}
-    .info-strip {{ margin-top: 2px; border: 1px solid #cfe0ff; background: #eff6ff; color: #1d4f9c; border-radius: 14px; padding: 12px 14px; font-weight: 650; font-size: 13px; }}
-    .table-card {{ margin-top: 16px; overflow: hidden; }}
-    table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
-    th {{ text-align: left; color: var(--muted); font-size: 12px; letter-spacing: .03em; text-transform: uppercase; background: #f9fbfe; padding: 13px 18px; border-bottom: 1px solid var(--line); }}
-    td {{ padding: 11px 18px; border-bottom: 1px solid #edf2f7; vertical-align: top; }}
-    td span {{ display: block; color: var(--muted); font-size: 12px; margin-top: 2px; }}
-    .num {{ font-variant-numeric: tabular-nums; font-weight: 800; }}
-    .badge {{ display: inline-flex; min-width: 66px; justify-content: center; border-radius: 999px; color: #fff; padding: 4px 9px; font-weight: 800; font-size: 12px; }}
-    .badge-normal {{ background: var(--normal); }}
-    .badge-watch {{ background: var(--watch); }}
-    .badge-medium {{ background: var(--medium); }}
-    .badge-high {{ background: var(--high); }}
-    .badge-alert {{ background: var(--alert); }}
-    .meta {{ margin-top: 14px; display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 13px; }}
-    .foot {{ margin-top: 18px; display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 13px; }}
-    @media (max-width: 1180px) {{ .app {{ grid-template-columns: 1fr; }} aside {{ display: none; }} .kpis {{ grid-template-columns: repeat(2, 1fr); }} .layout {{ grid-template-columns: 1fr; }} }}
-  </style>
-</head>
-<body>
-  <div class="app">
-    <aside>
-      <div class="brand"><div class="logo">☔</div><div>MeteoVoid<br>Belgique</div></div>
-      <nav>
-        <a class="active" href="#">Vue d'ensemble</a>
-        <a href="#stations">Stations</a>
-        <a href="#">Alertes</a>
-        <a href="#">Historique</a>
-        <a href="#">Paramètres</a>
-      </nav>
-      <div class="status"><p><span class="dot"></span><strong>Système opérationnel</strong></p><p>Dernière mise à jour<br>{esc(generated_at)}</p></div>
-    </aside>
-    <main>
-      <header>
-        <div>
-          <h1>MeteoVoid Belgique</h1>
-          <p class="subtitle">Tableau de bord de surveillance des risques météo en Belgique</p>
-        </div>
-        <div class="header-actions">
-          <button class="refresh" type="button">Actualiser</button>
-          <div class="stamp">{esc(generated_at)}<br>Europe/Brussels</div>
-        </div>
-      </header>
-
-      <section class="kpis">
-        <article class="card kpi"><small>Score national</small><svg class="spark" viewBox="0 0 110 54"><polyline points="{sparkline}" fill="none" stroke="#2b6fed" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><strong>{score:.3f}</strong><p>Plus le score est élevé, plus la vigilance augmente.</p></article>
-        <article class="card kpi"><small>Sévérité nationale</small><strong class="severity-word">{esc(severity)}</strong><p>Niveau dominant issu du scoring modèle.</p></article>
-        <article class="card kpi"><small>Fenêtre de veille</small><strong>{esc(target.get('start', 'n/a'))}<br>au {esc(target.get('end', 'n/a'))}</strong><p>Période couverte par l'analyse.</p></article>
-        <article class="card kpi"><small>Stations évaluées</small><strong>{active_count}</strong><p>{error_count} station(s) en erreur de source.</p></article>
-        <article class="card kpi"><small>Dernière heure sensible</small><strong>{esc(_fmt_time(last_sensitive))}</strong><p>Heure sensible la plus récente du top risque.</p></article>
-      </section>
-
-      <section class="layout">
-        <article class="card map-panel"><div class="panel-title">Carte des risques météo par station</div><div class="map-wrap">{_render_dashboard_map_svg(report)}</div></article>
-        <article class="card"><div class="panel-title">Points clés et lecture opérationnelle</div><div class="insights">{''.join(insight_blocks)}<div class="info-strip">Données basées sur des prévisions modèle. Surveillance active recommandée, confirmation externe nécessaire.</div></div></article>
-      </section>
-
-      <section id="stations" class="card table-card">
-        <div class="panel-title">Stations et évaluation des risques</div>
-        <table>
-          <thead><tr><th>Station</th><th>Sévérité</th><th>Score</th><th>Heure sensible</th><th>Signaux</th></tr></thead>
-          <tbody>{''.join(station_rows)}</tbody>
-        </table>
-      </section>
-
-      <div class="meta">
-        <span>Données : {source_detail} | Mode : {data_mode} | Type : {source_type}</span>
-        <span>{esc(integrations_text)}</span>
-      </div>
-      <footer class="foot"><strong>MeteoVoid Belgique</strong><span>Données non contractuelles. Comparaison indispensable avec IRM/KMI, MeteoAlarm, radar et foudre.</span></footer>
-    </main>
-  </div>
-</body>
-</html>
-"""
 
 
 # ---------------------------------------------------------------------------
@@ -3554,10 +2952,21 @@ def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
             TRANSITION_OUTPUTS,
             write_convective_transition_outputs,
         )
+    try:
+        from belgium_upstream_graph import (
+            UPSTREAM_GRAPH_OUTPUTS,
+            write_upstream_graph_outputs,
+        )
+    except ModuleNotFoundError:  # pragma: no cover - import path used by pytest/package mode
+        from tools.belgium_upstream_graph import (
+            UPSTREAM_GRAPH_OUTPUTS,
+            write_upstream_graph_outputs,
+        )
 
     out_dir.mkdir(parents=True, exist_ok=True)
     if isinstance(report.get("outputs"), dict):
         report["outputs"].update(TRANSITION_OUTPUTS)
+        report["outputs"].update(UPSTREAM_GRAPH_OUTPUTS)
     report_path = out_dir / "belgium_alert_report.json"
     report_path.write_text(_json_dumps(report), encoding="utf-8")
     (out_dir / "belgium_alert_report.md").write_text(_render_markdown(report), encoding="utf-8")
@@ -3612,6 +3021,7 @@ def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
     )
     write_weather_layer_outputs(report, out_dir)
     write_convective_transition_outputs(report, out_dir)
+    write_upstream_graph_outputs(report, out_dir)
 
     rows = report["stations"]
     csv_path = out_dir / "risk_by_station.csv"

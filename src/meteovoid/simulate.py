@@ -5,8 +5,6 @@ import time
 from datetime import datetime, timedelta
 from typing import Any
 
-from redis.typing import EncodableT
-
 from .utils import make_redis
 
 
@@ -62,7 +60,7 @@ def push_synthetic_stream(
     )
 
     for point in series:
-        fields: dict[EncodableT, EncodableT] = {
+        fields: dict[str, str] = {
             "ts": f"{float(point['ts']):.6f}",
             "station_id": str(point["station_id"]),
             "variable": str(point["variable"]),

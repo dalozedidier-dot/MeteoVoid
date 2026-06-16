@@ -3,12 +3,13 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-import redis
+if TYPE_CHECKING:  # pragma: no cover
+    import redis
 
 from . import db as _db
 from .log import get_logger
@@ -235,6 +236,13 @@ def main(argv: list[str] | None = None) -> int:
 
     cfg = load_stations_config(args.config)
     stations = cfg.stations
+
+    try:
+        import redis
+    except ModuleNotFoundError as exc:  # pragma: no cover - live extra missing
+        raise RuntimeError(
+            "Redis ingestion requires the live extra: install with `pip install meteo-void[live]`."
+        ) from exc
 
     r = redis.Redis.from_url(args.redis_url, decode_responses=True)
 

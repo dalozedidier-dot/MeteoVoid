@@ -49,3 +49,12 @@
 - Added six systemic indices: convective load, trigger readiness, storm organization potential, lid fragility, latent risk gap, and void collapse signal.
 - Added `config/convective_transition_engine.yaml` to document weights, thresholds and future native inputs.
 - Added tests for the transition engine and integrated the outputs in the Belgium report workflow.
+
+## Belgium graph hardening update
+
+- Removed duplicated dead renderer definitions from `tools/generate_belgium_alert_report.py`.
+- Lightened `risk_by_station.geojson` by moving hourly details exclusively to `risk_timeseries.json`.
+- Added upstream graph outputs: `upstream_graph_summary.json`, `upstream_graph_edges.csv`, `upstream_graph.html`.
+- Added `Graphe amont` to the public GitHub Pages dashboard.
+- Made Redis-related imports lazier so base imports are less dependent on the `live` extra.
+- Added `docs/BELGIUM_GRAPH_AND_HARDENING.md`.

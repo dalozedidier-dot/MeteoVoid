@@ -10,6 +10,7 @@ from typing import Any
 PUBLIC_FILES = [
     "belgium_alert_dashboard.html",
     "convective_transition_dashboard.html",
+    "upstream_graph.html",
     "belgium_alert_map.html",
     "belgium_weather_layers.html",
     "belgium_radar_map.html",
@@ -21,6 +22,8 @@ PUBLIC_FILES = [
     "belgium_windy_compare.html",
     "belgium_alert_report.md",
     "convective_transition_report.md",
+    "upstream_graph_summary.json",
+    "upstream_graph_edges.csv",
     "risk_by_station.csv",
     "risk_timeline.csv",
     "weather_layers_grid.csv",
@@ -31,12 +34,14 @@ PUBLIC_FILES = [
     "official_sources_status.json",
     "nowcast_status.json",
     "convective_transition_report.json",
+    "upstream_graph_summary.json",
     "manifest.json",
 ]
 
 FRAME_OPTIONS = [
     ("Synthèse", "belgium_alert_dashboard.html"),
     ("Transition convective", "convective_transition_dashboard.html"),
+    ("Graphe amont", "upstream_graph.html"),
     ("Carte risque", "belgium_alert_map.html"),
     ("Cartes avancées", "belgium_weather_layers.html"),
     ("Radar", "belgium_radar_map.html"),

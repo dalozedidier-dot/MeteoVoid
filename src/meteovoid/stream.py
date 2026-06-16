@@ -7,8 +7,6 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from redis.typing import EncodableT
-
 from . import db as _db
 from .alerts import maybe_send_alert
 from .config import StationConfig, env_config_path, load_station_config, resolve_variable_overrides
@@ -578,7 +576,7 @@ def run_live_worker(
 
                 r.set(_latest_key(station_id, variable), payload)
 
-                out_fields: dict[EncodableT, EncodableT] = {
+                out_fields: dict[str, str] = {
                     "station_id": station_id,
                     "variable": variable,
                     "payload": payload,
