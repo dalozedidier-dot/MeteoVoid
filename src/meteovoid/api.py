@@ -5,7 +5,7 @@ import os
 import time
 from typing import Any, Protocol, cast
 
-from fastapi import Body, FastAPI, Path, Query
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Path, Query, status
 from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 
 from . import db as _db
@@ -16,11 +16,30 @@ _log = get_logger(__name__)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 OUT_STREAM = os.getenv("METEOVOID_OUT_STREAM", "meteovoid:reports")
+API_TOKEN = os.getenv("METEOVOID_API_TOKEN", "").strip()
 
 
 class RedisLike(Protocol):
     def get(self, key: str) -> str | bytes | bytearray | None: ...
     def keys(self, pattern: str) -> list[Any]: ...
+
+
+def _require_write_token(
+    authorization: str | None = Header(default=None),
+    x_meteovoid_token: str | None = Header(default=None),
+) -> None:
+    """Protect write endpoints when METEOVOID_API_TOKEN is configured."""
+    if not API_TOKEN:
+        return
+    bearer = ""
+    if authorization and authorization.lower().startswith("bearer "):
+        bearer = authorization.split(" ", 1)[1].strip()
+    candidate = x_meteovoid_token or bearer
+    if candidate != API_TOKEN:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="missing_or_invalid_meteovoid_api_token",
+        )
 
 
 def _make_redis(url: str) -> RedisLike:
@@ -596,6 +615,7 @@ def _alert_action(
 def alert_ack_http(
     alert_id: int = Path(...),
     comment: str | None = Body(None, embed=True),
+    _token: None = Depends(_require_write_token),
 ) -> dict[str, Any]:  # pragma: no cover
     """Acknowledge an alert (operator has seen it)."""
     return _alert_action(alert_id, "acknowledged", comment)
@@ -605,6 +625,7 @@ def alert_ack_http(
 def alert_resolve_http(
     alert_id: int = Path(...),
     comment: str | None = Body(None, embed=True),
+    _token: None = Depends(_require_write_token),
 ) -> dict[str, Any]:  # pragma: no cover
     """Mark alert as resolved by operator."""
     return _alert_action(alert_id, "resolved", comment)
@@ -614,6 +635,7 @@ def alert_resolve_http(
 def alert_ignore_http(
     alert_id: int = Path(...),
     comment: str | None = Body(None, embed=True),
+    _token: None = Depends(_require_write_token),
 ) -> dict[str, Any]:  # pragma: no cover
     """Ignore an alert (false positive or not actionable)."""
     return _alert_action(alert_id, "ignored", comment)
@@ -746,6 +768,7 @@ def thresholds_upsert_http(
     watch_threshold: float | None = Body(None, embed=True),
     alert_threshold: float | None = Body(None, embed=True),
     station_id: str | None = Body(None, embed=True),
+    _token: None = Depends(_require_write_token),
 ) -> dict[str, Any]:  # pragma: no cover
     """Create or update a threshold for a variable (optionally per-station)."""
     ok = _db.upsert_threshold(

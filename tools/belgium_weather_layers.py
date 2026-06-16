@@ -233,19 +233,40 @@ def convective_parameters_summary(
     storm_values = [p.storm_formation_score for p in points]
     station_scores = [_station_storm_score(s) for s in stations]
     top_stations = sorted(stations, key=_station_storm_score, reverse=True)[:8]
+
+    native_stations: list[dict[str, Any]] = []
+    native_scores: list[float] = []
+    native_fields: set[str] = set()
+    for station in stations:
+        indices = station.get("convective_indices")
+        if not isinstance(indices, dict) or not indices.get("available"):
+            continue
+        native_stations.append(station)
+        for field in indices.get("available_fields") or []:
+            native_fields.add(str(field))
+        score = _safe_float(indices.get("native_convective_score"))
+        if score is not None:
+            native_scores.append(score)
+
     return {
         "generated_at": report.get("generated_at"),
         "mode": "derived_from_station_forecasts",
+        "native_convective_contract": "native_convective_fields_optional_v1",
         "source": report.get("source"),
         "limitations": [
             "La couche convective est dérivée des stations Open-Meteo et de leurs composantes de scoring.",
-            "CAPE, cisaillement vertical et foudre temps réel ne sont pas encore intégrés comme champs natifs.",
-            "La heatmap est une interpolation opérationnelle légère, pas un champ modèle officiel.",
+            "Les champs natifs CAPE, CIN, cisaillement, SRH ou LI sont intégrés seulement si le connecteur météo les fournit.",
+            "Sans champs natifs, la heatmap reste un proxy opérationnel léger, pas un champ modèle officiel.",
         ],
         "inputs": {
             "station_count": len(stations),
             "grid_point_count": len(points),
-            "cape_integrated": False,
+            "native_convective_station_count": len(native_stations),
+            "native_convective_fields": sorted(native_fields),
+            "native_convective_score_max": round(max(native_scores), 6) if native_scores else None,
+            "cape_integrated": "cape_j_kg" in native_fields,
+            "shear_integrated": any(field.startswith("shear_") for field in native_fields),
+            "srh_integrated": any(field.startswith("srh_") for field in native_fields),
             "lightning_potential_integrated": False,
             "radar_overlay_available_in_html": True,
             "windy_optional_compare_available": True,
@@ -269,6 +290,8 @@ def convective_parameters_summary(
                 "level": _severity_from_storm_score(_station_storm_score(station)),
                 "dew_point_c": station.get("max_dew_point_c"),
                 "humidity_pct": station.get("max_relative_humidity_pct"),
+                "native_convective_available": bool(station.get("native_convective_available")),
+                "native_convective_fields": station.get("native_convective_fields") or [],
                 "signals": station.get("signals", []),
             }
             for station in top_stations

@@ -2,7 +2,7 @@ PHONY: setup lint test run
 
 setup:
 	python -m pip install -U pip
-	pip install -e ".[dev]"
+	pip install -e ".[dev,live,viz]"
 	pre-commit install
 
 lint:

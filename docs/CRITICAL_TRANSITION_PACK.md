@@ -22,3 +22,5 @@ Ce pack ajoute une couche ORI-C appliquée à MeteoVoid Belgique. Le but n'est p
 MeteoVoid ne cherche pas seulement une intensité d'orage. Il mesure si les couches du système deviennent cohérentes vers une transition : charge, déclenchement, organisation, observation et propagation amont.
 
 Les connecteurs satellite EUMETSAT, GNSS/E-GVAP, pression participative et foudre communautaire sont volontairement exposés comme états de préparation. Ils ne cassent pas la CI quand les accès ne sont pas configurés.
+
+Voir aussi `docs/METHODOLOGY.md` pour le contrat public, les limites et la séparation chaleur / risque convectif.

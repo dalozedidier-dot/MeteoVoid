@@ -27,6 +27,14 @@ sys.path.insert(0, str(_ROOT / "src") if (_ROOT / "src").exists() else str(_ROOT
 
 from meteovoid.stations_config import StationSpec, load_stations_config  # noqa: E402
 
+try:  # noqa: E402
+    from belgium_score_layers import build_score_layers, native_convective_indices_from_hourly
+except ModuleNotFoundError:  # pragma: no cover - package import mode
+    from tools.belgium_score_layers import (
+        build_score_layers,
+        native_convective_indices_from_hourly,
+    )
+
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 DEFAULT_TIMEZONE = "Europe/Brussels"
 HOURLY_VARIABLES = [
@@ -184,6 +192,12 @@ class StationRisk:
     thunderstorm_code_seen: bool
     shower_code_seen: bool
     components: dict[str, float]
+    heat_stress_score: float
+    convective_risk_score: float
+    score_layers: dict[str, Any]
+    convective_indices: dict[str, Any]
+    native_convective_available: bool
+    native_convective_fields: list[str]
     signals: list[str]
     hourly_risk: list[dict[str, Any]]
     source_ok: bool
@@ -413,11 +427,15 @@ def _hourly_risk_points(
             + components["weather_code"] * 0.20
         )
         score = round(_clamp01(score), 6)
+        layers = build_score_layers(components)
         points.append(
             {
                 "time": str(time_value),
                 "score": score,
                 "severity": _severity_from_score(score),
+                "heat_stress_score": layers["heat_stress_score"],
+                "convective_risk_score": layers["convective_risk_score"],
+                "score_layers": layers,
                 "temperature_c": temp,
                 "dew_point_c": dew,
                 "precip_probability_pct": prob,
@@ -498,6 +516,9 @@ def _station_risk_from_payload(station: StationSpec, payload: dict[str, Any]) ->
         ),
         "weather_code": 1.0 if thunderstorm else (0.45 if showers_seen else 0.0),
     }
+    convective_indices = native_convective_indices_from_hourly(hourly_any)
+    score_layers = build_score_layers(components, convective_indices)
+
     weights = {
         k: _station_weight(k)
         for k in ["heat", "moisture", "precipitation", "wind_gust", "pressure_drop", "weather_code"]
@@ -562,6 +583,12 @@ def _station_risk_from_payload(station: StationSpec, payload: dict[str, Any]) ->
         thunderstorm_code_seen=thunderstorm,
         shower_code_seen=showers_seen,
         components={k: round(v, 6) for k, v in components.items()},
+        heat_stress_score=score_layers["heat_stress_score"],
+        convective_risk_score=score_layers["convective_risk_score"],
+        score_layers=score_layers,
+        convective_indices=convective_indices,
+        native_convective_available=bool(convective_indices.get("available")),
+        native_convective_fields=list(convective_indices.get("available_fields") or []),
         signals=signals,
         hourly_risk=hourly_risk,
         source_ok=True,
@@ -688,6 +715,19 @@ def _failed_station(station: StationSpec, error: str) -> StationRisk:
         thunderstorm_code_seen=False,
         shower_code_seen=False,
         components={},
+        heat_stress_score=0.0,
+        convective_risk_score=0.0,
+        score_layers={
+            "heat_stress_score": 0.0,
+            "convective_proxy_score": 0.0,
+            "native_convective_score": None,
+            "convective_risk_score": 0.0,
+            "mode": "unavailable",
+            "contract": "heat_vs_convective_score_layers_v1",
+        },
+        convective_indices={"available": False, "available_fields": []},
+        native_convective_available=False,
+        native_convective_fields=[],
         signals=[],
         hourly_risk=[],
         source_ok=False,
@@ -701,6 +741,11 @@ def _aggregate_risk(stations: list[StationRisk]) -> dict[str, Any]:
         return {
             "score": 0.0,
             "severity": "normal",
+            "heat_stress_score": 0.0,
+            "convective_risk_score": 0.0,
+            "heat_stress_mean": 0.0,
+            "convective_risk_mean": 0.0,
+            "score_layer_contract": "heat_vs_convective_score_layers_v1",
             "source_ok_count": 0,
             "source_error_count": len(stations),
             "top_stations": [],
@@ -711,9 +756,16 @@ def _aggregate_risk(stations: list[StationRisk]) -> dict[str, Any]:
     mean_top = sum(s.score for s in top) / len(top)
     score = round(_clamp01(max_score * 0.65 + mean_top * 0.35), 6)
     severity = _severity_from_score(score)
+    heat_values = [float(s.heat_stress_score) for s in ok]
+    convective_values = [float(s.convective_risk_score) for s in ok]
     return {
         "score": score,
         "severity": severity,
+        "heat_stress_score": round(max(heat_values), 6) if heat_values else 0.0,
+        "convective_risk_score": round(max(convective_values), 6) if convective_values else 0.0,
+        "heat_stress_mean": round(sum(heat_values) / len(heat_values), 6) if heat_values else 0.0,
+        "convective_risk_mean": round(sum(convective_values) / len(convective_values), 6) if convective_values else 0.0,
+        "score_layer_contract": "heat_vs_convective_score_layers_v1",
         "source_ok_count": len(ok),
         "source_error_count": len(stations) - len(ok),
         "top_stations": [s.station_id for s in top],
@@ -781,6 +833,10 @@ def _render_geojson(report: dict[str, Any]) -> dict[str, Any]:
         "province",
         "score",
         "severity",
+        "heat_stress_score",
+        "convective_risk_score",
+        "native_convective_available",
+        "native_convective_fields",
         "worst_time",
         "signals",
         "source",
@@ -2032,6 +2088,25 @@ def _components_summary(stations: list[dict[str, Any]]) -> dict[str, Any]:
             "mean": round(sum(vals) / len(vals), 6) if vals else 0.0,
             "max": round(max(vals), 6) if vals else 0.0,
         }
+    for key in ["heat_stress_score", "convective_risk_score"]:
+        vals = [
+            _safe_float(station.get(key))
+            for station in ok
+            if _safe_float(station.get(key)) is not None
+        ]
+        summary[key] = {
+            "mean": round(sum(vals) / len(vals), 6) if vals else 0.0,
+            "max": round(max(vals), 6) if vals else 0.0,
+        }
+    native_field_count = sum(
+        len(station.get("native_convective_fields") or [])
+        for station in ok
+        if isinstance(station.get("native_convective_fields"), list)
+    )
+    summary["native_convective_fields_available_count"] = {
+        "mean": round(native_field_count / len(ok), 6) if ok else 0.0,
+        "max": max((len(station.get("native_convective_fields") or []) for station in ok), default=0),
+    }
     return summary
 
 
@@ -2305,6 +2380,8 @@ def _render_markdown(report: dict[str, Any]) -> str:
         f"`{report['target_window']['end']}`"
     )
     lines.append(f"Score national : `{aggregate['score']:.3f}`")
+    lines.append(f"Stress thermique national : `{float(aggregate.get('heat_stress_score') or 0.0):.3f}`")
+    lines.append(f"Risque convectif national : `{float(aggregate.get('convective_risk_score') or 0.0):.3f}`")
     lines.append(f"Sévérité modèle : `{aggregate['severity']}`")
     lines.append(f"Niveau opérationnel : `{operational.get('level', 'n/a')}`")
     lines.append(f"Raison : {operational.get('reason', 'n/a')}")
@@ -2417,10 +2494,11 @@ def _render_markdown(report: dict[str, Any]) -> str:
     lines.append("## Stations les plus sensibles")
     lines.append("")
     lines.append(
-        "| Station | Région | Sévérité | Score | Heure sensible | Tmax °C | Point de rosée °C | "
-        "Précip % | Précip mm/h | Rafales m/s | Baisse hPa/6h | Signaux |"
+        "| Station | Région | Sévérité | Score | Stress thermique | Risque convectif | Heure sensible | "
+        "Tmax °C | Point de rosée °C | Précip % | Précip mm/h | Rafales m/s | "
+        "Baisse hPa/6h | Signaux |"
     )
-    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|")
+    lines.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|")
     ordered = sorted(stations, key=lambda x: float(x["score"]), reverse=True)
     for item in ordered[:12]:
         signals = "; ".join(item.get("signals", []))
@@ -2432,6 +2510,8 @@ def _render_markdown(report: dict[str, Any]) -> str:
                     str(item["region"]),
                     str(item["severity"]),
                     f"{float(item['score']):.3f}",
+                    f"{float(item.get('heat_stress_score') or 0.0):.3f}",
+                    f"{float(item.get('convective_risk_score') or 0.0):.3f}",
                     str(item.get("worst_time") or "n/a"),
                     _fmt(item.get("max_temperature_c")),
                     _fmt(item.get("max_dew_point_c")),
@@ -2947,7 +3027,7 @@ def _replay_validation(report: dict[str, Any]) -> dict[str, Any]:
         "matched_events": matched,
         "notes": [
             "Ce module installe le replay historique : il compare le run à un registre d'épisodes connus.",
-            "Renseigner config/belgium_replay_events.example.csv avec des épisodes vérifiés pour mesurer faux positifs, faux négatifs et délai de détection.",
+            "Renseigner config/belgium_verified_storm_events.csv avec des épisodes vérifiés pour mesurer faux positifs, faux négatifs et délai de détection.",
         ],
     }
 
@@ -3008,15 +3088,9 @@ def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
             write_validation_outputs,
         )
     try:
-        from belgium_system_watchdog import (
-            WATCHDOG_OUTPUTS,
-            write_watchdog_outputs,
-        )
+        from belgium_system_watchdog import WATCHDOG_OUTPUTS
     except ModuleNotFoundError:  # pragma: no cover - import path used by pytest/package mode
-        from tools.belgium_system_watchdog import (
-            WATCHDOG_OUTPUTS,
-            write_watchdog_outputs,
-        )
+        from tools.belgium_system_watchdog import WATCHDOG_OUTPUTS
     try:
         from belgium_cap_export import CAP_OUTPUTS, write_cap_outputs
     except ModuleNotFoundError:  # pragma: no cover - import path used by pytest/package mode
@@ -3090,7 +3164,6 @@ def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
     write_information_graph_outputs(report, out_dir)
     write_validation_outputs(report, out_dir)
     write_cap_outputs(report, out_dir)
-    write_watchdog_outputs(report, out_dir)
 
     rows = report["stations"]
     csv_path = out_dir / "risk_by_station.csv"
@@ -3100,6 +3173,10 @@ def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
         "region",
         "score",
         "severity",
+        "heat_stress_score",
+        "convective_risk_score",
+        "native_convective_available",
+        "native_convective_fields",
         "worst_time",
         "max_temperature_c",
         "max_dew_point_c",
@@ -3125,6 +3202,9 @@ def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
         writer.writeheader()
         for row in rows:
             comps = row.get("components", {}) if isinstance(row.get("components"), dict) else {}
+            native_fields = row.get("native_convective_fields") or []
+            if isinstance(native_fields, list):
+                row["native_convective_fields"] = ";".join(str(x) for x in native_fields)
             writer.writerow(
                 {
                     **{k: row.get(k) for k in fieldnames if not k.startswith("component_")},
@@ -3137,6 +3217,17 @@ def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
                     "signals": "; ".join(row.get("signals", [])),
                 }
             )
+
+
+def _write_watchdog_after_manifest(report: dict[str, Any], out_dir: Path, run_id: str) -> None:
+    """Write self-watchdog after all outputs exist, then refresh the manifest."""
+    try:
+        from belgium_system_watchdog import write_watchdog_outputs
+    except ModuleNotFoundError:  # pragma: no cover - import path used by pytest/package mode
+        from tools.belgium_system_watchdog import write_watchdog_outputs
+
+    write_watchdog_outputs(report, out_dir)
+    _write_manifest(out_dir, run_id)
 
 
 def _should_send_webhook(severity: str, min_severity: str) -> bool:
@@ -3257,6 +3348,8 @@ def _build_report(
             "dewpoint_map_html": "belgium_dewpoint_map.html",
             "storm_formation_map_html": "belgium_storm_formation_map.html",
             "windy_compare_html": "belgium_windy_compare.html",
+            "belgium_public_latest": "belgium_public_latest.json",
+            "legacy_meteovoid_api_latest": "meteovoid_api_latest.json",
         },
         "aggregate": aggregate,
         "components_summary": _components_summary(stations),
@@ -3277,6 +3370,7 @@ def _sync_history_outputs(
     history_csv = _append_history(report, history_dir, run_id)
     shutil.copy2(history_csv, out_dir / "history.csv")
     _write_manifest(out_dir, run_id)
+    _write_watchdog_after_manifest(report, out_dir, run_id)
     _snapshot_run(out_dir, history_dir, run_id)
 
 
@@ -3382,7 +3476,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--replay-events",
-        default="config/belgium_replay_events.example.csv",
+        default="config/belgium_verified_storm_events.csv",
         help="CSV of known events used for replay validation when history is present",
     )
     args = parser.parse_args(argv)
@@ -3446,6 +3540,7 @@ def main(argv: list[str] | None = None) -> int:
         _sync_history_outputs(report, out_dir, history_dir, run_id)
     else:
         _write_manifest(out_dir, run_id)
+        _write_watchdog_after_manifest(report, out_dir, run_id)
 
     webhook_url = args.webhook_url.strip()
     min_severity = args.min_severity
@@ -3501,6 +3596,7 @@ def main(argv: list[str] | None = None) -> int:
         "self_watchdog.html",
         "observation_gap_status.json",
         "belgium_alert_cap.xml",
+        "belgium_public_latest.json",
         "meteovoid_api_latest.json",
         "manifest.json",
     ]:

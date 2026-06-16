@@ -17,7 +17,7 @@ Le projet reste non officiel. Il ne remplace pas l’IRM/KMI, MeteoAlarm, les ra
 
 ```bash
 python -m pip install -U pip
-pip install -e ".[dev]"
+pip install -e ".[dev,live,viz]"
 ```
 
 ## CLI rapide
@@ -40,7 +40,7 @@ docker compose up --build
 Publier un flux synthétique :
 
 ```bash
-docker compose run --rm meteovoid-live meteovoid simulate --sleep 0.01
+docker compose run --rm meteovoid-simulate
 ```
 
 Interroger le dernier rapport :
@@ -50,6 +50,15 @@ curl "http://localhost:8000/latest?station_id=DEMO_BE_0001&variable=wind_gust_ms
 ```
 
 Voir `docs/LIVE_PIPELINE.md`.
+
+### Sécurité API optionnelle
+
+Les endpoints de lecture restent ouverts pour les dashboards. Les endpoints d’écriture (`POST /thresholds`, `POST /alerts/{id}/ack`, `resolve`, `ignore`) sont protégés dès que `METEOVOID_API_TOKEN` est défini.
+
+```bash
+export METEOVOID_API_TOKEN="change-me"
+curl -H "Authorization: Bearer $METEOVOID_API_TOKEN" http://localhost:8000/thresholds
+```
 
 ## Veille Belgique
 
@@ -63,6 +72,18 @@ python tools/build_belgium_public_site.py --report-dir _out/belgium --site-dir _
 ```
 
 Le vocabulaire public est volontairement prudent : MeteoVoid parle de veille, de pré-alerte technique ou de signal technique confirmé. Le mot « alerte » doit rester lié aux sources officielles ou à une confirmation externe forte clairement affichée.
+
+## Méthodologie courte
+
+MeteoVoid sépare trois niveaux de lecture :
+
+1. le signal interne, calculé à partir des variables météo disponibles ;
+2. la confirmation externe, radar, foudre, IRM/KMI, MeteoAlarm ou ESTOFEX quand ces sources sont renseignées ;
+3. le niveau public, volontairement prudent et toujours non officiel.
+
+Le modèle distingue désormais le stress thermique, le potentiel convectif et les indices convectifs natifs lorsqu’ils sont disponibles. Sans CAPE, CIN, cisaillement ou SRH, MeteoVoid signale explicitement que le diagnostic reste un proxy.
+
+Voir `docs/METHODOLOGY.md` pour le détail.
 
 ## Développement
 

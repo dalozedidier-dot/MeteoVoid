@@ -78,6 +78,7 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
       DATABASE_URL: postgresql://meteovoid:meteovoid@postgres:5432/meteovoid
+      METEOVOID_API_TOKEN: ${METEOVOID_API_TOKEN:-}
     ports:
       - "8000:8000"
     command:

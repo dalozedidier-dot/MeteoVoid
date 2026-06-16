@@ -38,6 +38,7 @@ PUBLIC_FILES = [
     "validation_dashboard.html",
     "self_watchdog.html",
     "belgium_alert_cap.xml",
+    "belgium_public_latest.json",
     "meteovoid_api_latest.json",
     "early_warning_signals.json",
     "early_warning_by_station.csv",
@@ -111,6 +112,7 @@ EXPORTS = [
     ("API sources JSON", "../api/sources.json"),
     ("API validation JSON", "../api/validation.json"),
     ("CAP XML (test)", "belgium_alert_cap.xml"),
+    ("Méthodologie", "../../methodology.html"),
     ("Manifest", "manifest.json"),
 ]
 
@@ -338,6 +340,10 @@ def _station_card(s: dict[str, Any]) -> dict[str, Any]:
         "station_id": s.get("station_id"),
         "region": s.get("region"),
         "score": _round(s.get("score")),
+        "heat_stress_score": _round(s.get("heat_stress_score")),
+        "convective_risk_score": _round(s.get("convective_risk_score")),
+        "native_convective_available": bool(s.get("native_convective_available")),
+        "native_convective_fields": s.get("native_convective_fields") or [],
         "severity": _meta(s.get("severity")),
         "worst_time": s.get("worst_time"),
         "lat": _num(s.get("lat")),
@@ -836,6 +842,13 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
         "operational_level": op_level,
         "severity": severity,
         "model_score": model_score,
+        "score_layers": {
+            "heat_stress_score": _round(aggregate.get("heat_stress_score"), 3),
+            "convective_risk_score": _round(aggregate.get("convective_risk_score"), 3),
+            "heat_stress_mean": _round(aggregate.get("heat_stress_mean"), 3),
+            "convective_risk_mean": _round(aggregate.get("convective_risk_mean"), 3),
+            "contract": aggregate.get("score_layer_contract"),
+        },
         "confidence": confidence,
         "critical_window": window,
         "main_zone": zone,
@@ -992,6 +1005,7 @@ def build_api(vm: dict[str, Any], site_dir: Path) -> None:
             "operational_level": vm["simple"]["operational_level"],
             "severity": vm["simple"]["severity"],
             "model_score": vm["simple"]["model_score"],
+            "score_layers": vm["simple"].get("score_layers"),
             "confidence": vm["simple"]["confidence"],
             "critical_window": vm["simple"]["critical_window"],
             "main_zone": vm["simple"]["main_zone"],
@@ -1052,6 +1066,30 @@ def build_api(vm: dict[str, Any], site_dir: Path) -> None:
     )
 
 
+def _write_methodology_page(site_dir: Path) -> None:
+    html_page = """<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MeteoVoid Belgique · Méthodologie</title>
+<style>
+body{margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:#f5f7fb;color:#162033;line-height:1.6}main{max-width:920px;margin:0 auto;padding:32px 18px 56px}.card{background:white;border:1px solid #dbe3ef;border-radius:18px;padding:20px;margin:16px 0;box-shadow:0 8px 22px rgba(15,31,53,.06)}h1{font-size:30px;margin:0 0 8px}h2{font-size:19px;margin:0 0 8px}.muted{color:#697386}.pill{display:inline-block;border:1px solid #cad7e7;border-radius:999px;padding:4px 10px;margin:3px;background:#eef4fb;font-size:13px}code{background:#edf2f7;border-radius:7px;padding:2px 6px}a{color:#174d86}</style>
+</head>
+<body><main>
+<a href="index.html">Retour au tableau de bord</a>
+<h1>Méthodologie MeteoVoid Belgique</h1>
+<p class="muted">Prototype technique expérimental. Cette page explique le contrat public, les limites et la séparation entre modèle interne, confirmation externe et sources officielles.</p>
+<div class="card"><h2>Statut non officiel</h2><p>MeteoVoid ne publie pas une alerte officielle et ne remplace pas l’IRM/KMI, MeteoAlarm, les autorités locales, le radar ou le nowcast foudre. Le système produit une veille expérimentale destinée à repérer une dynamique à surveiller.</p></div>
+<div class="card"><h2>Trois niveaux de signal</h2><p><span class="pill">Signal interne</span> score calculé à partir des stations et des composantes météo disponibles.</p><p><span class="pill">Confirmation externe</span> signaux officiels, radar, foudre, MeteoAlarm ou ESTOFEX lorsqu’ils sont renseignés.</p><p><span class="pill">Publication prudente</span> niveau opérationnel qui dépend de la convergence entre modèle et confirmation externe.</p></div>
+<div class="card"><h2>Séparation des scores</h2><p>Le score global est complété par deux couches distinctes : <code>heat_stress_score</code> pour la lourdeur thermique et <code>convective_risk_score</code> pour le risque convectif. Cela évite de confondre une atmosphère chaude et humide avec un orage violent déjà probable.</p></div>
+<div class="card"><h2>Indices convectifs natifs</h2><p>Le contrat <code>native_convective_fields_optional_v1</code> prépare l’intégration de champs comme CAPE, CIN, Lifted Index, cisaillement 0-6 km, SRH, LCL, LFC, eau précipitable et lapse rate. Si le fournisseur météo ne livre pas ces champs, MeteoVoid conserve un mode proxy explicite.</p></div>
+<div class="card"><h2>Validation historique</h2><p>Le fichier <code>config/belgium_verified_storm_events.csv</code> sert de registre d’événements vérifiés pour mesurer vrais positifs, faux positifs, faux négatifs et délai de détection. Sans événements vérifiés, le replay indique que la validation historique reste à compléter.</p></div>
+<div class="card"><h2>Contrats publics</h2><p>Le fichier canonique de statut public est <code>belgium_public_latest.json</code>. L’ancien <code>meteovoid_api_latest.json</code> reste disponible comme alias de compatibilité.</p></div>
+</main></body></html>"""
+    (site_dir / "methodology.html").write_text(html_page, encoding="utf-8")
+
+
 def build_index(report_dir: Path, site_dir: Path) -> dict[str, Any]:
     site_dir.mkdir(parents=True, exist_ok=True)
     _copy_outputs(report_dir, site_dir)
@@ -1063,9 +1101,10 @@ def build_index(report_dir: Path, site_dir: Path) -> dict[str, Any]:
         "__GENERATED_AT__", str(vm["meta"].get("generated_at") or "")
     )
     (site_dir / "index.html").write_text(page, encoding="utf-8")
+    _write_methodology_page(site_dir)
     (site_dir / "README.md").write_text(
         "# MeteoVoid Belgique\n\nSite statique généré automatiquement.\n"
-        "Lecture en trois niveaux (simple, opérationnel, expert) et API JSON dans `api/`.\n",
+        "Lecture en trois niveaux (simple, opérationnel, expert), page méthodologie et API JSON dans `api/`.\n",
         encoding="utf-8",
     )
     return vm
@@ -1238,6 +1277,7 @@ footer{max-width:1180px;margin:24px auto 40px;padding:0 22px;color:var(--muted);
     <button class="tab" data-view="operational">Vue opérationnelle</button>
     <button class="tab" data-view="map">Carte</button>
     <button class="tab" data-view="expert">Vue expert</button>
+    <a class="tab" href="methodology.html" style="text-decoration:none">Méthodologie</a>
   </div>
 </div>
 <main>

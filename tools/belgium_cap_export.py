@@ -5,9 +5,15 @@ import json
 from pathlib import Path
 from typing import Any
 
+try:
+    from belgium_public_contract import build_belgium_public_latest
+except ModuleNotFoundError:  # pragma: no cover - package import mode
+    from tools.belgium_public_contract import build_belgium_public_latest
+
 CAP_OUTPUTS = {
     "cap_xml": "belgium_alert_cap.xml",
-    "static_api_json": "meteovoid_api_latest.json",
+    "belgium_public_latest_json": "belgium_public_latest.json",
+    "static_api_json_legacy": "meteovoid_api_latest.json",
 }
 
 
@@ -73,20 +79,23 @@ def build_cap_xml(report: dict[str, Any]) -> str:
 
 
 def build_static_api(report: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "generated_at": report.get("generated_at"),
-        "run_id": report.get("run_id"),
-        "aggregate": report.get("aggregate"),
-        "operational_state": report.get("operational_state"),
-        "trend": report.get("trend"),
-        "outputs": report.get("outputs"),
-        "disclaimer": "Prototype technique non officiel. Toujours consulter les sources officielles.",
-    }
-
+    """Legacy alias for older dashboards expecting meteovoid_api_latest.json."""
+    data = build_belgium_public_latest(report)
+    data["legacy_alias"] = "meteovoid_api_latest.json"
+    return data
 
 def write_cap_outputs(report: dict[str, Any], out_dir: Path) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "belgium_alert_cap.xml").write_text(build_cap_xml(report), encoding="utf-8")
+    (out_dir / "belgium_public_latest.json").write_text(
+        json.dumps(
+            build_belgium_public_latest(report),
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
     (out_dir / "meteovoid_api_latest.json").write_text(
         json.dumps(build_static_api(report), ensure_ascii=False, indent=2, sort_keys=True),
         encoding="utf-8",

@@ -59,3 +59,26 @@ future_native_inputs:
   - satellite_cloud_top_cooling
   - lightning_rate
   - radar_cell_growth
+
+
+native_inputs_contract: native_convective_fields_optional_v1
+native_inputs_config: config/belgium_native_convective_indices.yaml
+native_inputs_supported:
+  - CAPE
+  - CIN
+  - Lifted Index
+  - K-index
+  - Total Totals
+  - precipitable water
+  - shear 0-6 km
+  - shear 0-3 km
+  - SRH 0-1 km
+  - SRH 0-3 km
+  - LCL
+  - LFC
+  - theta-e 850 hPa
+  - lapse rate 700-500 hPa
+future_nowcast_inputs:
+  - satellite_cloud_top_cooling
+  - lightning_rate
+  - radar_cell_growth

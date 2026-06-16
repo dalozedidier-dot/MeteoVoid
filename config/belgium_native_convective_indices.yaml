@@ -1,0 +1,63 @@
+version: native_convective_fields_optional_v1
+status: optional_connector_contract
+purpose: >
+  Declare native convective fields that MeteoVoid can consume when a forecast
+  provider exposes them. When absent, MeteoVoid falls back to proxy-based
+  heat and convective scoring.
+fields:
+  cape_j_kg:
+    aliases: [cape, CAPE, convective_available_potential_energy]
+    unit: J/kg
+    risk_direction: higher
+  cin_j_kg:
+    aliases: [cin, CIN, convective_inhibition]
+    unit: J/kg
+    risk_direction: lower_absolute_barrier
+  lifted_index_c:
+    aliases: [lifted_index, LI]
+    unit: C
+    risk_direction: lower
+  k_index_c:
+    aliases: [k_index, K_index]
+    unit: C
+    risk_direction: higher
+  total_totals_index_c:
+    aliases: [total_totals, TT]
+    unit: C
+    risk_direction: higher
+  precipitable_water_mm:
+    aliases: [pwat, precipitable_water]
+    unit: mm
+    risk_direction: higher
+  shear_0_6km_ms:
+    aliases: [deep_layer_shear, shear_0_6km]
+    unit: m/s
+    risk_direction: higher
+  shear_0_3km_ms:
+    aliases: [low_mid_layer_shear, shear_0_3km]
+    unit: m/s
+    risk_direction: higher
+  srh_0_1km_m2s2:
+    aliases: [srh_0_1km, storm_relative_helicity_0_1km]
+    unit: m2/s2
+    risk_direction: higher
+  srh_0_3km_m2s2:
+    aliases: [srh_0_3km, storm_relative_helicity_0_3km]
+    unit: m2/s2
+    risk_direction: higher
+  lcl_m:
+    aliases: [lcl, lifting_condensation_level]
+    unit: m
+    risk_direction: moderate_or_lower
+  lfc_m:
+    aliases: [lfc, level_of_free_convection]
+    unit: m
+    risk_direction: lower
+  theta_e_850k:
+    aliases: [theta_e_850, equivalent_potential_temperature_850]
+    unit: K
+    risk_direction: higher
+  lapse_rate_700_500_c_km:
+    aliases: [lapse_rate_700_500, mid_level_lapse_rate]
+    unit: C/km
+    risk_direction: higher

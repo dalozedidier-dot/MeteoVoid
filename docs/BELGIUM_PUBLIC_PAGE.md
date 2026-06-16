@@ -77,3 +77,5 @@ aides visuelles et non comme des champs officiels.
 Le workflow active GitHub Pages via `actions/configure-pages` avec `enablement: true`, puis
 publie le dossier `_site`. En cas d’échec, vérifier dans `Settings > Pages` que la source est
 bien **GitHub Actions**.
+
+Voir aussi `docs/METHODOLOGY.md` pour le contrat public, les limites et la séparation chaleur / risque convectif.
