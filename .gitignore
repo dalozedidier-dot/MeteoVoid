@@ -28,6 +28,9 @@ htmlcov/
 Thumbs.db
 # Local outputs
 _ci_out/
+_site/
+_site_test/
+_sample_out/
 *.log
 
 # Patch delivery artifacts, never commit these

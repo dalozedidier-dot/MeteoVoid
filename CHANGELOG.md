@@ -1,5 +1,26 @@
 # Changelog
 
+## Belgium public interface redesign — three reading levels + static JSON API
+
+- Rebuilt `tools/build_belgium_public_site.py` around three reading levels instead of
+  showing every card at once:
+  - **Vue simple** — operational level, MeteoVoid score, run confidence, critical window,
+    main zone and an automatic synthesis sentence.
+  - **Vue opérationnelle** — a *Convective Transition* gauge with seven blocks (charge,
+    déclencheur, organisation, couvercle, observation, propagation amont, void collapse
+    signal), each with a score, colour, explanatory sentence and the responsible drivers;
+    an hourly timeline (SVG curve + automatic narrative) and an automatic "why this alert"
+    explanation.
+  - **Vue expert** — stations/zones, emerging-observation channels, scientific validation,
+    source health and the existing maps/graphs/exports, grouped by usage and behind tabs.
+- Added a clean static JSON API under `_site/api/`: `latest.json`, `stations.json`,
+  `timeline.json`, `transition.json`, `sources.json`, `validation.json` and an
+  `index.json` manifest. The page reads these files when served over HTTP and falls back
+  to an inlined view-model offline.
+- Sober design: light/night-blue palette, white cards, red reserved for real danger,
+  orange for watch, blue/grey for information.
+- Added `tests/test_build_public_site.py` (API shape, colour mapping, empty-run robustness).
+
 ## Belgium public dashboard and GitHub Pages
 
 - Added `tools/build_belgium_public_site.py` to build a cleaner public static dashboard from MeteoVoid Belgium outputs.
