@@ -166,3 +166,14 @@ python tools/fetch_opera_ord.py \
 ```
 
 RainViewer reste une couche visuelle. OPERA ORD devient la voie radar machine lorsque les métadonnées, liens et fichiers radar sont réellement accessibles. Si les fichiers radar fins sont absents, MeteoVoid l’indique explicitement.
+
+### Radars nationaux Europe
+
+MeteoVoid peut maintenant suivre des interfaces radar nationales pour l’Espagne, la France, la Suisse et les Pays-Bas, en complément de RainViewer et OPERA ORD.
+
+```bash
+python tools/generate_european_national_radar.py --out-dir _out/belgium
+python tools/generate_radar_stack.py --out-dir _out/belgium --country-radar-file france:/tmp/frame.npy
+```
+
+Voir `docs/EUROPEAN_NATIONAL_RADARS.md` pour la logique d’intégration, les clés API possibles et la règle de prudence : aucune source nationale n’est traitée comme preuve machine tant qu’un fichier radar n’est pas lisible et métriqué.

@@ -9,6 +9,9 @@ from urllib.request import Request, urlopen
 
 import numpy as np
 
+from meteovoid.belgium.european_national_radar import (
+    write_european_national_radar_outputs,
+)
 from meteovoid.belgium.opera_ord import (
     OPERA_ORD_DEFAULT_BASE_URL,
     analyse_radar_file,
@@ -338,7 +341,14 @@ def compute_pysteps_from_paths(paths: list[str | Path], *, enabled: bool = False
     return compute_pysteps_motion(np.stack(arrays, axis=0))
 
 
-def _machine_state(opera: dict[str, Any], radar_processing: dict[str, Any]) -> str:
+def _machine_state(
+    opera: dict[str, Any],
+    radar_processing: dict[str, Any],
+    national_radar: dict[str, Any] | None = None,
+) -> str:
+    national = national_radar or {}
+    if national.get("status") == "machine_metrics_available":
+        return "national_machine_radar_metrics_available"
     if opera.get("status") == "metrics_available":
         return "opera_ord_metrics_available"
     if any(
@@ -364,6 +374,9 @@ def build_radar_stack(
     enable_opera_download: bool = False,
     opera_datetime_range: str = "",
     opera_cache_dir: str | Path | None = None,
+    national_radar_config_path: str | Path | None = "config/european_national_radars.yaml",
+    enable_national_radar_live: bool = False,
+    national_radar_files: dict[str, list[Path]] | None = None,
     timeout_s: float = 8.0,
 ) -> dict[str, Any]:
     paths = radar_frame_paths or []
@@ -376,6 +389,13 @@ def build_radar_stack(
         cache_dir=opera_cache_dir,
         download=enable_opera_download,
     )
+    national_radar = write_european_national_radar_outputs(
+        Path(opera_cache_dir or ".").parent if opera_cache_dir else Path("."),
+        config_path=national_radar_config_path,
+        live=enable_national_radar_live,
+        timeout_s=timeout_s,
+        country_files=national_radar_files,
+    )
     downloaded_paths = [
         str(item.get("path"))
         for item in opera.get("files_manifest", [])
@@ -383,7 +403,7 @@ def build_radar_stack(
     ]
     radar_processing = analyze_radar_files([*paths, *downloaded_paths])
     nowcast = compute_pysteps_from_paths(paths, enabled=enable_pysteps)
-    honest_state = _machine_state(opera, radar_processing)
+    honest_state = _machine_state(opera, radar_processing, national_radar)
     return {
         "contract": "meteovoid_european_radar_stack_v2",
         "generated_at": _utc_now(),
@@ -391,6 +411,8 @@ def build_radar_stack(
         "rainviewer": rainviewer,
         "opera_ord": opera,
         "opera_radar_metrics": opera.get("metrics", {}),
+        "national_radar": national_radar,
+        "national_radar_metrics": national_radar.get("metrics", {}),
         "radar_processing": radar_processing,
         "pysteps_nowcast": nowcast,
         "summary": {
@@ -401,6 +423,9 @@ def build_radar_stack(
             "opera_ord_download_enabled": bool(enable_opera_download),
             "opera_ord_status": opera.get("status"),
             "opera_radar_activity_score": opera.get("radar_activity_score"),
+            "national_radar_status": national_radar.get("status"),
+            "national_machine_country_count": national_radar.get("summary", {}).get("machine_country_count") if isinstance(national_radar.get("summary"), dict) else None,
+            "national_radar_country_count": national_radar.get("summary", {}).get("country_count") if isinstance(national_radar.get("summary"), dict) else None,
             "readable_radar_frames": radar_processing.get("readable_frame_count", 0),
             "pysteps_status": nowcast.get("status"),
             "machine_radar_confirmation": honest_state
@@ -408,11 +433,13 @@ def build_radar_stack(
                 "local_radar_frames_readable",
                 "opera_ord_files_downloaded",
                 "opera_ord_metrics_available",
+                "national_machine_radar_metrics_available",
             },
         },
         "limits": [
             "RainViewer provides immediate visual context only.",
             "OPERA ORD is the preferred European machine-data path when configured and reachable.",
+            "National radar interfaces for Spain, France, Switzerland and the Netherlands are tracked separately from OPERA.",
             "OPERA machine confirmation requires metadata plus downloaded/readable files, not just a displayed map.",
             "wradlib and pySTEPS are optional heavy dependencies and only run on provided radar files.",
             "If radar files or licensed endpoints are absent, MeteoVoid reports absence explicitly.",
@@ -455,6 +482,9 @@ def write_radar_stack_outputs(
     enable_pysteps: bool = False,
     enable_opera_download: bool = False,
     opera_datetime_range: str = "",
+    national_radar_config_path: str | Path | None = "config/european_national_radars.yaml",
+    enable_national_radar_live: bool = False,
+    national_radar_files: dict[str, list[Path]] | None = None,
     timeout_s: float = 8.0,
 ) -> dict[str, Any]:
     root = Path(out_dir)
@@ -469,6 +499,9 @@ def write_radar_stack_outputs(
         enable_opera_download=enable_opera_download,
         opera_datetime_range=opera_datetime_range,
         opera_cache_dir=opera_cache_dir,
+        national_radar_config_path=national_radar_config_path,
+        enable_national_radar_live=enable_national_radar_live,
+        national_radar_files=national_radar_files,
         timeout_s=timeout_s,
     )
     write_rainviewer_map(root / "rainviewer_radar_map.html")

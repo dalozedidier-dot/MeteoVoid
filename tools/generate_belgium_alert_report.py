@@ -3373,6 +3373,11 @@ def _build_report(
             "opera_radar_metrics": "opera_radar_metrics.json",
             "radar_processing_status": "radar_processing_status.json",
             "pysteps_nowcast_status": "pysteps_nowcast_status.json",
+            "european_national_radar_status": "european_national_radar_status.json",
+            "european_national_radar_metrics": "european_national_radar_metrics.json",
+            "european_national_radar_sources": "european_national_radar_sources.csv",
+            "european_national_radar_map_html": "european_national_radar_map.html",
+            "european_national_radar_report": "european_national_radar_report.md",
         },
         "aggregate": aggregate,
         "components_summary": _components_summary(stations),
@@ -3534,10 +3539,21 @@ def main(argv: list[str] | None = None) -> int:
         help="OPERA ORD / MeteoGate connector config",
     )
     parser.add_argument(
+        "--national-radar-config",
+        default="config/european_national_radars.yaml",
+        help="Country radar registry for Spain, France, Switzerland and the Netherlands",
+    )
+    parser.add_argument(
         "--radar-frame",
         action="append",
         default=[],
         help="Optional local radar frame file (.npy/.csv/.json) for wradlib/numeric processing",
+    )
+    parser.add_argument(
+        "--country-radar-file",
+        action="append",
+        default=[],
+        help="Optional national radar file as country:/path/file.npy|csv|json|tif",
     )
     parser.add_argument(
         "--enable-rainviewer-live",
@@ -3553,6 +3569,11 @@ def main(argv: list[str] | None = None) -> int:
         "--enable-opera-download",
         action="store_true",
         help="Download OPERA ORD data links into the local cache when live access returns files",
+    )
+    parser.add_argument(
+        "--enable-national-radar-live",
+        action="store_true",
+        help="Probe configured national radar interfaces for Spain, France, Switzerland and the Netherlands",
     )
     parser.add_argument(
         "--opera-datetime",
@@ -3628,6 +3649,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if not args.disable_radar_stack:
         try:
+            from meteovoid.belgium.european_national_radar import parse_country_files
             from meteovoid.belgium.radar_stack import write_radar_stack_outputs
 
             radar_stack = write_radar_stack_outputs(
@@ -3638,6 +3660,9 @@ def main(argv: list[str] | None = None) -> int:
                 enable_opera_ord=bool(args.enable_opera_ord and not args.offline_demo),
                 enable_opera_download=bool(args.enable_opera_download and not args.offline_demo),
                 opera_datetime_range=str(args.opera_datetime),
+                national_radar_config_path=args.national_radar_config,
+                enable_national_radar_live=bool(args.enable_national_radar_live and not args.offline_demo),
+                national_radar_files=parse_country_files(list(args.country_radar_file or [])),
                 enable_pysteps=bool(args.enable_pysteps_nowcast),
                 timeout_s=float(args.timeout_s),
             )
@@ -3747,6 +3772,11 @@ def main(argv: list[str] | None = None) -> int:
         "opera_radar_metrics.json",
         "radar_processing_status.json",
         "pysteps_nowcast_status.json",
+        "european_national_radar_status.json",
+        "european_national_radar_metrics.json",
+        "european_national_radar_sources.csv",
+        "european_national_radar_map.html",
+        "european_national_radar_report.md",
         "manifest.json",
     ]:
         path = out_dir / name

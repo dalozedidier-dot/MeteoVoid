@@ -54,6 +54,11 @@ PUBLIC_FILES = [
     "opera_ord_inventory.json",
     "opera_ord_files_manifest.json",
     "opera_radar_metrics.json",
+    "european_national_radar_status.json",
+    "european_national_radar_metrics.json",
+    "european_national_radar_sources.csv",
+    "european_national_radar_map.html",
+    "european_national_radar_report.md",
     "radar_processing_status.json",
     "pysteps_nowcast_status.json",
     "early_warning_signals.json",
@@ -110,6 +115,7 @@ EXPERT_FRAMES = [
     ("Analyse", "Transition convective", "convective_transition_dashboard.html"),
     ("Analyse", "Graphe amont", "upstream_graph.html"),
     ("Analyse", "Europe amont", "european_upstream_map.html"),
+    ("Cartes", "Radars nationaux Europe", "european_national_radar_map.html"),
     ("Analyse", "Graphe informationnel", "information_graph.html"),
     ("Preuve", "Signaux précoces", "early_warning_dashboard.html"),
     ("Preuve", "Validation", "validation_dashboard.html"),
@@ -135,6 +141,9 @@ EXPORTS = [
     ("Rapport radar stack", "radar_stack_report.md"),
     ("Inventaire OPERA ORD", "opera_ord_inventory.json"),
     ("Métriques radar OPERA", "opera_radar_metrics.json"),
+    ("Statut radars nationaux Europe", "european_national_radar_status.json"),
+    ("Métriques radars nationaux", "european_national_radar_metrics.json"),
+    ("Sources radars nationaux CSV", "european_national_radar_sources.csv"),
     ("Manifest fichiers OPERA", "opera_ord_files_manifest.json"),
     ("Corridors amont CSV", "upstream_corridors.csv"),
     ("CAP XML (test)", "belgium_alert_cap.xml"),
@@ -1032,6 +1041,8 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
     radar_stack = _load_json(report_dir / "radar_stack.json")
     opera_metrics = _load_json(report_dir / "opera_radar_metrics.json")
     opera_inventory = _load_json(report_dir / "opera_ord_inventory.json")
+    national_radar = _load_json(report_dir / "european_national_radar_status.json")
+    national_radar_metrics = _load_json(report_dir / "european_national_radar_metrics.json")
 
     operational = report.get("operational_state")
     operational = operational if isinstance(operational, dict) else alert_state
@@ -1153,6 +1164,10 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
             radar_stack.get("summary") if isinstance(radar_stack.get("summary"), dict) else {}
         ),
         "opera_radar_metrics": opera_metrics,
+        "european_national_radar": (
+            national_radar.get("summary") if isinstance(national_radar.get("summary"), dict) else {}
+        ),
+        "european_national_radar_metrics": national_radar_metrics,
         "opera_ord_inventory": {
             "status": opera_inventory.get("status"),
             "enabled": opera_inventory.get("enabled"),
@@ -1338,6 +1353,8 @@ def build_api(vm: dict[str, Any], site_dir: Path) -> None:
             "generated_at": generated_at,
             **vm["expert"].get("radar_stack", {}),
             "opera_radar_metrics": vm["expert"].get("opera_radar_metrics", {}),
+            "european_national_radar": vm["expert"].get("european_national_radar", {}),
+            "european_national_radar_metrics": vm["expert"].get("european_national_radar_metrics", {}),
             "opera_ord_inventory": vm["expert"].get("opera_ord_inventory", {}),
         },
     )

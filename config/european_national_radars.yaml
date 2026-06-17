@@ -1,0 +1,117 @@
+contract: meteovoid_european_national_radars_config_v1
+updated: "2026-06-18"
+
+# This registry extends OPERA/RainViewer with country-specific radar interfaces.
+# It is intentionally honest: a source can be display_only, api_required,
+# stac_open_data, wms_open_data, or local_file_only. MeteoVoid only promotes a
+# source to machine radar evidence when a downloadable/readable file is present.
+
+output_files:
+  status_json: european_national_radar_status.json
+  metrics_json: european_national_radar_metrics.json
+  sources_csv: european_national_radar_sources.csv
+  map_html: european_national_radar_map.html
+  report_md: european_national_radar_report.md
+
+runtime:
+  default_timeout_seconds: 8
+  max_probe_bytes: 2048
+  user_agent: "MeteoVoid-EuropeanNationalRadar/1.0"
+
+countries:
+  spain:
+    label: "Espagne"
+    iso2: "ES"
+    bbox: {west: -10.0, south: 35.5, east: 4.6, north: 44.4}
+    upstream_role: "source chaleur/humidité et développement convectif sud-ouest"
+    priority_for_belgium: medium
+    sources:
+      - id: aemet_opendata_national_composite
+        provider: "AEMET OpenData"
+        role: "national_radar_composite"
+        evidence_level: "api_required"
+        api_key_env: "AEMET_API_KEY"
+        endpoint_template: "https://opendata.aemet.es/opendata/api/red/radar/nacional?api_key={api_key}"
+        expected_format: "image_or_redirect_json"
+        update_interval_minutes: 30
+        license_note: "AEMET OpenData, free/reuse subject to AEMET conditions and API key."
+        public_reference: "https://opendata.aemet.es/"
+      - id: opera_ord_spain_composite
+        provider: "EUMETNET OPERA ORD"
+        role: "pan_european_machine_radar"
+        evidence_level: "opera_ord_fallback"
+        expected_format: "ODIM_HDF5_or_GeoTIFF"
+        public_reference: "https://eumetnet.github.io/openradardata-documentation/"
+
+  france:
+    label: "France"
+    iso2: "FR"
+    bbox: {west: -5.8, south: 41.0, east: 9.9, north: 51.5}
+    upstream_role: "principal corridor amont vers Belgique : nord France / Manche / Champagne-Ardenne"
+    priority_for_belgium: high
+    sources:
+      - id: meteofrance_api_radar_package
+        provider: "Météo-France API / Données publiques Radar"
+        role: "national_radar_package"
+        evidence_level: "api_required"
+        api_key_env: "METEOFRANCE_API_KEY"
+        endpoint_template: ""
+        expected_format: "provider_specific_radar_package"
+        update_interval_minutes: 5
+        license_note: "Accès via portail API Météo-France / meteo.data.gouv.fr selon contrat du service."
+        public_reference: "https://www.data.gouv.fr/dataservices/api-donnees-radar"
+      - id: opera_ord_france_composite
+        provider: "EUMETNET OPERA ORD"
+        role: "pan_european_machine_radar"
+        evidence_level: "opera_ord_fallback"
+        expected_format: "ODIM_HDF5_or_GeoTIFF"
+        public_reference: "https://eumetnet.github.io/openradardata-documentation/"
+
+  switzerland:
+    label: "Suisse"
+    iso2: "CH"
+    bbox: {west: 5.6, south: 45.7, east: 10.7, north: 47.9}
+    upstream_role: "flux alpins / convection d’altitude pouvant remonter vers est France et Allemagne"
+    priority_for_belgium: medium
+    sources:
+      - id: meteoswiss_precip_stac
+        provider: "MeteoSwiss Open Data"
+        role: "precipitation_radar_products"
+        evidence_level: "stac_open_data"
+        endpoint_template: "https://data.geo.admin.ch/api/stac/v0.9/collections/ch.meteoschweiz.ogd-radar-precip"
+        expected_format: "STAC_assets"
+        update_interval_minutes: 5
+        license_note: "MeteoSwiss Open Government Data. Products available through STAC/Open Data."
+        public_reference: "https://opendatadocs.meteoswiss.ch/d-radar-data/d1-precipitation-radar-products"
+      - id: opera_ord_switzerland_composite
+        provider: "EUMETNET OPERA ORD"
+        role: "pan_european_machine_radar"
+        evidence_level: "opera_ord_fallback"
+        expected_format: "ODIM_HDF5_or_GeoTIFF"
+        public_reference: "https://eumetnet.github.io/openradardata-documentation/"
+
+  netherlands:
+    label: "Pays-Bas"
+    iso2: "NL"
+    bbox: {west: 3.0, south: 50.6, east: 7.4, north: 53.8}
+    upstream_role: "retour nord-ouest / cellules mer du Nord vers Flandre, Anvers et Limbourg"
+    priority_for_belgium: high
+    sources:
+      - id: knmi_dataplatform_radar_hdf5
+        provider: "KNMI Data Platform"
+        role: "national_radar_hdf5"
+        evidence_level: "open_data_api"
+        api_key_env: "KNMI_API_KEY"
+        endpoint_template: "https://api.dataplatform.knmi.nl/open-data/v1/datasets/{dataset_name}/versions/{version}/files"
+        dataset_name: "radar_precipitation_composites_nl"
+        version: "latest"
+        expected_format: "HDF5"
+        update_interval_minutes: 5
+        license_note: "KNMI open data datasets are available via the KNMI Data Platform; radar products are commonly HDF5 / WMS / API depending on dataset."
+        public_reference: "https://dataplatform.knmi.nl/dataset/"
+      - id: opera_ord_netherlands_composite
+        provider: "EUMETNET OPERA ORD"
+        role: "pan_european_machine_radar"
+        evidence_level: "opera_ord_fallback"
+        expected_format: "ODIM_HDF5_or_GeoTIFF"
+        public_reference: "https://eumetnet.github.io/openradardata-documentation/"

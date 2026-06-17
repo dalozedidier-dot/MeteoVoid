@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from meteovoid.belgium.european_national_radar import parse_country_files
 from meteovoid.belgium.radar_stack import write_radar_stack_outputs
 
 
@@ -10,10 +11,18 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Generate MeteoVoid radar stack outputs.")
     parser.add_argument("--out-dir", default="_ci_out/belgium_alert")
     parser.add_argument("--opera-config", default="config/opera_ord.yaml")
+    parser.add_argument("--national-radar-config", default="config/european_national_radars.yaml")
     parser.add_argument("--radar-frame", action="append", default=[])
     parser.add_argument("--enable-rainviewer-live", action="store_true")
     parser.add_argument("--enable-opera-ord", action="store_true")
     parser.add_argument("--enable-opera-download", action="store_true")
+    parser.add_argument("--enable-national-radar-live", action="store_true")
+    parser.add_argument(
+        "--country-radar-file",
+        action="append",
+        default=[],
+        help="Optional national radar file as country:/path/file.npy|csv|json|tif",
+    )
     parser.add_argument(
         "--opera-datetime",
         default="",
@@ -31,6 +40,9 @@ def main(argv: list[str] | None = None) -> int:
         enable_opera_ord=bool(args.enable_opera_ord),
         enable_opera_download=bool(args.enable_opera_download),
         opera_datetime_range=str(args.opera_datetime),
+        national_radar_config_path=args.national_radar_config,
+        enable_national_radar_live=bool(args.enable_national_radar_live),
+        national_radar_files=parse_country_files(list(args.country_radar_file or [])),
         enable_pysteps=bool(args.enable_pysteps_nowcast),
         timeout_s=float(args.timeout_s),
     )

@@ -1,0 +1,44 @@
+{
+  "contract": "meteovoid_european_national_radar_metrics_v1",
+  "countries": [
+    {
+      "country": "france",
+      "file_count": 0,
+      "files": [],
+      "machine_radar_available": false,
+      "radar_activity_score": null,
+      "readable_file_count": 0,
+      "status": "no_readable_country_files"
+    },
+    {
+      "country": "netherlands",
+      "file_count": 0,
+      "files": [],
+      "machine_radar_available": false,
+      "radar_activity_score": null,
+      "readable_file_count": 0,
+      "status": "no_readable_country_files"
+    },
+    {
+      "country": "spain",
+      "file_count": 0,
+      "files": [],
+      "machine_radar_available": false,
+      "radar_activity_score": null,
+      "readable_file_count": 0,
+      "status": "no_readable_country_files"
+    },
+    {
+      "country": "switzerland",
+      "file_count": 0,
+      "files": [],
+      "machine_radar_available": false,
+      "radar_activity_score": null,
+      "readable_file_count": 0,
+      "status": "no_readable_country_files"
+    }
+  ],
+  "generated_at": "2026-06-17T22:36:22+00:00",
+  "machine_radar_available": false,
+  "status": "no_country_machine_metrics"
+}

@@ -1,0 +1,300 @@
+{
+  "contract": "meteovoid_european_national_radar_v1",
+  "countries": [
+    {
+      "bbox": {
+        "east": 9.9,
+        "north": 51.5,
+        "south": 41.0,
+        "west": -5.8
+      },
+      "country": "france",
+      "iso2": "FR",
+      "label": "France",
+      "local_file_metrics": {
+        "country": "france",
+        "file_count": 0,
+        "files": [],
+        "machine_radar_available": false,
+        "radar_activity_score": null,
+        "readable_file_count": 0,
+        "status": "no_readable_country_files"
+      },
+      "machine_radar_available": false,
+      "priority_for_belgium": "high",
+      "radar_activity_score": null,
+      "source_count": 2,
+      "sources": [
+        {
+          "api_key_configured": false,
+          "api_key_env": "METEOFRANCE_API_KEY",
+          "evidence_level": "api_required",
+          "expected_format": "provider_specific_radar_package",
+          "id": "meteofrance_api_radar_package",
+          "license_note": "Accès via portail API Météo-France / meteo.data.gouv.fr selon contrat du service.",
+          "machine_evidence": false,
+          "note": "Provider exists, but no public machine endpoint is configured in this registry.",
+          "provider": "Météo-France API / Données publiques Radar",
+          "public_reference": "https://www.data.gouv.fr/dataservices/api-donnees-radar",
+          "role": "national_radar_package",
+          "status": "endpoint_not_configured",
+          "update_interval_minutes": 5
+        },
+        {
+          "api_key_configured": null,
+          "api_key_env": null,
+          "evidence_level": "opera_ord_fallback",
+          "expected_format": "ODIM_HDF5_or_GeoTIFF",
+          "id": "opera_ord_france_composite",
+          "license_note": null,
+          "machine_evidence": false,
+          "note": "Use the OPERA ORD connector for pan-European machine radar files.",
+          "provider": "EUMETNET OPERA ORD",
+          "public_reference": "https://eumetnet.github.io/openradardata-documentation/",
+          "role": "pan_european_machine_radar",
+          "status": "covered_by_opera_ord_connector",
+          "update_interval_minutes": null
+        }
+      ],
+      "upstream_role": "principal corridor amont vers Belgique : nord France / Manche / Champagne-Ardenne"
+    },
+    {
+      "bbox": {
+        "east": 7.4,
+        "north": 53.8,
+        "south": 50.6,
+        "west": 3.0
+      },
+      "country": "netherlands",
+      "iso2": "NL",
+      "label": "Pays-Bas",
+      "local_file_metrics": {
+        "country": "netherlands",
+        "file_count": 0,
+        "files": [],
+        "machine_radar_available": false,
+        "radar_activity_score": null,
+        "readable_file_count": 0,
+        "status": "no_readable_country_files"
+      },
+      "machine_radar_available": false,
+      "priority_for_belgium": "high",
+      "radar_activity_score": null,
+      "source_count": 2,
+      "sources": [
+        {
+          "api_key_configured": false,
+          "api_key_env": "KNMI_API_KEY",
+          "evidence_level": "open_data_api",
+          "expected_format": "HDF5",
+          "id": "knmi_dataplatform_radar_hdf5",
+          "license_note": "KNMI open data datasets are available via the KNMI Data Platform; radar products are commonly HDF5 / WMS / API depending on dataset.",
+          "machine_evidence": false,
+          "note": "Set KNMI_API_KEY to probe this provider endpoint.",
+          "provider": "KNMI Data Platform",
+          "public_reference": "https://dataplatform.knmi.nl/dataset/",
+          "role": "national_radar_hdf5",
+          "status": "requires_api_key",
+          "update_interval_minutes": 5
+        },
+        {
+          "api_key_configured": null,
+          "api_key_env": null,
+          "evidence_level": "opera_ord_fallback",
+          "expected_format": "ODIM_HDF5_or_GeoTIFF",
+          "id": "opera_ord_netherlands_composite",
+          "license_note": null,
+          "machine_evidence": false,
+          "note": "Use the OPERA ORD connector for pan-European machine radar files.",
+          "provider": "EUMETNET OPERA ORD",
+          "public_reference": "https://eumetnet.github.io/openradardata-documentation/",
+          "role": "pan_european_machine_radar",
+          "status": "covered_by_opera_ord_connector",
+          "update_interval_minutes": null
+        }
+      ],
+      "upstream_role": "retour nord-ouest / cellules mer du Nord vers Flandre, Anvers et Limbourg"
+    },
+    {
+      "bbox": {
+        "east": 4.6,
+        "north": 44.4,
+        "south": 35.5,
+        "west": -10.0
+      },
+      "country": "spain",
+      "iso2": "ES",
+      "label": "Espagne",
+      "local_file_metrics": {
+        "country": "spain",
+        "file_count": 0,
+        "files": [],
+        "machine_radar_available": false,
+        "radar_activity_score": null,
+        "readable_file_count": 0,
+        "status": "no_readable_country_files"
+      },
+      "machine_radar_available": false,
+      "priority_for_belgium": "medium",
+      "radar_activity_score": null,
+      "source_count": 2,
+      "sources": [
+        {
+          "api_key_configured": false,
+          "api_key_env": "AEMET_API_KEY",
+          "evidence_level": "api_required",
+          "expected_format": "image_or_redirect_json",
+          "id": "aemet_opendata_national_composite",
+          "license_note": "AEMET OpenData, free/reuse subject to AEMET conditions and API key.",
+          "machine_evidence": false,
+          "note": "Set AEMET_API_KEY to probe this provider endpoint.",
+          "provider": "AEMET OpenData",
+          "public_reference": "https://opendata.aemet.es/",
+          "role": "national_radar_composite",
+          "status": "requires_api_key",
+          "update_interval_minutes": 30
+        },
+        {
+          "api_key_configured": null,
+          "api_key_env": null,
+          "evidence_level": "opera_ord_fallback",
+          "expected_format": "ODIM_HDF5_or_GeoTIFF",
+          "id": "opera_ord_spain_composite",
+          "license_note": null,
+          "machine_evidence": false,
+          "note": "Use the OPERA ORD connector for pan-European machine radar files.",
+          "provider": "EUMETNET OPERA ORD",
+          "public_reference": "https://eumetnet.github.io/openradardata-documentation/",
+          "role": "pan_european_machine_radar",
+          "status": "covered_by_opera_ord_connector",
+          "update_interval_minutes": null
+        }
+      ],
+      "upstream_role": "source chaleur/humidité et développement convectif sud-ouest"
+    },
+    {
+      "bbox": {
+        "east": 10.7,
+        "north": 47.9,
+        "south": 45.7,
+        "west": 5.6
+      },
+      "country": "switzerland",
+      "iso2": "CH",
+      "label": "Suisse",
+      "local_file_metrics": {
+        "country": "switzerland",
+        "file_count": 0,
+        "files": [],
+        "machine_radar_available": false,
+        "radar_activity_score": null,
+        "readable_file_count": 0,
+        "status": "no_readable_country_files"
+      },
+      "machine_radar_available": false,
+      "priority_for_belgium": "medium",
+      "radar_activity_score": null,
+      "source_count": 2,
+      "sources": [
+        {
+          "api_key_configured": null,
+          "api_key_env": null,
+          "endpoint": "https://data.geo.admin.ch/api/stac/v0.9/collections/ch.meteoschweiz.ogd-radar-precip",
+          "evidence_level": "stac_open_data",
+          "expected_format": "STAC_assets",
+          "id": "meteoswiss_precip_stac",
+          "license_note": "MeteoSwiss Open Government Data. Products available through STAC/Open Data.",
+          "machine_evidence": false,
+          "note": "Live probing disabled; pass --enable-national-radar-live to test endpoint reachability.",
+          "provider": "MeteoSwiss Open Data",
+          "public_reference": "https://opendatadocs.meteoswiss.ch/d-radar-data/d1-precipitation-radar-products",
+          "role": "precipitation_radar_products",
+          "status": "configured_not_probed",
+          "update_interval_minutes": 5
+        },
+        {
+          "api_key_configured": null,
+          "api_key_env": null,
+          "evidence_level": "opera_ord_fallback",
+          "expected_format": "ODIM_HDF5_or_GeoTIFF",
+          "id": "opera_ord_switzerland_composite",
+          "license_note": null,
+          "machine_evidence": false,
+          "note": "Use the OPERA ORD connector for pan-European machine radar files.",
+          "provider": "EUMETNET OPERA ORD",
+          "public_reference": "https://eumetnet.github.io/openradardata-documentation/",
+          "role": "pan_european_machine_radar",
+          "status": "covered_by_opera_ord_connector",
+          "update_interval_minutes": null
+        }
+      ],
+      "upstream_role": "flux alpins / convection d’altitude pouvant remonter vers est France et Allemagne"
+    }
+  ],
+  "countries_requested": [
+    "spain",
+    "france",
+    "switzerland",
+    "netherlands"
+  ],
+  "enabled": true,
+  "generated_at": "2026-06-17T22:36:22+00:00",
+  "limits": [
+    "National radar interfaces are provider-specific and often require API keys, licences or STAC/WMS handling.",
+    "MeteoVoid reports interface readiness separately from machine-readable radar evidence.",
+    "A country radar source becomes machine evidence only when a local/downloaded file is readable and metrics are computed.",
+    "OPERA ORD remains the preferred unified pan-European machine radar path when configured."
+  ],
+  "live_probe_enabled": false,
+  "metrics": {
+    "contract": "meteovoid_european_national_radar_metrics_v1",
+    "countries": [
+      {
+        "country": "france",
+        "file_count": 0,
+        "files": [],
+        "machine_radar_available": false,
+        "radar_activity_score": null,
+        "readable_file_count": 0,
+        "status": "no_readable_country_files"
+      },
+      {
+        "country": "netherlands",
+        "file_count": 0,
+        "files": [],
+        "machine_radar_available": false,
+        "radar_activity_score": null,
+        "readable_file_count": 0,
+        "status": "no_readable_country_files"
+      },
+      {
+        "country": "spain",
+        "file_count": 0,
+        "files": [],
+        "machine_radar_available": false,
+        "radar_activity_score": null,
+        "readable_file_count": 0,
+        "status": "no_readable_country_files"
+      },
+      {
+        "country": "switzerland",
+        "file_count": 0,
+        "files": [],
+        "machine_radar_available": false,
+        "radar_activity_score": null,
+        "readable_file_count": 0,
+        "status": "no_readable_country_files"
+      }
+    ],
+    "generated_at": "2026-06-17T22:36:22+00:00",
+    "machine_radar_available": false,
+    "status": "no_country_machine_metrics"
+  },
+  "status": "interfaces_ready_no_machine_data",
+  "summary": {
+    "country_count": 4,
+    "live_probe_enabled": false,
+    "machine_country_count": 0,
+    "status": "interfaces_ready_no_machine_data"
+  }
+}

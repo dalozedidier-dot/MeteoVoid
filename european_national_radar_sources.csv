@@ -1,0 +1,9 @@
+country,label,provider,source_id,status,evidence_level,api_key_env,api_key_configured,machine_evidence,expected_format,public_reference
+france,France,Météo-France API / Données publiques Radar,meteofrance_api_radar_package,endpoint_not_configured,api_required,METEOFRANCE_API_KEY,False,False,provider_specific_radar_package,https://www.data.gouv.fr/dataservices/api-donnees-radar
+france,France,EUMETNET OPERA ORD,opera_ord_france_composite,covered_by_opera_ord_connector,opera_ord_fallback,,,False,ODIM_HDF5_or_GeoTIFF,https://eumetnet.github.io/openradardata-documentation/
+netherlands,Pays-Bas,KNMI Data Platform,knmi_dataplatform_radar_hdf5,requires_api_key,open_data_api,KNMI_API_KEY,False,False,HDF5,https://dataplatform.knmi.nl/dataset/
+netherlands,Pays-Bas,EUMETNET OPERA ORD,opera_ord_netherlands_composite,covered_by_opera_ord_connector,opera_ord_fallback,,,False,ODIM_HDF5_or_GeoTIFF,https://eumetnet.github.io/openradardata-documentation/
+spain,Espagne,AEMET OpenData,aemet_opendata_national_composite,requires_api_key,api_required,AEMET_API_KEY,False,False,image_or_redirect_json,https://opendata.aemet.es/
+spain,Espagne,EUMETNET OPERA ORD,opera_ord_spain_composite,covered_by_opera_ord_connector,opera_ord_fallback,,,False,ODIM_HDF5_or_GeoTIFF,https://eumetnet.github.io/openradardata-documentation/
+switzerland,Suisse,MeteoSwiss Open Data,meteoswiss_precip_stac,configured_not_probed,stac_open_data,,,False,STAC_assets,https://opendatadocs.meteoswiss.ch/d-radar-data/d1-precipitation-radar-products
+switzerland,Suisse,EUMETNET OPERA ORD,opera_ord_switzerland_composite,covered_by_opera_ord_connector,opera_ord_fallback,,,False,ODIM_HDF5_or_GeoTIFF,https://eumetnet.github.io/openradardata-documentation/
