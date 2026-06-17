@@ -276,9 +276,7 @@ def build_european_national_radar(
     max_probe_bytes = int(runtime.get("max_probe_bytes") or 2048)
     timeout = float(timeout_s or runtime.get("default_timeout_seconds") or 8.0)
     countries_raw = config.get("countries")
-    countries_cfg: dict[str, Any] = (
-        countries_raw if isinstance(countries_raw, dict) else {}
-    )
+    countries_cfg: dict[str, Any] = countries_raw if isinstance(countries_raw, dict) else {}
     supplied_files = country_files or {}
     countries: list[dict[str, Any]] = []
     metrics: list[dict[str, Any]] = []
