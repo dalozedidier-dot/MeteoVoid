@@ -14,7 +14,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--enable-rainviewer-live", action="store_true")
     parser.add_argument("--enable-opera-ord", action="store_true")
     parser.add_argument("--enable-opera-download", action="store_true")
-    parser.add_argument("--opera-datetime", default="", help="ORD datetime range, e.g. 2026-06-17T00:00Z/2026-06-17T01:00Z")
+    parser.add_argument(
+        "--opera-datetime",
+        default="",
+        help="ORD datetime range, e.g. 2026-06-17T00:00Z/2026-06-17T01:00Z",
+    )
     parser.add_argument("--enable-pysteps-nowcast", action="store_true")
     parser.add_argument("--timeout-s", type=float, default=8.0)
     args = parser.parse_args(argv)

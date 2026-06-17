@@ -120,7 +120,12 @@ products:
         assert timeout == 2.0
         if url.endswith("/collections"):
             return FakeResponse({"collections": [{"id": "observations"}]})
-        return FakeResponse({"type": "CoverageJSON", "links": [{"rel": "data", "href": "https://example.test/file.tif"}]})
+        return FakeResponse(
+            {
+                "type": "CoverageJSON",
+                "links": [{"rel": "data", "href": "https://example.test/file.tif"}],
+            }
+        )
 
     monkeypatch.setattr(opera_module, "urlopen", fake_urlopen)
     status = inspect_opera_ord(cfg, enabled=True, timeout_s=2.0)

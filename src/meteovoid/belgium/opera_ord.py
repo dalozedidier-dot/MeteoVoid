@@ -43,7 +43,7 @@ def _as_bool(value: Any, default: bool = False) -> bool:
         return default
     if isinstance(value, bool):
         return value
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         return bool(value)
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y", "on", "enabled"}
@@ -193,14 +193,20 @@ def extract_data_links(payload: Any) -> list[str]:
     def walk(obj: Any) -> None:
         if isinstance(obj, dict):
             href = obj.get("href") or obj.get("data") or obj.get("url")
-            if isinstance(href, str) and (href.startswith("http://") or href.startswith("https://")):
+            if isinstance(href, str) and (
+                href.startswith("http://") or href.startswith("https://")
+            ):
                 rel = str(obj.get("rel") or "")
                 media_type = str(obj.get("type") or obj.get("mediaType") or "")
                 lower_href = href.lower()
                 if (
                     rel in {"data", "item", "enclosure", "alternate"}
-                    or any(token in media_type.lower() for token in ["hdf", "tiff", "geotiff", "octet"])
-                    or any(token in lower_href for token in [".h5", ".hdf", ".hdf5", ".tif", ".tiff"])
+                    or any(
+                        token in media_type.lower() for token in ["hdf", "tiff", "geotiff", "octet"]
+                    )
+                    or any(
+                        token in lower_href for token in [".h5", ".hdf", ".hdf5", ".tif", ".tiff"]
+                    )
                 ):
                     links.append(href)
             for value in obj.values():
@@ -230,9 +236,15 @@ def _query_json_safe(url: str, *, headers: dict[str, str], timeout_s: float) -> 
             "links": extract_data_links(payload),
         }
     except HTTPError as exc:
+        if exc.code == 204:
+            status = "no_content"
+        elif exc.code == 429:
+            status = "rate_limited"
+        else:
+            status = "http_error"
         return {
             "ok": False,
-            "status": "no_content" if exc.code == 204 else "rate_limited" if exc.code == 429 else "http_error",
+            "status": status,
             "http_status": exc.code,
             "detail": str(exc)[:240],
             "links": [],
@@ -308,10 +320,12 @@ def _read_numeric_array(path: str | Path) -> np.ndarray:
     raise ValueError(f"unsupported numeric radar format: {suffix}")
 
 
-def analyse_geotiff(path: str | Path, bbox: tuple[float, float, float, float] | None = None) -> dict[str, Any]:
+def analyse_geotiff(
+    path: str | Path, bbox: tuple[float, float, float, float] | None = None
+) -> dict[str, Any]:
     try:
-        import rasterio  # type: ignore[import-not-found]
-        from rasterio.windows import from_bounds  # type: ignore[import-not-found]
+        import rasterio  # type: ignore[import-not-found, import-untyped]
+        from rasterio.windows import from_bounds  # type: ignore[import-not-found, import-untyped]
     except ImportError as exc:
         return {"ok": False, "status": "rasterio_missing", "detail": str(exc)[:160]}
 
@@ -368,7 +382,9 @@ def analyse_odim_hdf5(path: str | Path) -> dict[str, Any]:
         return {"ok": False, "status": "odim_read_error", "detail": str(exc)[:240]}
 
 
-def analyse_radar_file(path: str | Path, bbox: tuple[float, float, float, float] | None = None) -> dict[str, Any]:
+def analyse_radar_file(
+    path: str | Path, bbox: tuple[float, float, float, float] | None = None
+) -> dict[str, Any]:
     p = Path(path)
     result: dict[str, Any] = {"path": str(p), "exists": p.exists(), "status": "missing"}
     if not p.exists():
@@ -433,12 +449,17 @@ def build_opera_inventory(
     api_key_env = str(api.get("api_key_env") or "METEOGATE_API_KEY")
     timeout = float(api.get("timeout_seconds") or timeout_s)
     products_cfg = _config_products(config)
-    composite_cfg = products_cfg.get("composites") if isinstance(products_cfg.get("composites"), dict) else {}
+    composite_raw = products_cfg.get("composites")
+    composite_cfg: dict[str, Any] = composite_raw if isinstance(composite_raw, dict) else {}
     product_names = products or list(composite_cfg.get("standard_names") or DEFAULT_PRODUCTS)
     location_id = str(composite_cfg.get("location_id") or OPERA_COMPOSITE_LOCATION_ID)
     method = str(composite_cfg.get("method") or "comp")
     format_priority = list(composite_cfg.get("format_priority") or ["GEOTIFF", "ODIM"])
-    old_queries = [q for q in config.get("queries", []) if isinstance(q, dict)] if isinstance(config.get("queries"), list) else []
+    old_queries = (
+        [q for q in config.get("queries", []) if isinstance(q, dict)]
+        if isinstance(config.get("queries"), list)
+        else []
+    )
 
     inventory: dict[str, Any] = {
         "contract": "opera_ord_inventory_v1",
@@ -520,7 +541,8 @@ def build_opera_inventory(
         if not isinstance(query, dict):
             continue
         result = _query_json_safe(str(query.get("url")), headers=headers, timeout_s=timeout)
-        links = result.get("links") if isinstance(result.get("links"), list) else []
+        links_raw = result.get("links")
+        links: list[Any] = links_raw if isinstance(links_raw, list) else []
         all_links.extend(str(link) for link in links)
         query.update(
             {
@@ -614,7 +636,11 @@ def inspect_opera_ord(
         "download_enabled": bool(download),
         "status": status,
         "base_url": inventory.get("base_url"),
-        "discovery_url": inventory.get("discovery", {}).get("url") if isinstance(inventory.get("discovery"), dict) else None,
+        "discovery_url": (
+            inventory.get("discovery", {}).get("url")
+            if isinstance(inventory.get("discovery"), dict)
+            else None
+        ),
         "api_key_configured": inventory.get("api_key_configured"),
         "inventory": inventory,
         "files_manifest": files,
@@ -658,7 +684,9 @@ def write_opera_ord_outputs(
     )
     inventory = status.get("inventory") if isinstance(status.get("inventory"), dict) else {}
     metrics = status.get("metrics") if isinstance(status.get("metrics"), dict) else {}
-    files_manifest = status.get("files_manifest") if isinstance(status.get("files_manifest"), list) else []
+    files_manifest = (
+        status.get("files_manifest") if isinstance(status.get("files_manifest"), list) else []
+    )
     (root / str(outputs.get("status_json") or "opera_ord_status.json")).write_text(
         _json_dumps(status), encoding="utf-8"
     )

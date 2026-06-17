@@ -941,12 +941,16 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
         "opera_ord_inventory": {
             "status": opera_inventory.get("status"),
             "enabled": opera_inventory.get("enabled"),
-            "queries_count": len(opera_inventory.get("queries", []))
-            if isinstance(opera_inventory.get("queries"), list)
-            else 0,
-            "data_links_count": len(opera_inventory.get("data_links", []))
-            if isinstance(opera_inventory.get("data_links"), list)
-            else 0,
+            "queries_count": (
+                len(opera_inventory.get("queries", []))
+                if isinstance(opera_inventory.get("queries"), list)
+                else 0
+            ),
+            "data_links_count": (
+                len(opera_inventory.get("data_links", []))
+                if isinstance(opera_inventory.get("data_links"), list)
+                else 0
+            ),
         },
         "frames": [
             {"group": group, "label": label, "file": "reports/latest/" + file}

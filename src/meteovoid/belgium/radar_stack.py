@@ -13,8 +13,10 @@ from meteovoid.belgium.opera_ord import (
     OPERA_ORD_DEFAULT_BASE_URL,
     analyse_radar_file,
     build_location_query_url,
-    inspect_opera_ord as _inspect_opera_ord_v2,
     write_opera_ord_outputs,
+)
+from meteovoid.belgium.opera_ord import (
+    inspect_opera_ord as _inspect_opera_ord_v2,
 )
 
 RAINVIEWER_API_URL = "https://api.rainviewer.com/public/weather-maps.json"
@@ -77,7 +79,9 @@ def build_rainviewer_status(*, fetch_live: bool = False, timeout_s: float = 5.0)
         radar = payload.get("radar") if isinstance(payload.get("radar"), dict) else {}
         past = radar.get("past") if isinstance(radar, dict) else []
         nowcast = radar.get("nowcast") if isinstance(radar, dict) else []
-        frames = [frame for frame in past if isinstance(frame, dict)] if isinstance(past, list) else []
+        frames = (
+            [frame for frame in past if isinstance(frame, dict)] if isinstance(past, list) else []
+        )
         status.update(
             {
                 "status": "ok",
@@ -238,7 +242,7 @@ def analyze_radar_files(paths: list[str | Path]) -> dict[str, Any]:
         if frame.get("status") not in {"analysed_numeric", "analysed_geotiff"}:
             continue
         value = frame.get("max") or frame.get("max_value")
-        if isinstance(value, (int, float)) and np.isfinite(value):
+        if isinstance(value, int | float) and np.isfinite(value):
             values.append(float(value))
     return {
         "contract": "radar_processing_status_v1",
@@ -337,7 +341,11 @@ def compute_pysteps_from_paths(paths: list[str | Path], *, enabled: bool = False
 def _machine_state(opera: dict[str, Any], radar_processing: dict[str, Any]) -> str:
     if opera.get("status") == "metrics_available":
         return "opera_ord_metrics_available"
-    if any(item.get("status") == "downloaded" for item in opera.get("files_manifest", []) if isinstance(item, dict)):
+    if any(
+        item.get("status") == "downloaded"
+        for item in opera.get("files_manifest", [])
+        if isinstance(item, dict)
+    ):
         return "opera_ord_files_downloaded"
     if radar_processing.get("readable_frame_count", 0) > 0:
         return "local_radar_frames_readable"
