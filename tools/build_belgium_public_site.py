@@ -1277,7 +1277,6 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     )
 
 
-
 _EUROPE_COUNTRY_LABELS = {
     "spain": "Espagne",
     "france": "France",
@@ -1315,7 +1314,11 @@ def _status_label(status: Any) -> str:
 
 
 def _machine_label(available: Any) -> str:
-    return "donnée machine exploitable" if bool(available) else "interface prête, donnée machine absente"
+    return (
+        "donnée machine exploitable"
+        if bool(available)
+        else "interface prête, donnée machine absente"
+    )
 
 
 def build_europe_model(report_dir: Path, vm: dict[str, Any]) -> dict[str, Any]:
@@ -1346,7 +1349,9 @@ def build_europe_model(report_dir: Path, vm: dict[str, Any]) -> dict[str, Any]:
         country_rows = [
             {
                 "country": row.get("country"),
-                "label": _EUROPE_COUNTRY_LABELS.get(str(row.get("country")), str(row.get("country", "")).title()),
+                "label": _EUROPE_COUNTRY_LABELS.get(
+                    str(row.get("country")), str(row.get("country", "")).title()
+                ),
                 "local_file_metrics": row,
                 "sources": [],
             }
@@ -1383,12 +1388,16 @@ def build_europe_model(report_dir: Path, vm: dict[str, Any]) -> dict[str, Any]:
                     or local_metrics.get("machine_radar_available")
                 ),
                 "radar_activity_score": _round(
-                    row.get("radar_activity_score")
-                    if row.get("radar_activity_score") is not None
-                    else local_metrics.get("radar_activity_score"),
+                    (
+                        row.get("radar_activity_score")
+                        if row.get("radar_activity_score") is not None
+                        else local_metrics.get("radar_activity_score")
+                    ),
                     3,
                 ),
-                "status": local_metrics.get("status") or row.get("status") or "interface_ready_no_machine_data",
+                "status": local_metrics.get("status")
+                or row.get("status")
+                or "interface_ready_no_machine_data",
                 "readable_file_count": local_metrics.get("readable_file_count", 0),
                 "file_count": local_metrics.get("file_count", 0),
                 "sources": [
@@ -1422,7 +1431,9 @@ def build_europe_model(report_dir: Path, vm: dict[str, Any]) -> dict[str, Any]:
     configured_count = sum(1 for item in countries if item.get("configured_source_count", 0) > 0)
     total_sources = sum(int(item.get("source_count") or 0) for item in countries)
     upstream_summary = upstream.get("summary") if isinstance(upstream.get("summary"), dict) else {}
-    radar_summary = radar_stack.get("summary") if isinstance(radar_stack.get("summary"), dict) else {}
+    radar_summary = (
+        radar_stack.get("summary") if isinstance(radar_stack.get("summary"), dict) else {}
+    )
 
     return {
         "generated_at": vm.get("meta", {}).get("generated_at"),
@@ -1436,9 +1447,11 @@ def build_europe_model(report_dir: Path, vm: dict[str, Any]) -> dict[str, Any]:
             "machine_country_count": machine_count,
             "configured_country_count": configured_count,
             "source_count": total_sources,
-            "status": status.get("summary", {}).get("status")
-            if isinstance(status.get("summary"), dict)
-            else status.get("status", "interface_ready"),
+            "status": (
+                status.get("summary", {}).get("status")
+                if isinstance(status.get("summary"), dict)
+                else status.get("status", "interface_ready")
+            ),
             "machine_radar_available": bool(machine_count),
             "message": (
                 "Données radar machine disponibles pour au moins un pays."
@@ -1479,12 +1492,9 @@ def build_europe_model(report_dir: Path, vm: dict[str, Any]) -> dict[str, Any]:
             },
             "upstream_watch": upstream_summary,
         },
-        "corridors": [
-            item
-            for item in upstream.get("corridors", [])
-            if isinstance(item, dict)
-        ],
+        "corridors": [item for item in upstream.get("corridors", []) if isinstance(item, dict)],
     }
+
 
 def build_api(vm: dict[str, Any], site_dir: Path) -> None:
     """Write the clean static JSON API consumed by the page and external clients."""
@@ -1586,11 +1596,14 @@ def build_api(vm: dict[str, Any], site_dir: Path) -> None:
             "generated_at": generated_at,
             "description": "MeteoVoid Belgique static API",
             "endpoints": meta.get("endpoints"),
-            "extra_endpoints": {"radar": "api/radar.json", "heat": "api/heat.json", "europe": "api/europe.json"},
+            "extra_endpoints": {
+                "radar": "api/radar.json",
+                "heat": "api/heat.json",
+                "europe": "api/europe.json",
+            },
             "disclaimer": meta.get("disclaimer"),
         },
     )
-
 
 
 def _write_europe_page(site_dir: Path, model: dict[str, Any]) -> None:
