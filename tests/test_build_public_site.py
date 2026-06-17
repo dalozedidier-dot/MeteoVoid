@@ -234,6 +234,7 @@ def test_build_index_produces_site_and_api(tmp_path: Path) -> None:
         "sources",
         "validation",
         "radar",
+        "europe",
         "index",
     ]:
         api_file = site_dir / "api" / f"{name}.json"
@@ -321,3 +322,35 @@ def test_european_radars_are_visible_in_public_html_and_api(tmp_path: Path) -> N
     radar = json.loads((site_dir / "api" / "radar.json").read_text(encoding="utf-8"))
     assert radar["european_national_radar"]["country_count"] == 4
     assert radar["european_national_radar_metrics"]["countries"][0]["country"] == "spain"
+
+
+def test_europe_page_is_dedicated_and_precise(tmp_path: Path) -> None:
+    report_dir = _minimal_report_dir(tmp_path)
+    site_dir = tmp_path / "site"
+    site.build_index(report_dir, site_dir)
+
+    europe_html = (site_dir / "europe.html").read_text(encoding="utf-8")
+    for token in [
+        "MeteoVoid Europe",
+        "Espagne · France · Suisse · Pays-Bas",
+        "Carte Europe radar",
+        "Pays suivis",
+        "Sources radar par pays",
+        "Corridors amont vers la Belgique",
+        "european_national_radar_map.html",
+        "api/europe.json",
+    ]:
+        assert token in europe_html, token
+
+    europe = json.loads((site_dir / "api" / "europe.json").read_text(encoding="utf-8"))
+    assert europe["summary"]["country_count"] == 4
+    assert {c["country"] for c in europe["countries"]} == {
+        "spain",
+        "france",
+        "switzerland",
+        "netherlands",
+    }
+    assert europe["links"]["belgium"] == "index.html"
+
+    index_html = (site_dir / "index.html").read_text(encoding="utf-8")
+    assert 'href="europe.html"' in index_html
