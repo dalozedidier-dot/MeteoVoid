@@ -79,22 +79,25 @@ queries:
     )
     status = inspect_opera_ord(cfg, enabled=False)
     assert status["status"] == "disabled"
-    assert status["queries"][0]["status"] == "not_fetched"
+    assert status["inventory"]["queries"][0]["status"] == "not_fetched"
 
 
 def test_opera_ord_enabled_success_and_query_error(tmp_path: Path, monkeypatch) -> None:
+    from meteovoid.belgium import opera_ord as opera_module
+
     cfg = tmp_path / "opera.yaml"
     cfg.write_text(
         """
-contract: opera_ord_connector_config_v1
-base_url: https://example.invalid/ord
-queries:
-  - id: ok
-    collection: observations
-    location_id: LOC1
-  - id: broken
-    collection: observations
-    location_id: LOC2
+contract: opera_ord_connector_config_v2
+api:
+  base_url: https://example.invalid/ord
+  timeout_seconds: 2
+products:
+  composites:
+    location_id: "0-20010-0-OPERA"
+    method: comp
+    format_priority: [GEOTIFF]
+    standard_names: [DBZH]
 """.lstrip(),
         encoding="utf-8",
     )
@@ -117,15 +120,12 @@ queries:
         assert timeout == 2.0
         if url.endswith("/collections"):
             return FakeResponse({"collections": [{"id": "observations"}]})
-        if "LOC2" in url:
-            raise ValueError("broken query")
-        return FakeResponse({"type": "CoverageJSON", "links": [{"href": "s3://example"}]})
+        return FakeResponse({"type": "CoverageJSON", "links": [{"rel": "data", "href": "https://example.test/file.tif"}]})
 
-    monkeypatch.setattr(module, "urlopen", fake_urlopen)
+    monkeypatch.setattr(opera_module, "urlopen", fake_urlopen)
     status = inspect_opera_ord(cfg, enabled=True, timeout_s=2.0)
-    assert status["status"] == "ok"
-    assert status["collections_count"] == 1
-    assert [q["status"] for q in status["queries"]] == ["ok", "query_error"]
+    assert status["status"] == "data_links_available"
+    assert status["inventory"]["data_links"] == ["https://example.test/file.tif"]
 
 
 def test_radar_file_numeric_processing_and_stack_outputs(tmp_path: Path) -> None:
@@ -159,6 +159,6 @@ def test_pysteps_disabled_and_insufficient_frames(tmp_path: Path) -> None:
 
 def test_build_radar_stack_no_machine_data() -> None:
     stack = build_radar_stack(enable_rainviewer_live=False, enable_opera_ord=False)
-    assert stack["contract"] == "meteovoid_european_radar_stack_v1"
+    assert stack["contract"] == "meteovoid_european_radar_stack_v2"
     assert stack["honest_state"] == "no_machine_radar_data"
     assert stack["summary"]["machine_radar_confirmation"] is False

@@ -133,3 +133,36 @@ mypy src
 ## Licence
 
 MIT, voir `LICENSE`.
+
+## OPERA ORD radar européen optionnel
+
+MeteoVoid prépare une voie radar machine via OPERA ORD / MeteoGate, séparée de l’affichage RainViewer.
+
+Mode offline, sans accès réseau :
+
+```bash
+python tools/fetch_opera_ord.py --out-dir _out/opera
+```
+
+Mode live, sans téléchargement :
+
+```bash
+python tools/fetch_opera_ord.py \
+  --enable \
+  --config config/opera_ord.yaml \
+  --out-dir _out/opera \
+  --datetime "2026-06-17T00:00Z/2026-06-17T01:00Z"
+```
+
+Mode live avec téléchargement des fichiers disponibles :
+
+```bash
+python tools/fetch_opera_ord.py \
+  --enable \
+  --download \
+  --config config/opera_ord.yaml \
+  --out-dir _out/opera \
+  --datetime "2026-06-17T00:00Z/2026-06-17T01:00Z"
+```
+
+RainViewer reste une couche visuelle. OPERA ORD devient la voie radar machine lorsque les métadonnées, liens et fichiers radar sont réellement accessibles. Si les fichiers radar fins sont absents, MeteoVoid l’indique explicitement.

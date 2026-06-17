@@ -782,6 +782,22 @@ def _corridor_to_dict(diag: CorridorDiagnostic) -> dict[str, Any]:
     }
 
 
+def _radar_score_from_opera_metrics(path: str | Path | None) -> float | None:
+    if path is None:
+        return None
+    p = Path(path)
+    if not p.exists():
+        return None
+    try:
+        payload = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    score = _safe_float(payload.get("radar_activity_score"), None)
+    return _clamp01(score) if score is not None else None
+
+
 def build_upstream_watch(
     report: dict[str, Any],
     *,
@@ -792,12 +808,16 @@ def build_upstream_watch(
     timezone_name: str = DEFAULT_TIMEZONE,
     timeout_s: float = 8.0,
     models: str = "best_match",
+    opera_radar_metrics_path: str | Path | None = None,
 ) -> dict[str, Any]:
     config = load_upstream_config(upstream_config_path)
     regions = _regions_from_config(config)
     corridors = _corridors_from_config(config)
     radar = inspect_radar_interfaces(radar_sources_config_path, timeout_s=timeout_s)
-    radar_score = _safe_float(radar.get("radar_confirmation_score"), 0.0) or 0.0
+    opera_radar_score = _radar_score_from_opera_metrics(opera_radar_metrics_path)
+    radar_score = opera_radar_score
+    if radar_score is None:
+        radar_score = _safe_float(radar.get("radar_confirmation_score"), 0.0) or 0.0
     lightning_score = _safe_float(radar.get("lightning_confirmation_score"), 0.0) or 0.0
     region_diagnostics = [
         _fetch_region_diagnostic(
@@ -836,6 +856,11 @@ def build_upstream_watch(
             "documentation_note": "Uses documented Open-Meteo hourly and pressure-level variables when live fallback is enabled.",
         },
         "radar_interface": radar,
+        "opera_radar_metrics_used": {
+            "path": str(opera_radar_metrics_path) if opera_radar_metrics_path is not None else None,
+            "radar_activity_score": opera_radar_score,
+            "used": opera_radar_score is not None,
+        },
         "summary": {
             "max_corridor_score": round(max_corridor, 6),
             "top_corridors": [_corridor_to_dict(c) for c in top],
@@ -1032,6 +1057,7 @@ def write_upstream_watch_outputs(
     timezone_name: str = DEFAULT_TIMEZONE,
     timeout_s: float = 8.0,
     models: str = "best_match",
+    opera_radar_metrics_path: str | Path | None = None,
 ) -> dict[str, Any]:
     root = Path(out_dir)
     root.mkdir(parents=True, exist_ok=True)
@@ -1044,6 +1070,7 @@ def write_upstream_watch_outputs(
         timezone_name=timezone_name,
         timeout_s=timeout_s,
         models=models,
+        opera_radar_metrics_path=opera_radar_metrics_path,
     )
     (root / "upstream_watch.json").write_text(_json_dumps(watch), encoding="utf-8")
     (root / "european_radar_sources_status.json").write_text(

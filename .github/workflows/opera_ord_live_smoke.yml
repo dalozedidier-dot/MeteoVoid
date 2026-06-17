@@ -1,0 +1,62 @@
+name: OPERA ORD Live Smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      datetime_range:
+        description: "ORD datetime range, e.g. 2026-06-17T00:00Z/2026-06-17T01:00Z. Empty = metadata-only current query defaults."
+        required: false
+        default: ""
+      download:
+        description: "Download returned radar files"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+jobs:
+  opera-ord-live-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,live,viz]"
+
+      - name: Run OPERA ORD live smoke
+        env:
+          METEOGATE_API_KEY: ${{ secrets.METEOGATE_API_KEY }}
+        run: |
+          set -euo pipefail
+          ARGS=(--enable --config config/opera_ord.yaml --out-dir _ci_out/opera_ord --timeout-s 30)
+          if [ -n "${{ inputs.datetime_range }}" ]; then
+            ARGS+=(--datetime "${{ inputs.datetime_range }}")
+          fi
+          if [ "${{ inputs.download }}" = "true" ]; then
+            ARGS+=(--download --max-download-files 4)
+          fi
+          python tools/fetch_opera_ord.py "${ARGS[@]}"
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p = Path('_ci_out/opera_ord/opera_ord_status.json')
+          data = json.loads(p.read_text())
+          print('status=', data.get('status'))
+          print('machine_radar_confirmation=', data.get('machine_radar_confirmation'))
+          PY
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: opera_ord_live_smoke
+          path: _ci_out/opera_ord
+          if-no-files-found: error

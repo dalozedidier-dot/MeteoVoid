@@ -47,3 +47,19 @@ Les dépendances radar sont volontairement optionnelles. Le projet doit continue
 ## Règle de sincérité
 
 Si aucun endpoint OPERA/licencié ou aucun fichier radar local n’est disponible, MeteoVoid écrit explicitement : `no_machine_radar_data`. Il ne convertit pas une carte visuelle en confirmation radar.
+
+## Extension OPERA ORD complète
+
+La couche radar utilise maintenant `src/meteovoid/belgium/opera_ord.py` pour séparer clairement l’affichage et la donnée machine.
+
+Nouveaux fichiers de sortie :
+
+```text
+opera_ord_inventory.json
+opera_ord_files_manifest.json
+opera_radar_metrics.json
+```
+
+`radar_stack.json` passe à un contrat enrichi `meteovoid_european_radar_stack_v2`. La confirmation radar machine n’est vraie que si des fichiers radar locaux ou OPERA sont réellement lisibles. RainViewer reste `display_only`.
+
+Voir aussi : `docs/OPERA_ORD.md`.

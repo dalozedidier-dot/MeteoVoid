@@ -50,6 +50,9 @@ PUBLIC_FILES = [
     "rainviewer_radar_map.html",
     "rainviewer_status.json",
     "opera_ord_status.json",
+    "opera_ord_inventory.json",
+    "opera_ord_files_manifest.json",
+    "opera_radar_metrics.json",
     "radar_processing_status.json",
     "pysteps_nowcast_status.json",
     "early_warning_signals.json",
@@ -129,6 +132,9 @@ EXPORTS = [
     ("API radar JSON", "../api/radar.json"),
     ("Rapport Europe amont", "upstream_watch_report.md"),
     ("Rapport radar stack", "radar_stack_report.md"),
+    ("Inventaire OPERA ORD", "opera_ord_inventory.json"),
+    ("Métriques radar OPERA", "opera_radar_metrics.json"),
+    ("Manifest fichiers OPERA", "opera_ord_files_manifest.json"),
     ("Corridors amont CSV", "upstream_corridors.csv"),
     ("CAP XML (test)", "belgium_alert_cap.xml"),
     ("Méthodologie", "../../methodology.html"),
@@ -809,6 +815,8 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
     nowcast = _load_json(report_dir / "nowcast_status.json")
     upstream = _load_json(report_dir / "upstream_watch.json")
     radar_stack = _load_json(report_dir / "radar_stack.json")
+    opera_metrics = _load_json(report_dir / "opera_radar_metrics.json")
+    opera_inventory = _load_json(report_dir / "opera_ord_inventory.json")
 
     operational = report.get("operational_state")
     operational = operational if isinstance(operational, dict) else alert_state
@@ -929,6 +937,17 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
         "radar_stack": (
             radar_stack.get("summary") if isinstance(radar_stack.get("summary"), dict) else {}
         ),
+        "opera_radar_metrics": opera_metrics,
+        "opera_ord_inventory": {
+            "status": opera_inventory.get("status"),
+            "enabled": opera_inventory.get("enabled"),
+            "queries_count": len(opera_inventory.get("queries", []))
+            if isinstance(opera_inventory.get("queries"), list)
+            else 0,
+            "data_links_count": len(opera_inventory.get("data_links", []))
+            if isinstance(opera_inventory.get("data_links"), list)
+            else 0,
+        },
         "frames": [
             {"group": group, "label": label, "file": "reports/latest/" + file}
             for group, label, file in EXPERT_FRAMES
@@ -1090,7 +1109,12 @@ def build_api(vm: dict[str, Any], site_dir: Path) -> None:
     )
     _write_json(
         api_dir / "radar.json",
-        {"generated_at": generated_at, **vm["expert"].get("radar_stack", {})},
+        {
+            "generated_at": generated_at,
+            **vm["expert"].get("radar_stack", {}),
+            "opera_radar_metrics": vm["expert"].get("opera_radar_metrics", {}),
+            "opera_ord_inventory": vm["expert"].get("opera_ord_inventory", {}),
+        },
     )
     _write_json(
         api_dir / "index.json",

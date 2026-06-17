@@ -1,20 +1,23 @@
 from __future__ import annotations
 
 import json
-import math
-import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
-from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 import numpy as np
-import yaml  # type: ignore[import-untyped]
+
+from meteovoid.belgium.opera_ord import (
+    OPERA_ORD_DEFAULT_BASE_URL,
+    analyse_radar_file,
+    build_location_query_url,
+    inspect_opera_ord as _inspect_opera_ord_v2,
+    write_opera_ord_outputs,
+)
 
 RAINVIEWER_API_URL = "https://api.rainviewer.com/public/weather-maps.json"
-OPERA_ORD_DEFAULT_BASE_URL = "https://api.meteogate.eu/eu-eumetnet-weather-radar"
 DEFAULT_USER_AGENT = "MeteoVoid-RadarStack/1.0"
 
 
@@ -24,28 +27,6 @@ def _json_dumps(payload: Any) -> str:
 
 def _utc_now() -> str:
     return datetime.now(UTC).astimezone().isoformat(timespec="seconds")
-
-
-def _safe_float(value: Any, default: float | None = None) -> float | None:
-    try:
-        if value is None or value == "":
-            return default
-        out = float(value)
-    except (TypeError, ValueError):
-        return default
-    if math.isnan(out) or math.isinf(out):
-        return default
-    return out
-
-
-def _load_yaml_mapping(path: str | Path | None) -> dict[str, Any]:
-    if path is None:
-        return {}
-    p = Path(path)
-    if not p.exists():
-        return {}
-    payload = yaml.safe_load(p.read_text(encoding="utf-8"))
-    return payload if isinstance(payload, dict) else {}
 
 
 def _http_json(url: str, *, timeout_s: float) -> dict[str, Any]:
@@ -66,8 +47,8 @@ def _frame_count(payload: dict[str, Any], key: str) -> int:
 def build_rainviewer_status(*, fetch_live: bool = False, timeout_s: float = 5.0) -> dict[str, Any]:
     """Return transparent RainViewer availability metadata.
 
-    The static HTML map can fetch RainViewer directly from the browser. Python live
-    fetching is optional to keep CI/offline runs deterministic.
+    RainViewer is useful for immediate display, but MeteoVoid does not convert
+    visual tiles into machine radar evidence.
     """
 
     status: dict[str, Any] = {
@@ -82,6 +63,7 @@ def build_rainviewer_status(*, fetch_live: bool = False, timeout_s: float = 5.0)
         "nowcast_frame_count": None,
         "host": None,
         "last_frame_time_unix": None,
+        "evidence_level": "display_only",
         "limits": [
             "RainViewer is used as a visual radar overlay, not as an official warning source.",
             "The map fetches tiles client-side; CI/offline runs do not need external access.",
@@ -95,9 +77,7 @@ def build_rainviewer_status(*, fetch_live: bool = False, timeout_s: float = 5.0)
         radar = payload.get("radar") if isinstance(payload.get("radar"), dict) else {}
         past = radar.get("past") if isinstance(radar, dict) else []
         nowcast = radar.get("nowcast") if isinstance(radar, dict) else []
-        frames = (
-            [frame for frame in past if isinstance(frame, dict)] if isinstance(past, list) else []
-        )
+        frames = [frame for frame in past if isinstance(frame, dict)] if isinstance(past, list) else []
         status.update(
             {
                 "status": "ok",
@@ -203,29 +183,17 @@ def build_opera_ord_query_url(
     method: str = "scan",
     f: str = "CoverageJSON",
 ) -> str:
-    """Build an OPERA ORD/MeteoGate query URL without assuming access.
-
-    The ORD documentation exposes OGC-style collection/location endpoints. MeteoVoid
-    builds the URL and only fetches it when the user explicitly enables live ORD access.
-    """
-
-    root = base_url.rstrip("/")
-    if location_id:
-        path = f"{root}/collections/{collection}/locations/{location_id}"
-    else:
-        path = f"{root}/collections/{collection}"
-    params = {"f": f}
-    if datetime_range:
-        params["datetime"] = datetime_range
-    if standard_name:
-        params["standard_name"] = standard_name
-    if level:
-        params["level"] = level
-    if data_format:
-        params["format"] = data_format
-    if method:
-        params["method"] = method
-    return f"{path}?{urlencode(params)}"
+    return build_location_query_url(
+        base_url=base_url,
+        collection=collection,
+        location_id=location_id or "0-578-0-nohur",
+        datetime_range=datetime_range,
+        standard_name=standard_name,
+        level=level,
+        data_format=data_format,
+        method=method,
+        f=f,
+    )
 
 
 def inspect_opera_ord(
@@ -233,101 +201,20 @@ def inspect_opera_ord(
     *,
     enabled: bool = False,
     timeout_s: float = 8.0,
+    datetime_range: str = "",
+    cache_dir: str | Path | None = None,
+    download: bool = False,
+    max_download_files: int = 8,
 ) -> dict[str, Any]:
-    """Inspect OPERA ORD access without pretending data exist.
-
-    If disabled, this returns the configured interface and documentation. If enabled,
-    it attempts the configured discovery/query endpoints and records the result.
-    """
-
-    config = _load_yaml_mapping(config_path)
-    base_url = str(
-        os.getenv("METEOVOID_OPERA_ORD_BASE_URL")
-        or config.get("base_url")
-        or OPERA_ORD_DEFAULT_BASE_URL
-    ).rstrip("/")
-    api_key = os.getenv(str(config.get("api_key_env") or "METEOVOID_METEOGATE_API_KEY"), "")
-    queries_raw = config.get("queries", [])
-    queries = (
-        [q for q in queries_raw if isinstance(q, dict)] if isinstance(queries_raw, list) else []
+    return _inspect_opera_ord_v2(
+        config_path,
+        enabled=enabled,
+        timeout_s=timeout_s,
+        datetime_range=datetime_range,
+        cache_dir=cache_dir,
+        download=download,
+        max_download_files=max_download_files,
     )
-    discovery_url = f"{base_url}/collections"
-    status: dict[str, Any] = {
-        "contract": "opera_ord_connector_v1",
-        "generated_at": _utc_now(),
-        "enabled": bool(enabled),
-        "base_url": base_url,
-        "discovery_url": discovery_url,
-        "api_key_configured": bool(api_key),
-        "status": "disabled" if not enabled else "pending",
-        "queries": [],
-        "limits": [
-            "OPERA ORD is used only through documented MeteoGate/ORD endpoints.",
-            "If live access is disabled or fails, MeteoVoid reports that radar data are absent instead of inventing them.",
-            "Respect product metadata, CC BY 4.0 terms, and any stated exceptions.",
-        ],
-    }
-    for query in queries:
-        url = build_opera_ord_query_url(
-            base_url=base_url,
-            collection=str(query.get("collection") or "observations"),
-            location_id=str(query.get("location_id") or ""),
-            datetime_range=str(query.get("datetime") or ""),
-            standard_name=str(query.get("standard_name") or "DBZH"),
-            level=str(query.get("level") or "../5.0"),
-            data_format=str(query.get("format") or "ODIM"),
-            method=str(query.get("method") or "scan"),
-            f=str(query.get("f") or "CoverageJSON"),
-        )
-        status["queries"].append(
-            {
-                "id": str(query.get("id") or query.get("location_id") or "ord_query"),
-                "url": url,
-                "status": "not_fetched",
-                "links_count": None,
-                "product_hint": query.get("product_hint"),
-            }
-        )
-    if not enabled:
-        return status
-
-    headers = {"User-Agent": DEFAULT_USER_AGENT}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    try:
-        request = Request(discovery_url, headers=headers)
-        with urlopen(request, timeout=timeout_s) as response:  # noqa: S310
-            discovery_payload = json.loads(response.read().decode("utf-8"))
-        collections = (
-            discovery_payload.get("collections") if isinstance(discovery_payload, dict) else []
-        )
-        status.update(
-            {
-                "status": "ok",
-                "collections_count": len(collections) if isinstance(collections, list) else None,
-            }
-        )
-    except (OSError, URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
-        status.update({"status": "discovery_error", "detail": str(exc)[:240]})
-
-    for query_status in status["queries"]:
-        if not isinstance(query_status, dict):
-            continue
-        try:
-            request = Request(str(query_status["url"]), headers=headers)
-            with urlopen(request, timeout=timeout_s) as response:  # noqa: S310
-                payload = json.loads(response.read().decode("utf-8"))
-            links = payload.get("links") if isinstance(payload, dict) else []
-            query_status.update(
-                {
-                    "status": "ok",
-                    "links_count": len(links) if isinstance(links, list) else None,
-                    "content_type": payload.get("type") if isinstance(payload, dict) else None,
-                }
-            )
-        except (OSError, URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
-            query_status.update({"status": "query_error", "detail": str(exc)[:200]})
-    return status
 
 
 def _load_numeric_array(path: str | Path) -> np.ndarray:
@@ -344,71 +231,15 @@ def _load_numeric_array(path: str | Path) -> np.ndarray:
     raise ValueError(f"unsupported radar array fallback format: {p.suffix}")
 
 
-def analyze_radar_file(path: str | Path) -> dict[str, Any]:
-    """Analyze a local radar frame.
-
-    wradlib/xradar/rasterio are attempted when installed. A small numeric fallback
-    supports deterministic tests and local experiments with .npy/.csv/.json arrays.
-    """
-
-    p = Path(path)
-    status: dict[str, Any] = {
-        "path": str(p),
-        "exists": p.exists(),
-        "status": "missing" if not p.exists() else "pending",
-        "reader": None,
-        "max_value": None,
-        "mean_value": None,
-        "finite_fraction": None,
-        "shape": None,
-        "note": "No value is produced when the file is missing or unreadable.",
-    }
-    if not p.exists():
-        return status
-
-    try:
-        import wradlib as wrl  # type: ignore[import-not-found]
-
-        status["reader"] = "wradlib"
-        # ODIM HDF5 reading varies between wradlib/xradar versions. We only report that
-        # wradlib is importable here unless a simple numeric fallback can read the file.
-        status["wradlib_version"] = getattr(wrl, "__version__", "unknown")
-    except ImportError:
-        status["reader"] = "numeric_fallback_no_wradlib"
-
-    try:
-        arr = _load_numeric_array(p)
-        finite = arr[np.isfinite(arr)]
-        status.update(
-            {
-                "status": "ok",
-                "reader": status.get("reader") or "numeric_fallback",
-                "shape": list(arr.shape),
-                "max_value": float(np.max(finite)) if finite.size else None,
-                "mean_value": float(np.mean(finite)) if finite.size else None,
-                "finite_fraction": float(finite.size / arr.size) if arr.size else None,
-            }
-        )
-        return status
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
-        if status.get("reader") == "wradlib":
-            status.update(
-                {
-                    "status": "wradlib_available_needs_odim_or_geotiff_reader_path",
-                    "detail": str(exc)[:200],
-                }
-            )
-        else:
-            status.update({"status": "unreadable", "detail": str(exc)[:200]})
-        return status
-
-
 def analyze_radar_files(paths: list[str | Path]) -> dict[str, Any]:
-    frames = [analyze_radar_file(path) for path in paths]
-    ok_values = [
-        _safe_float(frame.get("max_value")) for frame in frames if frame.get("status") == "ok"
-    ]
-    values = [value for value in ok_values if value is not None]
+    frames = [analyse_radar_file(path) for path in paths]
+    values: list[float] = []
+    for frame in frames:
+        if frame.get("status") not in {"analysed_numeric", "analysed_geotiff"}:
+            continue
+        value = frame.get("max") or frame.get("max_value")
+        if isinstance(value, (int, float)) and np.isfinite(value):
+            values.append(float(value))
     return {
         "contract": "radar_processing_status_v1",
         "generated_at": _utc_now(),
@@ -418,15 +249,13 @@ def analyze_radar_files(paths: list[str | Path]) -> dict[str, Any]:
         "max_value_over_frames": max(values) if values else None,
         "frames": frames,
         "limits": [
-            "wradlib is optional and only used when installed and local OPERA/national radar files are provided.",
+            "wradlib/rasterio are optional and only used when installed and local OPERA/national radar files are provided.",
             "No radar intensity is inferred from RainViewer tile display alone.",
         ],
     }
 
 
 def compute_pysteps_motion(frames: np.ndarray, *, method: str = "LK") -> dict[str, Any]:
-    """Compute a pySTEPS optical-flow summary when pySTEPS and frames are available."""
-
     arr = np.asarray(frames, dtype=float)
     if arr.ndim != 3 or arr.shape[0] < 3:
         return {
@@ -505,6 +334,18 @@ def compute_pysteps_from_paths(paths: list[str | Path], *, enabled: bool = False
     return compute_pysteps_motion(np.stack(arrays, axis=0))
 
 
+def _machine_state(opera: dict[str, Any], radar_processing: dict[str, Any]) -> str:
+    if opera.get("status") == "metrics_available":
+        return "opera_ord_metrics_available"
+    if any(item.get("status") == "downloaded" for item in opera.get("files_manifest", []) if isinstance(item, dict)):
+        return "opera_ord_files_downloaded"
+    if radar_processing.get("readable_frame_count", 0) > 0:
+        return "local_radar_frames_readable"
+    if opera.get("status") in {"data_links_available", "metadata_available_no_data_links"}:
+        return "opera_ord_metadata_available"
+    return "no_machine_radar_data"
+
+
 def build_radar_stack(
     *,
     opera_config_path: str | Path | None = "config/opera_ord.yaml",
@@ -512,39 +353,59 @@ def build_radar_stack(
     enable_rainviewer_live: bool = False,
     enable_opera_ord: bool = False,
     enable_pysteps: bool = False,
+    enable_opera_download: bool = False,
+    opera_datetime_range: str = "",
+    opera_cache_dir: str | Path | None = None,
     timeout_s: float = 8.0,
 ) -> dict[str, Any]:
     paths = radar_frame_paths or []
     rainviewer = build_rainviewer_status(fetch_live=enable_rainviewer_live, timeout_s=timeout_s)
-    opera = inspect_opera_ord(opera_config_path, enabled=enable_opera_ord, timeout_s=timeout_s)
-    radar_processing = analyze_radar_files(paths)
+    opera = inspect_opera_ord(
+        opera_config_path,
+        enabled=enable_opera_ord,
+        timeout_s=timeout_s,
+        datetime_range=opera_datetime_range,
+        cache_dir=opera_cache_dir,
+        download=enable_opera_download,
+    )
+    downloaded_paths = [
+        str(item.get("path"))
+        for item in opera.get("files_manifest", [])
+        if isinstance(item, dict) and item.get("status") == "downloaded" and item.get("path")
+    ]
+    radar_processing = analyze_radar_files([*paths, *downloaded_paths])
     nowcast = compute_pysteps_from_paths(paths, enabled=enable_pysteps)
-    honest_state = "no_machine_radar_data"
-    if radar_processing.get("readable_frame_count", 0) > 0:
-        honest_state = "local_radar_frames_readable"
-    if opera.get("status") == "ok":
-        honest_state = "opera_ord_accessible"
+    honest_state = _machine_state(opera, radar_processing)
     return {
-        "contract": "meteovoid_european_radar_stack_v1",
+        "contract": "meteovoid_european_radar_stack_v2",
         "generated_at": _utc_now(),
         "honest_state": honest_state,
         "rainviewer": rainviewer,
         "opera_ord": opera,
+        "opera_radar_metrics": opera.get("metrics", {}),
         "radar_processing": radar_processing,
         "pysteps_nowcast": nowcast,
         "summary": {
             "rainviewer_overlay_ready": rainviewer.get("status")
             in {"client_side_overlay_ready", "ok"},
+            "rainviewer_evidence_level": rainviewer.get("evidence_level"),
             "opera_ord_enabled": bool(enable_opera_ord),
+            "opera_ord_download_enabled": bool(enable_opera_download),
             "opera_ord_status": opera.get("status"),
+            "opera_radar_activity_score": opera.get("radar_activity_score"),
             "readable_radar_frames": radar_processing.get("readable_frame_count", 0),
             "pysteps_status": nowcast.get("status"),
             "machine_radar_confirmation": honest_state
-            in {"local_radar_frames_readable", "opera_ord_accessible"},
+            in {
+                "local_radar_frames_readable",
+                "opera_ord_files_downloaded",
+                "opera_ord_metrics_available",
+            },
         },
         "limits": [
             "RainViewer provides immediate visual context only.",
             "OPERA ORD is the preferred European machine-data path when configured and reachable.",
+            "OPERA machine confirmation requires metadata plus downloaded/readable files, not just a displayed map.",
             "wradlib and pySTEPS are optional heavy dependencies and only run on provided radar files.",
             "If radar files or licensed endpoints are absent, MeteoVoid reports absence explicitly.",
         ],
@@ -557,18 +418,20 @@ def _write_markdown(stack: dict[str, Any], path: Path) -> None:
     lines = [
         "# MeteoVoid · European Radar Stack",
         "",
-        "Couche radar/nowcasting optionnelle et honnête : affichage RainViewer, connecteur OPERA ORD, traitement wradlib et nowcasting pySTEPS si les données sont réellement disponibles.",
+        "Couche radar/nowcasting optionnelle et honnête : affichage RainViewer, connecteur OPERA ORD, traitement wradlib/rasterio et nowcasting pySTEPS si les données sont réellement disponibles.",
         "",
         f"- Généré : `{stack.get('generated_at')}`",
         f"- État honnête : `{stack.get('honest_state')}`",
         f"- Overlay RainViewer : `{summary.get('rainviewer_overlay_ready')}`",
+        f"- Niveau de preuve RainViewer : `{summary.get('rainviewer_evidence_level')}`",
         f"- OPERA ORD : `{summary.get('opera_ord_status')}`",
+        f"- Score activité OPERA : `{summary.get('opera_radar_activity_score')}`",
         f"- Trames radar lisibles : `{summary.get('readable_radar_frames')}`",
         f"- pySTEPS : `{summary.get('pysteps_status')}`",
         "",
         "## Règle de prudence",
         "",
-        "MeteoVoid n’utilise pas une carte visuelle comme preuve radar machine. Une confirmation exploitable exige un endpoint licencié ou des fichiers radar locaux lisibles.",
+        "MeteoVoid n’utilise pas une carte visuelle comme preuve radar machine. Une confirmation exploitable exige un endpoint/licence ou des fichiers radar locaux lisibles.",
         "",
     ]
     path.write_text("\n".join(lines), encoding="utf-8")
@@ -582,21 +445,35 @@ def write_radar_stack_outputs(
     enable_rainviewer_live: bool = False,
     enable_opera_ord: bool = False,
     enable_pysteps: bool = False,
+    enable_opera_download: bool = False,
+    opera_datetime_range: str = "",
     timeout_s: float = 8.0,
 ) -> dict[str, Any]:
     root = Path(out_dir)
     root.mkdir(parents=True, exist_ok=True)
+    opera_cache_dir = root / "opera_ord_cache"
     stack = build_radar_stack(
         opera_config_path=opera_config_path,
         radar_frame_paths=radar_frame_paths,
         enable_rainviewer_live=enable_rainviewer_live,
         enable_opera_ord=enable_opera_ord,
         enable_pysteps=enable_pysteps,
+        enable_opera_download=enable_opera_download,
+        opera_datetime_range=opera_datetime_range,
+        opera_cache_dir=opera_cache_dir,
         timeout_s=timeout_s,
     )
     write_rainviewer_map(root / "rainviewer_radar_map.html")
     (root / "rainviewer_status.json").write_text(_json_dumps(stack["rainviewer"]), encoding="utf-8")
-    (root / "opera_ord_status.json").write_text(_json_dumps(stack["opera_ord"]), encoding="utf-8")
+    # Write full OPERA outputs again with the same settings to keep standalone files stable.
+    write_opera_ord_outputs(
+        root,
+        config_path=opera_config_path,
+        enabled=enable_opera_ord,
+        timeout_s=timeout_s,
+        datetime_range=opera_datetime_range,
+        download=enable_opera_download,
+    )
     (root / "radar_processing_status.json").write_text(
         _json_dumps(stack["radar_processing"]), encoding="utf-8"
     )

@@ -3368,6 +3368,9 @@ def _build_report(
             "rainviewer_radar_map_html": "rainviewer_radar_map.html",
             "rainviewer_status": "rainviewer_status.json",
             "opera_ord_status": "opera_ord_status.json",
+            "opera_ord_inventory": "opera_ord_inventory.json",
+            "opera_ord_files_manifest": "opera_ord_files_manifest.json",
+            "opera_radar_metrics": "opera_radar_metrics.json",
             "radar_processing_status": "radar_processing_status.json",
             "pysteps_nowcast_status": "pysteps_nowcast_status.json",
         },
@@ -3547,6 +3550,16 @@ def main(argv: list[str] | None = None) -> int:
         help="Enable live OPERA ORD / MeteoGate discovery and configured queries",
     )
     parser.add_argument(
+        "--enable-opera-download",
+        action="store_true",
+        help="Download OPERA ORD data links into the local cache when live access returns files",
+    )
+    parser.add_argument(
+        "--opera-datetime",
+        default="",
+        help="ORD datetime range, e.g. 2026-06-17T00:00Z/2026-06-17T01:00Z",
+    )
+    parser.add_argument(
         "--enable-pysteps-nowcast",
         action="store_true",
         help="Run optional pySTEPS optical flow when at least 3 local radar frames are provided",
@@ -3613,6 +3626,28 @@ def main(argv: list[str] | None = None) -> int:
     report["operational_state"] = _operational_state(report)
     _write_outputs(report, out_dir)
 
+    if not args.disable_radar_stack:
+        try:
+            from meteovoid.belgium.radar_stack import write_radar_stack_outputs
+
+            radar_stack = write_radar_stack_outputs(
+                out_dir,
+                opera_config_path=args.opera_config,
+                radar_frame_paths=list(args.radar_frame or []),
+                enable_rainviewer_live=bool(args.enable_rainviewer_live and not args.offline_demo),
+                enable_opera_ord=bool(args.enable_opera_ord and not args.offline_demo),
+                enable_opera_download=bool(args.enable_opera_download and not args.offline_demo),
+                opera_datetime_range=str(args.opera_datetime),
+                enable_pysteps=bool(args.enable_pysteps_nowcast),
+                timeout_s=float(args.timeout_s),
+            )
+            report["radar_stack"] = radar_stack.get("summary", {})
+        except (OSError, ValueError, RuntimeError) as exc:
+            (out_dir / "radar_stack_error.json").write_text(
+                _json_dumps({"status": "error", "detail": str(exc)}),
+                encoding="utf-8",
+            )
+
     if not args.disable_upstream_watch:
         try:
             from meteovoid.belgium.upstream_watch import write_upstream_watch_outputs
@@ -3626,30 +3661,11 @@ def main(argv: list[str] | None = None) -> int:
                 forecast_hours=int(args.upstream_forecast_hours),
                 timezone_name=args.timezone,
                 timeout_s=float(args.timeout_s),
+                opera_radar_metrics_path=out_dir / "opera_radar_metrics.json",
             )
             report["upstream_watch"] = upstream_watch.get("summary", {})
         except (OSError, ValueError, RuntimeError) as exc:
             (out_dir / "upstream_watch_error.json").write_text(
-                _json_dumps({"status": "error", "detail": str(exc)}),
-                encoding="utf-8",
-            )
-
-    if not args.disable_radar_stack:
-        try:
-            from meteovoid.belgium.radar_stack import write_radar_stack_outputs
-
-            radar_stack = write_radar_stack_outputs(
-                out_dir,
-                opera_config_path=args.opera_config,
-                radar_frame_paths=list(args.radar_frame or []),
-                enable_rainviewer_live=bool(args.enable_rainviewer_live and not args.offline_demo),
-                enable_opera_ord=bool(args.enable_opera_ord and not args.offline_demo),
-                enable_pysteps=bool(args.enable_pysteps_nowcast),
-                timeout_s=float(args.timeout_s),
-            )
-            report["radar_stack"] = radar_stack.get("summary", {})
-        except (OSError, ValueError, RuntimeError) as exc:
-            (out_dir / "radar_stack_error.json").write_text(
                 _json_dumps({"status": "error", "detail": str(exc)}),
                 encoding="utf-8",
             )
@@ -3726,6 +3742,9 @@ def main(argv: list[str] | None = None) -> int:
         "rainviewer_radar_map.html",
         "rainviewer_status.json",
         "opera_ord_status.json",
+        "opera_ord_inventory.json",
+        "opera_ord_files_manifest.json",
+        "opera_radar_metrics.json",
         "radar_processing_status.json",
         "pysteps_nowcast_status.json",
         "manifest.json",

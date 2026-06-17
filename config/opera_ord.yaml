@@ -1,10 +1,70 @@
 # MeteoVoid OPERA ORD / MeteoGate connector.
-# Live fetch is disabled by default. Enable it explicitly with --enable-opera-ord.
+# Live fetch and download are disabled by default. Enable explicitly from CLI.
 # Documentation: https://eumetnet.github.io/openradardata-documentation/
 
-contract: opera_ord_connector_config_v1
-base_url: "https://api.meteogate.eu/eu-eumetnet-weather-radar"
-api_key_env: METEOVOID_METEOGATE_API_KEY
+contract: opera_ord_connector_config_v2
+enabled: false
+
+api:
+  base_url: "https://api.meteogate.eu/eu-eumetnet-weather-radar"
+  timeout_seconds: 30
+  max_retries: 3
+  user_agent: "MeteoVoid/0.3 OPERA ORD research prototype"
+  api_key_env: "METEOGATE_API_KEY"
+
+products:
+  # First target for MeteoVoid: OPERA European composites.
+  # This is more useful for Belgium-wide upstream watch than starting with every
+  # single national radar site.
+  composites:
+    location_id: "0-20010-0-OPERA"
+    method: "comp"
+    format_priority:
+      - "GEOTIFF"
+      - "ODIM"
+    standard_names:
+      - "DBZH"
+      - "RATE"
+      - "ACRR"
+
+  # Single-site support is prepared but disabled by default.
+  # Add selected national site identifiers here only after checking licence and
+  # operational availability.
+  single_site:
+    enabled: false
+    method: "scan"
+    format: "ODIM"
+    standard_names:
+      - "DBZH"
+      - "TH"
+      - "VRADH"
+    locations: []
+
+belgium_bbox:
+  west: 1.0
+  south: 48.5
+  east: 7.5
+  north: 52.0
+
+upstream_bbox:
+  west: -2.5
+  south: 47.0
+  east: 9.5
+  north: 53.5
+
+cache:
+  root_dir: "opera_ord_cache"
+  keep_hours: 48
+  write_manifest: true
+
+outputs:
+  status_json: "opera_ord_status.json"
+  inventory_json: "opera_ord_inventory.json"
+  metrics_json: "opera_radar_metrics.json"
+  files_manifest: "opera_ord_files_manifest.json"
+
+# Backward-compatible example query list. These are not used as evidence unless
+# --enable-opera-ord is passed and data links/files are actually returned.
 queries:
   - id: opera_example_single_site_dbzh
     collection: observations
