@@ -169,7 +169,7 @@ def test_build_index_produces_site_and_api(tmp_path: Path) -> None:
         json.loads(api_file.read_text(encoding="utf-8"))  # parses
 
     # three-level view-model is complete
-    assert set(vm) == {"meta", "simple", "operational", "expert"}
+    assert set(vm) == {"meta", "simple", "operational", "heat", "expert"}
     assert len(vm["operational"]["blocks"]) == 7
     assert vm["operational"]["timeline"]["hours"]
 
