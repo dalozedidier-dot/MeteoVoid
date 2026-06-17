@@ -3661,7 +3661,9 @@ def main(argv: list[str] | None = None) -> int:
                 enable_opera_download=bool(args.enable_opera_download and not args.offline_demo),
                 opera_datetime_range=str(args.opera_datetime),
                 national_radar_config_path=args.national_radar_config,
-                enable_national_radar_live=bool(args.enable_national_radar_live and not args.offline_demo),
+                enable_national_radar_live=bool(
+                    args.enable_national_radar_live and not args.offline_demo
+                ),
                 national_radar_files=parse_country_files(list(args.country_radar_file or [])),
                 enable_pysteps=bool(args.enable_pysteps_nowcast),
                 timeout_s=float(args.timeout_s),

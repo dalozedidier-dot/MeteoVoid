@@ -270,21 +270,30 @@ def build_european_national_radar(
     country_files: dict[str, list[Path]] | None = None,
 ) -> dict[str, Any]:
     config = _load_yaml(config_path)
-    runtime = config.get("runtime") if isinstance(config.get("runtime"), dict) else {}
+    runtime_raw = config.get("runtime")
+    runtime: dict[str, Any] = runtime_raw if isinstance(runtime_raw, dict) else {}
     user_agent = str(runtime.get("user_agent") or DEFAULT_USER_AGENT)
     max_probe_bytes = int(runtime.get("max_probe_bytes") or 2048)
     timeout = float(timeout_s or runtime.get("default_timeout_seconds") or 8.0)
-    countries_cfg = config.get("countries") if isinstance(config.get("countries"), dict) else {}
+    countries_raw = config.get("countries")
+    countries_cfg: dict[str, Any] = (
+        countries_raw if isinstance(countries_raw, dict) else {}
+    )
     supplied_files = country_files or {}
     countries: list[dict[str, Any]] = []
     metrics: list[dict[str, Any]] = []
     any_machine = False
 
-    for country_key in [*COUNTRY_ORDER, *sorted(set(countries_cfg) - set(COUNTRY_ORDER))]:
+    country_keys = [
+        *COUNTRY_ORDER,
+        *sorted(set(countries_cfg.keys()) - set(COUNTRY_ORDER)),
+    ]
+    for country_key in country_keys:
         raw_cfg = countries_cfg.get(country_key)
         if not isinstance(raw_cfg, dict):
             continue
-        sources_raw = raw_cfg.get("sources") if isinstance(raw_cfg.get("sources"), list) else []
+        sources_value = raw_cfg.get("sources")
+        sources_raw: list[Any] = sources_value if isinstance(sources_value, list) else []
         files = [*_local_files_from_config(raw_cfg), *supplied_files.get(country_key, [])]
         file_metrics = analyse_country_files(country_key, raw_cfg, files)
         any_machine = any_machine or bool(file_metrics.get("machine_radar_available"))
@@ -334,7 +343,9 @@ def build_european_national_radar(
         },
         "summary": {
             "country_count": len(countries),
-            "machine_country_count": sum(1 for item in countries if item["machine_radar_available"]),
+            "machine_country_count": sum(
+                1 for item in countries if item["machine_radar_available"]
+            ),
             "live_probe_enabled": bool(live),
             "status": status,
         },
@@ -464,7 +475,8 @@ def write_european_national_radar_outputs(
     root = Path(out_dir)
     root.mkdir(parents=True, exist_ok=True)
     config = _load_yaml(config_path)
-    outputs = config.get("output_files") if isinstance(config.get("output_files"), dict) else {}
+    outputs_raw = config.get("output_files")
+    outputs: dict[str, Any] = outputs_raw if isinstance(outputs_raw, dict) else {}
     payload = build_european_national_radar(
         config_path,
         live=live,

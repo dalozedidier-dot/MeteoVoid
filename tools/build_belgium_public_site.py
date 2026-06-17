@@ -1354,7 +1354,9 @@ def build_api(vm: dict[str, Any], site_dir: Path) -> None:
             **vm["expert"].get("radar_stack", {}),
             "opera_radar_metrics": vm["expert"].get("opera_radar_metrics", {}),
             "european_national_radar": vm["expert"].get("european_national_radar", {}),
-            "european_national_radar_metrics": vm["expert"].get("european_national_radar_metrics", {}),
+            "european_national_radar_metrics": vm["expert"].get(
+                "european_national_radar_metrics", {}
+            ),
             "opera_ord_inventory": vm["expert"].get("opera_ord_inventory", {}),
         },
     )

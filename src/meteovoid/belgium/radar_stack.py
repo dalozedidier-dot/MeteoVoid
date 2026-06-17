@@ -424,8 +424,16 @@ def build_radar_stack(
             "opera_ord_status": opera.get("status"),
             "opera_radar_activity_score": opera.get("radar_activity_score"),
             "national_radar_status": national_radar.get("status"),
-            "national_machine_country_count": national_radar.get("summary", {}).get("machine_country_count") if isinstance(national_radar.get("summary"), dict) else None,
-            "national_radar_country_count": national_radar.get("summary", {}).get("country_count") if isinstance(national_radar.get("summary"), dict) else None,
+            "national_machine_country_count": (
+                national_radar.get("summary", {}).get("machine_country_count")
+                if isinstance(national_radar.get("summary"), dict)
+                else None
+            ),
+            "national_radar_country_count": (
+                national_radar.get("summary", {}).get("country_count")
+                if isinstance(national_radar.get("summary"), dict)
+                else None
+            ),
             "readable_radar_frames": radar_processing.get("readable_frame_count", 0),
             "pysteps_status": nowcast.get("status"),
             "machine_radar_confirmation": honest_state
