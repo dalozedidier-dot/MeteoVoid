@@ -2018,12 +2018,19 @@ function renderExpert(vm){
   const val=e.validation||{},vs=val.scores||{},cf=val.confusion||{};
   const obs=e.observation||{},channels=obs.channels||[];
   const src=e.sources||{},ext=src.external_confirmation||{};
+  const radar=e.radar_stack||{};
+  const national=e.european_national_radar||{};
+  const nationalMetrics=e.european_national_radar_metrics||{};
+  const countries=Array.isArray(nationalMetrics.countries)?nationalMetrics.countries:[];
+  const countryLabels={spain:'Espagne',france:'France',switzerland:'Suisse',netherlands:'Pays-Bas'};
+  const countryRows=countries.map(c=>`<tr><td><strong>${esc(countryLabels[c.country]||c.country)}</strong></td><td><span class="badge ac-${c.machine_radar_available?'calm':'info'}"><span class="bd"></span>${c.machine_radar_available?'donnée exploitable':'interface prête'}</span></td><td class="muted">${esc(c.status||'')}</td><td class="num">${num(c.file_count,0)}</td><td class="num">${num(c.readable_file_count,0)}</td><td class="num">${num(c.radar_activity_score)}</td></tr>`).join('');
   return `
   <div class="subtabs" id="expert-subtabs">
     <button class="subtab active" data-sub="stations">Stations & zones</button>
     <button class="subtab" data-sub="observation">Observation émergente</button>
     <button class="subtab" data-sub="validation">Validation</button>
     <button class="subtab" data-sub="sources">Sources</button>
+    <button class="subtab" data-sub="radars">Radars Europe</button>
     <button class="subtab" data-sub="maps">Cartes & graphes</button>
     <button class="subtab" data-sub="exports">Exports & API</button>
   </div>
@@ -2061,6 +2068,24 @@ function renderExpert(vm){
       <div class="card"><div class="kicker">Confirmation externe</div><div class="score">${num(ext.score)}</div><p class="phrase">${esc(ext.status||'')}</p></div>
     </div>
     ${(src.auto_sources&&src.auto_sources.length)?'<div class="section-title">Sources externes automatiques</div><div class="table-wrap"><table><thead><tr><th>Source</th><th>État</th><th>Détail</th></tr></thead><tbody>'+src.auto_sources.map(a=>`<tr><td>${esc(a.name)}</td><td><span class="badge ac-${a.ok?'calm':'elevated'}"><span class="bd"></span>${a.ok?'ok':esc(a.value||'erreur')}</span></td><td class="muted">${esc(a.detail)}</td></tr>`).join('')+'</tbody></table></div>':''}
+  </div>
+  <div class="sub" data-sub="radars" style="display:none">
+    <div class="section-title">Radars Europe · Espagne, France, Suisse, Pays-Bas</div>
+    <div class="grid cards4">
+      <div class="card"><div class="kicker">RainViewer</div><div class="phrase">${esc(radar.rainviewer_evidence_level||'display_only')}</div><p class="muted">affichage radar immédiat, non utilisé comme preuve machine.</p></div>
+      <div class="card"><div class="kicker">OPERA ORD</div><div class="phrase">${esc(radar.opera_ord_status||'non configuré')}</div><p class="muted">données européennes exploitables seulement si accès/licence configuré.</p></div>
+      <div class="card"><div class="kicker">Radars nationaux</div><div class="score">${num(national.country_count,0)}</div><p class="phrase">${esc(national.status||'interfaces non chargées')}</p></div>
+      <div class="card"><div class="kicker">Pays avec donnée machine</div><div class="score">${num(national.machine_country_count,0)}</div><p class="muted">si 0, la carte montre les interfaces prêtes, pas une confirmation radar.</p></div>
+    </div>
+    <div class="links" style="margin:14px 0">
+      <a href="reports/latest/european_national_radar_map.html">${icon('map')}Carte radars nationaux Europe</a>
+      <a href="reports/latest/european_national_radar_report.md">${icon('report')}Rapport radars nationaux</a>
+      <a href="reports/latest/european_national_radar_sources.csv">${icon('download')}Sources CSV</a>
+      <a href="api/radar.json">${icon('download')}API radar</a>
+    </div>
+    <div class="table-wrap"><table><thead><tr><th>Pays</th><th>État</th><th>Statut</th><th>Fichiers</th><th>Lus</th><th>Activité</th></tr></thead><tbody>${countryRows||'<tr><td colspan="6" class="muted">Aucun statut national disponible.</td></tr>'}</tbody></table></div>
+    <div class="frame-wrap" style="margin-top:14px"><iframe title="Radars nationaux Europe" src="reports/latest/european_national_radar_map.html" loading="lazy"></iframe></div>
+    <p class="muted" style="margin-top:10px">Cette vue expose les interfaces Espagne, France, Suisse et Pays-Bas. MeteoVoid ne transforme ces sources en preuve radar que si des fichiers lisibles sont réellement fournis ou récupérés.</p>
   </div>
   <div class="sub" data-sub="maps" style="display:none">
     <div class="subtabs" id="frame-tabs">${groupNames.map((g,gi)=>groups[g].map((f,fi)=>`<button class="subtab ${gi===0&&fi===0?'active':''}" data-src="${esc(f.file)}">${esc(g)} · ${esc(f.label)}</button>`).join('')).join('')}</div>

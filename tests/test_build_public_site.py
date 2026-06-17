@@ -150,6 +150,69 @@ def _minimal_report_dir(root: Path) -> Path:
         report_dir / "nowcast_status.json",
         {"radar_confirmation": "none", "lightning_confirmation": "none", "nowcast_ready": False},
     )
+    _write(
+        report_dir / "radar_stack.json",
+        {
+            "summary": {
+                "rainviewer_evidence_level": "display_only",
+                "opera_ord_status": "disabled",
+                "national_radar_status": "interfaces_ready_no_machine_data",
+                "national_radar_country_count": 4,
+                "national_machine_country_count": 0,
+            }
+        },
+    )
+    _write(
+        report_dir / "european_national_radar_status.json",
+        {
+            "summary": {
+                "status": "interfaces_ready_no_machine_data",
+                "country_count": 4,
+                "machine_country_count": 0,
+                "live_probe_enabled": False,
+            }
+        },
+    )
+    _write(
+        report_dir / "european_national_radar_metrics.json",
+        {
+            "status": "no_country_machine_metrics",
+            "countries": [
+                {
+                    "country": "spain",
+                    "status": "no_readable_country_files",
+                    "file_count": 0,
+                    "readable_file_count": 0,
+                    "machine_radar_available": False,
+                    "radar_activity_score": None,
+                },
+                {
+                    "country": "france",
+                    "status": "no_readable_country_files",
+                    "file_count": 0,
+                    "readable_file_count": 0,
+                    "machine_radar_available": False,
+                    "radar_activity_score": None,
+                },
+                {
+                    "country": "switzerland",
+                    "status": "no_readable_country_files",
+                    "file_count": 0,
+                    "readable_file_count": 0,
+                    "machine_radar_available": False,
+                    "radar_activity_score": None,
+                },
+                {
+                    "country": "netherlands",
+                    "status": "no_readable_country_files",
+                    "file_count": 0,
+                    "readable_file_count": 0,
+                    "machine_radar_available": False,
+                    "radar_activity_score": None,
+                },
+            ],
+        },
+    )
     return report_dir
 
 
@@ -163,7 +226,16 @@ def test_build_index_produces_site_and_api(tmp_path: Path) -> None:
     assert "__GENERATED_AT__" not in index_html
     assert "Vue simple" in index_html and "Vue opérationnelle" in index_html
 
-    for name in ["latest", "stations", "timeline", "transition", "sources", "validation", "index"]:
+    for name in [
+        "latest",
+        "stations",
+        "timeline",
+        "transition",
+        "sources",
+        "validation",
+        "radar",
+        "index",
+    ]:
         api_file = site_dir / "api" / f"{name}.json"
         assert api_file.exists(), name
         json.loads(api_file.read_text(encoding="utf-8"))  # parses
@@ -229,3 +301,23 @@ def test_build_is_robust_to_empty_report_dir(tmp_path: Path) -> None:
     latest = json.loads((site_dir / "api" / "latest.json").read_text(encoding="utf-8"))
     assert latest["operational_level"]["class"] == "calm"
     assert len(vm["operational"]["blocks"]) == 7
+
+
+def test_european_radars_are_visible_in_public_html_and_api(tmp_path: Path) -> None:
+    report_dir = _minimal_report_dir(tmp_path)
+    site_dir = tmp_path / "site"
+    site.build_index(report_dir, site_dir)
+
+    index_html = (site_dir / "index.html").read_text(encoding="utf-8")
+    for token in [
+        "Radars Europe",
+        "Radars nationaux Europe",
+        "Espagne, France, Suisse, Pays-Bas",
+        "european_national_radar_map.html",
+        "european_national_radar_report.md",
+    ]:
+        assert token in index_html, token
+
+    radar = json.loads((site_dir / "api" / "radar.json").read_text(encoding="utf-8"))
+    assert radar["european_national_radar"]["country_count"] == 4
+    assert radar["european_national_radar_metrics"]["countries"][0]["country"] == "spain"
