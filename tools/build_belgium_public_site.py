@@ -461,7 +461,7 @@ def _alert_explanation(
     precip = drivers.get("max_precip_probability_pct")
     if precip is not None and precip >= 40 and window.get("status") == "available":
         bullets.append(
-            f"la probabilité de précipitation monte à {precip:.0f} % " f"{_window_phrase(window)}"
+            f"la probabilité de précipitation monte à {precip:.0f} % {_window_phrase(window)}"
         )
     drop = drivers.get("max_pressure_drop_6h_hpa")
     if drop is not None and drop >= 3:
@@ -1375,7 +1375,10 @@ def build_europe_model(report_dir: Path, vm: dict[str, Any]) -> dict[str, Any]:
             source = str(corridor.get("source_region") or "")
             cid = str(corridor.get("corridor_id") or "")
             name = str(corridor.get("name") or "")
-            if any(source.startswith(p) or cid.startswith(p) or name.upper().startswith(p) for p in prefixes):
+            if any(
+                source.startswith(p) or cid.startswith(p) or name.upper().startswith(p)
+                for p in prefixes
+            ):
                 found.append(corridor)
         return sorted(
             found,
@@ -1387,7 +1390,12 @@ def build_europe_model(report_dir: Path, vm: dict[str, Any]) -> dict[str, Any]:
         status_text = str(source.get("status") or "")
         if source.get("machine_evidence"):
             return "machine"
-        if status_text in {"reachable", "ok", "configured_not_probed", "covered_by_opera_ord_connector"}:
+        if status_text in {
+            "reachable",
+            "ok",
+            "configured_not_probed",
+            "covered_by_opera_ord_connector",
+        }:
             return "ready"
         if status_text in {"requires_api_key", "endpoint_not_configured"}:
             return "blocked"
@@ -1419,9 +1427,11 @@ def build_europe_model(report_dir: Path, vm: dict[str, Any]) -> dict[str, Any]:
             row.get("machine_radar_available") or local_metrics.get("machine_radar_available")
         )
         activity_score = _round(
-            row.get("radar_activity_score")
-            if row.get("radar_activity_score") is not None
-            else local_metrics.get("radar_activity_score"),
+            (
+                row.get("radar_activity_score")
+                if row.get("radar_activity_score") is not None
+                else local_metrics.get("radar_activity_score")
+            ),
             3,
         )
         readiness_score = round(
@@ -1487,7 +1497,9 @@ def build_europe_model(report_dir: Path, vm: dict[str, Any]) -> dict[str, Any]:
                     "confidence": c.get("confidence"),
                     "source_region": c.get("source_region"),
                     "target_region": c.get("target_region"),
-                    "target_zones": c.get("target_zones") if isinstance(c.get("target_zones"), list) else [],
+                    "target_zones": (
+                        c.get("target_zones") if isinstance(c.get("target_zones"), list) else []
+                    ),
                     "estimated_arrival_hours": c.get("estimated_arrival_hours"),
                     "interpretation": c.get("interpretation"),
                 }
@@ -1543,7 +1555,9 @@ def build_europe_model(report_dir: Path, vm: dict[str, Any]) -> dict[str, Any]:
                 "confidence": c.get("confidence"),
                 "source_region": c.get("source_region"),
                 "target_region": c.get("target_region"),
-                "target_zones": c.get("target_zones") if isinstance(c.get("target_zones"), list) else [],
+                "target_zones": (
+                    c.get("target_zones") if isinstance(c.get("target_zones"), list) else []
+                ),
                 "estimated_arrival_hours": c.get("estimated_arrival_hours"),
                 "radar_confirmation_score": _round(c.get("radar_confirmation_score"), 3),
                 "moisture_feed_score": _round(c.get("moisture_feed_score"), 3),
@@ -1556,13 +1570,17 @@ def build_europe_model(report_dir: Path, vm: dict[str, Any]) -> dict[str, Any]:
         reverse=True,
     )
 
-    opera_file_count = len(opera_files.get("files", [])) if isinstance(opera_files.get("files"), list) else 0
+    opera_file_count = (
+        len(opera_files.get("files", [])) if isinstance(opera_files.get("files"), list) else 0
+    )
     opera_data_link_count = (
         len(opera_inventory.get("data_links", []))
         if isinstance(opera_inventory.get("data_links"), list)
         else 0
     )
-    rainviewer_status = rainviewer.get("status") or radar_summary.get("rainviewer_status") or "visual_layer"
+    rainviewer_status = (
+        rainviewer.get("status") or radar_summary.get("rainviewer_status") or "visual_layer"
+    )
     radar_layers = [
         {
             "id": "rainviewer",
@@ -1637,18 +1655,47 @@ def build_europe_model(report_dir: Path, vm: dict[str, Any]) -> dict[str, Any]:
         "simple": {
             "headline": "Surveillance Europe amont",
             "scope": "Espagne, France, Suisse, Pays-Bas + OPERA ORD + RainViewer",
-            "status_label": "Donnée machine disponible" if machine_count else "Interfaces prêtes, données machine absentes",
+            "status_label": (
+                "Donnée machine disponible"
+                if machine_count
+                else "Interfaces prêtes, données machine absentes"
+            ),
             "machine_radar_available": bool(machine_count),
             "best_corridor": best_corridors[0] if best_corridors else None,
             "most_important_countries": countries[:4],
         },
         "operational": {
             "radar_chain": [
-                {"step": 1, "label": "Affichage", "source": "RainViewer", "status": rainviewer_status},
-                {"step": 2, "label": "Donnée paneuropéenne", "source": "OPERA ORD", "status": opera_status.get("status")},
-                {"step": 3, "label": "Sources nationales", "source": "AEMET / Météo-France / MeteoSwiss / KNMI", "status": status.get("status")},
-                {"step": 4, "label": "Métriques", "source": "wradlib / analyse locale", "status": metrics.get("status")},
-                {"step": 5, "label": "Corridors", "source": "European Upstream Watch", "status": upstream_summary.get("status") or "available_if_generated"},
+                {
+                    "step": 1,
+                    "label": "Affichage",
+                    "source": "RainViewer",
+                    "status": rainviewer_status,
+                },
+                {
+                    "step": 2,
+                    "label": "Donnée paneuropéenne",
+                    "source": "OPERA ORD",
+                    "status": opera_status.get("status"),
+                },
+                {
+                    "step": 3,
+                    "label": "Sources nationales",
+                    "source": "AEMET / Météo-France / MeteoSwiss / KNMI",
+                    "status": status.get("status"),
+                },
+                {
+                    "step": 4,
+                    "label": "Métriques",
+                    "source": "wradlib / analyse locale",
+                    "status": metrics.get("status"),
+                },
+                {
+                    "step": 5,
+                    "label": "Corridors",
+                    "source": "European Upstream Watch",
+                    "status": upstream_summary.get("status") or "available_if_generated",
+                },
             ],
             "gaps": [
                 "aucune métrique machine nationale tant qu’aucun fichier radar lisible n’est fourni",
@@ -1701,9 +1748,18 @@ def build_europe_model(report_dir: Path, vm: dict[str, Any]) -> dict[str, Any]:
         "exports": [
             {"label": "API Europe", "href": "api/europe.json"},
             {"label": "API radar", "href": "api/radar.json"},
-            {"label": "Carte radars nationaux", "href": "reports/latest/european_national_radar_map.html"},
-            {"label": "Rapport radars nationaux", "href": "reports/latest/european_national_radar_report.md"},
-            {"label": "Sources radars CSV", "href": "reports/latest/european_national_radar_sources.csv"},
+            {
+                "label": "Carte radars nationaux",
+                "href": "reports/latest/european_national_radar_map.html",
+            },
+            {
+                "label": "Rapport radars nationaux",
+                "href": "reports/latest/european_national_radar_report.md",
+            },
+            {
+                "label": "Sources radars CSV",
+                "href": "reports/latest/european_national_radar_sources.csv",
+            },
             {"label": "Carte RainViewer", "href": "reports/latest/rainviewer_radar_map.html"},
             {"label": "Rapport radar stack", "href": "reports/latest/radar_stack_report.md"},
             {"label": "Inventaire OPERA ORD", "href": "reports/latest/opera_ord_inventory.json"},
@@ -1721,6 +1777,7 @@ def build_europe_model(report_dir: Path, vm: dict[str, Any]) -> dict[str, Any]:
             "upstream_summary": upstream_summary,
         },
     }
+
 
 def build_api(vm: dict[str, Any], site_dir: Path) -> None:
     """Write the clean static JSON API consumed by the page and external clients."""
@@ -1888,6 +1945,7 @@ document.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click',()=>
 </script>
 </body>
 </html>"""
+
 
 def _write_methodology_page(site_dir: Path) -> None:
     html_page = """<!doctype html>
