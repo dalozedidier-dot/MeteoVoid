@@ -1,0 +1,149 @@
+# MeteoVoid - per-country radar networks and detection station grids.
+#
+# Goal: bring each European country up to the same level of follow-up as the
+# Belgium page. For every country we list:
+#   - radars : the real national weather-radar network sites (physical radar
+#              positions). Coordinates are the publicly documented network
+#              locations and are approximate to ~0.05 deg. They need no API key
+#              and are drawn as markers on the country map (like Belgium).
+#   - stations : a denser observation grid (real cities) used by the generic
+#              MeteoVoid detection engine to score each country, exactly like the
+#              Belgium per-station scoring.
+#
+# Live data uses the national APIs when their key is configured in the
+# environment (AEMET_API_KEY, METEOFRANCE_API_KEY, KNMI_API_KEY) and Open-Meteo
+# for observations. Without a key MeteoVoid stays honest: the radar network is
+# displayed, but the layer is flagged "interface ready / awaiting national key"
+# and never promoted to machine evidence.
+contract: meteovoid_country_radar_sites_v1
+updated: "2026-06-18"
+note: "Official national radar network positions, approximate to ~0.05 deg, no key required to display."
+
+countries:
+  spain:
+    label: "Espagne"
+    iso2: "ES"
+    center: {lat: 40.0, lon: -3.5}
+    zoom: 6
+    radar_operator: "AEMET"
+    radar_network: "Red de radares meteorológicos (C-band)"
+    radar_api_key_env: "AEMET_API_KEY"
+    radars:
+      - {name: "A Coruña", lat: 43.17, lon: -8.53, band: "C"}
+      - {name: "Asturias (El Cuera)", lat: 43.43, lon: -5.86, band: "C"}
+      - {name: "Santander", lat: 43.35, lon: -4.00, band: "C"}
+      - {name: "Bilbao (Punta Galea)", lat: 43.40, lon: -3.01, band: "C"}
+      - {name: "Zaragoza", lat: 41.73, lon: -1.00, band: "C"}
+      - {name: "Barcelona (Puig d'Arques)", lat: 41.93, lon: 3.05, band: "C"}
+      - {name: "Madrid (San Pablo)", lat: 39.55, lon: -4.31, band: "C"}
+      - {name: "Valencia", lat: 39.37, lon: -0.79, band: "C"}
+      - {name: "Palma de Mallorca", lat: 39.62, lon: 2.70, band: "C"}
+      - {name: "Murcia", lat: 38.26, lon: -1.20, band: "C"}
+      - {name: "Almería", lat: 36.84, lon: -2.39, band: "C"}
+      - {name: "Málaga", lat: 36.83, lon: -4.34, band: "C"}
+      - {name: "Sevilla", lat: 37.69, lon: -6.33, band: "C"}
+      - {name: "Badajoz/Cáceres", lat: 39.43, lon: -6.28, band: "C"}
+      - {name: "Las Palmas (Canarias)", lat: 27.97, lon: -15.39, band: "C"}
+      - {name: "Tenerife", lat: 28.02, lon: -16.57, band: "C"}
+    stations:
+      - {id: ES_MADRID, name: "Madrid", lat: 40.4168, lon: -3.7038}
+      - {id: ES_BARCELONA, name: "Barcelone", lat: 41.3874, lon: 2.1686}
+      - {id: ES_VALENCIA, name: "Valence", lat: 39.4699, lon: -0.3763}
+      - {id: ES_SEVILLA, name: "Séville", lat: 37.3891, lon: -5.9845}
+      - {id: ES_BILBAO, name: "Bilbao", lat: 43.2630, lon: -2.9350}
+      - {id: ES_ZARAGOZA, name: "Saragosse", lat: 41.6488, lon: -0.8891}
+      - {id: ES_MALAGA, name: "Malaga", lat: 36.7213, lon: -4.4214}
+      - {id: ES_CORUNA, name: "La Corogne", lat: 43.3623, lon: -8.4115}
+      - {id: ES_PALMA, name: "Palma", lat: 39.5696, lon: 2.6502}
+      - {id: ES_MURCIA, name: "Murcie", lat: 37.9922, lon: -1.1307}
+
+  france:
+    label: "France"
+    iso2: "FR"
+    center: {lat: 46.8, lon: 2.4}
+    zoom: 6
+    radar_operator: "Météo-France"
+    radar_network: "Réseau ARAMIS (radars S/C/X-band)"
+    radar_api_key_env: "METEOFRANCE_API_KEY"
+    radars:
+      - {name: "Abbeville", lat: 50.14, lon: 1.83, band: "C"}
+      - {name: "Avesnes", lat: 50.13, lon: 3.81, band: "C"}
+      - {name: "Falaise", lat: 48.93, lon: -0.15, band: "C"}
+      - {name: "Trappes", lat: 48.77, lon: 2.01, band: "S"}
+      - {name: "Arcis-sur-Aube", lat: 48.46, lon: 4.16, band: "S"}
+      - {name: "Nancy", lat: 48.71, lon: 6.58, band: "C"}
+      - {name: "Blaisy-Haut", lat: 47.36, lon: 4.77, band: "S"}
+      - {name: "Bourges", lat: 47.06, lon: 2.36, band: "S"}
+      - {name: "Cherves", lat: 46.70, lon: -0.31, band: "S"}
+      - {name: "Treillières (Nantes)", lat: 47.34, lon: -1.56, band: "C"}
+      - {name: "Plabennec (Brest)", lat: 48.46, lon: -4.41, band: "C"}
+      - {name: "Bordeaux", lat: 44.83, lon: -0.69, band: "S"}
+      - {name: "Momuy", lat: 43.62, lon: -0.61, band: "S"}
+      - {name: "Toulouse", lat: 43.57, lon: 1.38, band: "S"}
+      - {name: "Bollène", lat: 44.32, lon: 4.76, band: "S"}
+      - {name: "Nîmes", lat: 43.81, lon: 4.50, band: "C"}
+      - {name: "Collobrières", lat: 43.21, lon: 6.31, band: "C"}
+      - {name: "Opoul", lat: 42.91, lon: 2.86, band: "C"}
+      - {name: "Sembadel", lat: 45.28, lon: 3.71, band: "C"}
+      - {name: "Saint-Nizier (Lyon)", lat: 45.77, lon: 5.65, band: "C"}
+      - {name: "Montancy", lat: 47.37, lon: 6.97, band: "C"}
+      - {name: "Grèzes", lat: 44.50, lon: 1.83, band: "C"}
+      - {name: "Aléria (Corse)", lat: 42.13, lon: 9.50, band: "C"}
+    stations:
+      - {id: FR_PARIS, name: "Paris", lat: 48.8566, lon: 2.3522}
+      - {id: FR_LILLE, name: "Lille", lat: 50.6292, lon: 3.0573}
+      - {id: FR_STRASBOURG, name: "Strasbourg", lat: 48.5734, lon: 7.7521}
+      - {id: FR_LYON, name: "Lyon", lat: 45.7640, lon: 4.8357}
+      - {id: FR_MARSEILLE, name: "Marseille", lat: 43.2965, lon: 5.3698}
+      - {id: FR_TOULOUSE, name: "Toulouse", lat: 43.6047, lon: 1.4442}
+      - {id: FR_BORDEAUX, name: "Bordeaux", lat: 44.8378, lon: -0.5792}
+      - {id: FR_NANTES, name: "Nantes", lat: 47.2184, lon: -1.5536}
+      - {id: FR_BREST, name: "Brest", lat: 48.3904, lon: -4.4861}
+      - {id: FR_NICE, name: "Nice", lat: 43.7102, lon: 7.2620}
+      - {id: FR_CLERMONT, name: "Clermont-Ferrand", lat: 45.7772, lon: 3.0870}
+      - {id: FR_REIMS, name: "Reims", lat: 49.2583, lon: 4.0317}
+
+  switzerland:
+    label: "Suisse"
+    iso2: "CH"
+    center: {lat: 46.8, lon: 8.2}
+    zoom: 7
+    radar_operator: "MeteoSwiss"
+    radar_network: "Rad4Alp (5 radars C-band)"
+    radar_api_key_env: null
+    radars:
+      - {name: "Albis", lat: 47.284, lon: 8.512, band: "C"}
+      - {name: "La Dôle", lat: 46.425, lon: 6.099, band: "C"}
+      - {name: "Monte Lema", lat: 46.041, lon: 8.833, band: "C"}
+      - {name: "Plaine Morte", lat: 46.371, lon: 7.487, band: "C"}
+      - {name: "Weissfluhgipfel", lat: 46.835, lon: 9.794, band: "C"}
+    stations:
+      - {id: CH_ZURICH, name: "Zurich", lat: 47.3769, lon: 8.5417}
+      - {id: CH_GENEVA, name: "Genève", lat: 46.2044, lon: 6.1432}
+      - {id: CH_BERN, name: "Berne", lat: 46.9480, lon: 7.4474}
+      - {id: CH_BASEL, name: "Bâle", lat: 47.5596, lon: 7.5886}
+      - {id: CH_LAUSANNE, name: "Lausanne", lat: 46.5197, lon: 6.6323}
+      - {id: CH_LUGANO, name: "Lugano", lat: 46.0037, lon: 8.9511}
+      - {id: CH_LUCERNE, name: "Lucerne", lat: 47.0502, lon: 8.3093}
+      - {id: CH_STMORITZ, name: "Saint-Moritz", lat: 46.4908, lon: 9.8355}
+
+  netherlands:
+    label: "Pays-Bas"
+    iso2: "NL"
+    center: {lat: 52.2, lon: 5.3}
+    zoom: 7
+    radar_operator: "KNMI"
+    radar_network: "Nationale radar (2 radars C-band)"
+    radar_api_key_env: "KNMI_API_KEY"
+    radars:
+      - {name: "Den Helder", lat: 52.953, lon: 4.790, band: "C"}
+      - {name: "Herwijnen", lat: 51.837, lon: 5.138, band: "C"}
+    stations:
+      - {id: NL_AMSTERDAM, name: "Amsterdam", lat: 52.3676, lon: 4.9041}
+      - {id: NL_ROTTERDAM, name: "Rotterdam", lat: 51.9244, lon: 4.4777}
+      - {id: NL_THEHAGUE, name: "La Haye", lat: 52.0705, lon: 4.3007}
+      - {id: NL_UTRECHT, name: "Utrecht", lat: 52.0907, lon: 5.1214}
+      - {id: NL_EINDHOVEN, name: "Eindhoven", lat: 51.4416, lon: 5.4697}
+      - {id: NL_GRONINGEN, name: "Groningue", lat: 53.2194, lon: 6.5665}
+      - {id: NL_MAASTRICHT, name: "Maastricht", lat: 50.8514, lon: 5.6910}
+      - {id: NL_DENHELDER, name: "Den Helder", lat: 52.9563, lon: 4.7601}

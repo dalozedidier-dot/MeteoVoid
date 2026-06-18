@@ -28,6 +28,7 @@ htmlcov/
 Thumbs.db
 # Local outputs
 _ci_out/
+_out/
 _site/
 _site_test/
 _sample_out/
