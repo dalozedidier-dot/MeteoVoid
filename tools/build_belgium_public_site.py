@@ -1155,9 +1155,7 @@ def _build_bulletin(vm: dict[str, Any]) -> dict[str, Any]:
         if isinstance(p, dict) and not _is_upstream_zone_name(p.get("province"))
     ]
     upstream_zones = [
-        p
-        for p in provinces
-        if isinstance(p, dict) and _is_upstream_zone_name(p.get("province"))
+        p for p in provinces if isinstance(p, dict) and _is_upstream_zone_name(p.get("province"))
     ]
 
     zone_items = [_bulletin_zone_item(p) for p in real_zones[:6]]
@@ -2290,6 +2288,21 @@ body{margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:#f5f7fb;col
     (site_dir / "methodology.html").write_text(html_page, encoding="utf-8")
 
 
+def _load_belgium_provinces_geojson() -> dict[str, Any]:
+    for candidate in [
+        Path("config/belgium_provinces_simplified.geojson"),
+        Path(__file__).resolve().parents[1] / "config" / "belgium_provinces_simplified.geojson",
+    ]:
+        try:
+            if candidate.exists():
+                payload = json.loads(candidate.read_text(encoding="utf-8"))
+                if isinstance(payload, dict) and payload.get("type") == "FeatureCollection":
+                    return payload
+        except (OSError, json.JSONDecodeError):
+            continue
+    return {"type": "FeatureCollection", "features": []}
+
+
 def build_index(report_dir: Path, site_dir: Path) -> dict[str, Any]:
     site_dir.mkdir(parents=True, exist_ok=True)
     _copy_outputs(report_dir, site_dir)
@@ -2297,8 +2310,13 @@ def build_index(report_dir: Path, site_dir: Path) -> dict[str, Any]:
     build_api(vm, site_dir)
 
     bootstrap = json.dumps(vm, ensure_ascii=False).replace("</", "<\\/")
-    page = INDEX_TEMPLATE.replace("__BOOTSTRAP__", bootstrap).replace(
-        "__GENERATED_AT__", str(vm["meta"].get("generated_at") or "")
+    provinces = json.dumps(_load_belgium_provinces_geojson(), ensure_ascii=False).replace(
+        "</", "<\\/"
+    )
+    page = (
+        INDEX_TEMPLATE.replace("__BOOTSTRAP__", bootstrap)
+        .replace("__BELGIUM_PROVINCES_GEOJSON__", provinces)
+        .replace("__GENERATED_AT__", str(vm["meta"].get("generated_at") or ""))
     )
     (site_dir / "index.html").write_text(page, encoding="utf-8")
 
@@ -2334,6 +2352,7 @@ INDEX_TEMPLATE = r"""<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MeteoVoid Belgique · Veille de bascule convective</title>
 <!-- MeteoVoid refonte public UI · compatibility tokens: renderMap initMap locsel leaflet data-view="map" reports/latest/belgium_alert_dashboard.html Radars Europe Radars nationaux Europe Espagne, France, Suisse, Pays-Bas european_national_radar_map.html european_national_radar_report.md -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -2498,6 +2517,22 @@ td.n{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
 .kv dt{color:var(--ink-dim)}.kv dd{margin:0;font-family:var(--mono);color:var(--ink)}
 
 /* map */
+.map-shell{position:relative;border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--void-900);min-height:560px}
+#leafletMap{height:560px;width:100%;background:var(--void-900)}
+.map-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
+.map-toolbar select{min-width:220px;font-family:var(--body);font-size:.8rem;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);border-radius:9px;padding:8px 10px}
+.map-status{font-family:var(--mono);font-size:.7rem;color:var(--ink-dim);border:1px solid var(--line);background:var(--void-800);border-radius:9px;padding:7px 10px;margin-left:auto}
+.leaflet-container{font-family:var(--body);background:var(--void-900);color:var(--ink)}
+.leaflet-control-attribution{background:rgba(8,11,17,.72)!important;color:var(--ink-dim)!important;border-top-left-radius:8px}
+.leaflet-control-attribution a{color:var(--accent)!important}
+.leaflet-control-zoom a{background:var(--panel-2)!important;color:var(--ink)!important;border-color:var(--line)!important}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--panel-2);color:var(--ink);border:1px solid var(--line);box-shadow:0 16px 34px rgba(0,0,0,.45)}
+.leaflet-popup-content{margin:12px 13px;line-height:1.45;font-size:.82rem}
+.mv-marker{width:18px;height:18px;border-radius:50%;border:2px solid var(--void-900);box-shadow:0 0 0 4px rgba(255,255,255,.09),0 0 18px currentColor;background:currentColor}
+.mv-marker.mv-alert{animation:beat 2.4s ease-out infinite}
+.mv-popup-title{font-weight:700;font-size:.95rem;margin-bottom:6px}
+.mv-popup-row{display:flex;justify-content:space-between;gap:14px;border-top:1px solid var(--line-soft);padding:5px 0;color:var(--ink-dim)}
+.mv-popup-row b{color:var(--ink);font-family:var(--mono)}
 .legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;font-size:.74rem;color:var(--ink-dim)}
 .legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:middle}
 .map-note{font-size:.78rem;color:var(--ink-dim);margin-top:12px}
@@ -2703,10 +2738,16 @@ button:focus-visible,.tab:focus-visible,a:focus-visible{outline:2px solid var(--
   <!-- ===== CARTE ===== -->
   <section class="view" data-view="carte" data-compat-view="map">
     <div class="card">
-      <div class="section-head"><div class="eyebrow"><span class="d"></span>Vue radar · stations</div><span class="tag d" data-tip="Projection schématique autonome. Le bloc Leaflet (RainViewer / OPERA ORD) de ta version se rebranche ici sans changer la grille.">D</span></div>
-      <svg id="map" viewBox="0 0 700 460"></svg>
-      <div class="legend"><span><i style="background:var(--calm)"></i>régime stable</span><span><i style="background:var(--watch)"></i>tension</span><span><i style="background:var(--alert)"></i>bascule</span></div>
-      <p class="map-note">Vue radar autonome (sans dépendance externe). Règle MeteoVoid : sans donnée radar fine et licite, le rapport écrit <span class="mono">no_machine_radar_data</span> plutôt que d'inventer une confirmation.</p>
+      <div class="section-head"><div class="eyebrow"><span class="d"></span>Carte radar temps réel · Belgique</div><span class="tag d" data-tip="Carte Leaflet réelle : fond sombre, couche RainViewer en direct, provinces GeoJSON et stations cliquables.">D</span></div>
+      <div class="map-shell"><div id="leafletMap" data-view="map" aria-label="Carte radar RainViewer Belgique"></div></div>
+      <div class="map-toolbar">
+        <select id="locsel" aria-label="Sélectionner une station"><option value="">Belgique · toutes les stations</option></select>
+        <button class="btn" id="fitBelgium" type="button">Recentrer Belgique</button>
+        <button class="btn" id="toggleRain" type="button" aria-pressed="true">Radar RainViewer</button>
+        <span class="map-status" id="mapStatus">Leaflet · initialisation</span>
+      </div>
+      <div class="legend"><span><i style="background:var(--calm)"></i>stable</span><span><i style="background:var(--watch)"></i>tension</span><span><i style="background:var(--alert)"></i>bascule / score fort</span></div>
+      <p class="map-note">Fond sombre interactif, couche radar RainViewer chargée en direct, provinces belges issues de <span class="mono">config/belgium_provinces_simplified.geojson</span> et stations cliquables. La couche radar visuelle ne vaut pas preuve machine : MeteoVoid garde la distinction avec <span class="mono">no_machine_radar_data</span> quand aucun fichier radar lisible n'est intégré.</p>
     </div>
   </section>
 
@@ -2813,9 +2854,11 @@ button:focus-visible,.tab:focus-visible,a:focus-visible{outline:2px solid var(--
   <div style="margin-top:8px">Prototype technique non officiel. Toujours comparer avec les sources officielles, le radar et la foudre.</div>
 </footer>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
 "use strict";
 const FALLBACK=__BOOTSTRAP__;
+const PROVINCES_GEOJSON=__BELGIUM_PROVINCES_GEOJSON__;
 function escTxt(v){return String(v??"").replace(/[&<>"']/g,c=>c==="&"?"&amp;":c==="<"?"&lt;":c===">"?"&gt;":c==='"'?"&quot;":"&#39;");}
 const numVal=(v,d=0)=>{const n=Number(v);return Number.isFinite(n)?n:d};
 const pctVal=v=>Math.round(numVal(v,0)*100);
@@ -3004,22 +3047,104 @@ function drawHeatCurve(){
   c.t.forEach((v,i)=>svg.appendChild(el("circle",{cx:xs(hrs[i]),cy:ys(v),r:2.8,fill:"var(--t4)"})));
 }
 
-/* ===== carte radar ===== */
-function drawMap(){
-  const svg=$("#map");svg.innerHTML="";const W=700,H=460,cx=350,cy=230;
-  for(let i=1;i<=4;i++)svg.appendChild(el("circle",{cx,cy,r:i*52,fill:"none",stroke:"var(--line-soft)"}));
-  svg.appendChild(el("line",{x1:cx,y1:30,x2:cx,y2:430,stroke:"var(--line-soft)"}));
-  svg.appendChild(el("line",{x1:60,y1:cy,x2:640,y2:cy,stroke:"var(--line-soft)"}));
-  if(!reduced){const grad=el("linearGradient",{id:"sw",x1:"0",x2:"1"});grad.appendChild(el("stop",{offset:"0%","stop-color":"var(--accent)","stop-opacity":"0"}));grad.appendChild(el("stop",{offset:"100%","stop-color":"var(--accent)","stop-opacity":".22"}));const defs=el("defs");defs.appendChild(grad);svg.appendChild(defs);const wedge=el("path",{d:`M${cx} ${cy} L${cx+208} ${cy-46} A208 208 0 0 1 ${cx+208} ${cy+46} Z`,fill:"url(#sw)"});wedge.style.transformOrigin=`${cx}px ${cy}px`;wedge.style.animation="sweep 7s linear infinite";svg.appendChild(wedge);}
-  const LAT=[49.4,51.5],LON=[2.5,6.4],box={x:120,y:70,w:460,h:320};
-  const proj=(lat,lon)=>[box.x+((lon-LON[0])/(LON[1]-LON[0]))*box.w,box.y+(1-(lat-LAT[0])/(LAT[1]-LAT[0]))*box.h];
-  const col=ZCOL[S.mapZone];
-  STATIONS_GEO.forEach(([nom,lat,lon])=>{const [x,y]=proj(lat,lon);
-    if(S.mapZone==="alert"&&!reduced){const ring=el("circle",{cx:x,cy:y,r:6,fill:"none",stroke:col,"stroke-width":"1.5"});ring.animate([{r:6,opacity:.9},{r:18,opacity:0}],{duration:1800,iterations:Infinity});svg.appendChild(ring);}
-    svg.appendChild(el("circle",{cx:x,cy:y,r:5,fill:col}));
-    const t=el("text",{x:x+9,y:y+4,fill:"var(--ink-dim)","font-family":"var(--mono)","font-size":"11"});t.textContent=nom;svg.appendChild(t);});
-  const lbl=el("text",{x:box.x,y:box.y-10,fill:"var(--ink-faint)","font-family":"var(--mono)","font-size":"11"});lbl.textContent="BE · 49.4–51.5°N · 2.5–6.4°E";svg.appendChild(lbl);
+/* ===== carte radar Leaflet ===== */
+let MV_MAP=null;
+let MV_STATION_LAYER=null;
+let MV_RAIN_LAYER=null;
+let MV_PROVINCE_LAYER=null;
+let MV_RAIN_VISIBLE=true;
+
+function cssVar(name){return getComputedStyle(document.documentElement).getPropertyValue(name).trim()||name;}
+function normName(v){return String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"");}
+function stationDataFor(name){
+  const key=normName(name);
+  const found=(BASE.stations||[]).find(row=>normName(row[0])===key || normName(row[0]).includes(key) || key.includes(normName(row[0])));
+  const score=numVal(found&&found[2],0.25);
+  return {
+    name:name,
+    region:(found&&found[1])||"Belgique",
+    score:score,
+    severity:(found&&found[3])||scoreLabel(score),
+    pill:(found&&found[4])||scorePill(score),
+    worst:(found&&found[5])||"—",
+    signals:(found&&found[6])||"signal station"
+  };
 }
+function scorePill(score){if(score>=.70)return "actif"; if(score>=.55)return "latent"; if(score>=.35)return "veille"; return "stable";}
+function scoreLabel(score){if(score>=.70)return "Critique"; if(score>=.55)return "Élevé"; if(score>=.35)return "Veille"; return "Stable";}
+function mapColor(score){
+  if(S&&S.mapZone==="alert")return cssVar("--alert");
+  if(score>=.70)return cssVar("--alert");
+  if(score>=.55)return cssVar("--latent");
+  if(score>=.35)return cssVar("--watch");
+  return cssVar("--calm");
+}
+function popupHtml(record){return `<div class="mv-popup-title">${escTxt(record.name)}</div>
+  <div class="mv-popup-row"><span>Score</span><b>${record.score.toFixed(2)}</b></div>
+  <div class="mv-popup-row"><span>Sévérité</span><b>${escTxt(record.severity)}</b></div>
+  <div class="mv-popup-row"><span>Fenêtre</span><b>${escTxt(record.worst)}</b></div>
+  <div class="mv-popup-row"><span>Signaux</span><b>${escTxt(record.signals)}</b></div>`;}
+function stationRecords(){
+  return (STATIONS_GEO||[]).map(([name,lat,lon])=>({ ...stationDataFor(name), lat:numVal(lat), lon:numVal(lon)})).filter(x=>Number.isFinite(x.lat)&&Number.isFinite(x.lon));
+}
+function renderLocSelector(){
+  const sel=document.getElementById("locsel"); if(!sel)return;
+  const current=sel.value;
+  sel.innerHTML='<option value="">Belgique · toutes les stations</option>'+stationRecords().map((s,i)=>`<option value="${i}">${escTxt(s.name)} · ${s.score.toFixed(2)}</option>`).join("");
+  if(current)sel.value=current;
+}
+function renderLeafletStations(){
+  if(!MV_MAP||typeof L==="undefined")return;
+  renderLocSelector();
+  if(!MV_STATION_LAYER)MV_STATION_LAYER=L.layerGroup().addTo(MV_MAP); else MV_STATION_LAYER.clearLayers();
+  stationRecords().forEach((record,idx)=>{
+    const color=mapColor(record.score);
+    const cls=(record.score>=.70 || (S&&S.mapZone==="alert"))?"mv-alert":"";
+    const icon=L.divIcon({className:"",html:`<span class="mv-marker ${cls}" style="color:${color}"></span>`,iconSize:[18,18],iconAnchor:[9,9],popupAnchor:[0,-9]});
+    const marker=L.marker([record.lat,record.lon],{icon,title:record.name}).bindPopup(popupHtml(record));
+    marker.mvIndex=idx;
+    marker.addTo(MV_STATION_LAYER);
+  });
+}
+function setMapStatus(text){const e=document.getElementById("mapStatus"); if(e)e.textContent=text;}
+function addRainViewerLayer(){
+  if(!MV_MAP||typeof L==="undefined")return;
+  setMapStatus("RainViewer · chargement");
+  fetch("https://api.rainviewer.com/public/weather-maps.json",{cache:"no-store"})
+    .then(r=>r.ok?r.json():Promise.reject(new Error("rainviewer_http")))
+    .then(data=>{
+      const frames=((data&&data.radar&&data.radar.past)||[]).concat((data&&data.radar&&data.radar.nowcast)||[]);
+      const frame=frames[frames.length-1];
+      if(!frame||!frame.path)throw new Error("rainviewer_no_frame");
+      if(MV_RAIN_LAYER)MV_MAP.removeLayer(MV_RAIN_LAYER);
+      MV_RAIN_LAYER=L.tileLayer(`https://tilecache.rainviewer.com/v2/radar/${frame.path}/256/{z}/{x}/{y}/2/1_1.png`,{opacity:.70,zIndex:220,attribution:"RainViewer"});
+      if(MV_RAIN_VISIBLE)MV_RAIN_LAYER.addTo(MV_MAP);
+      const ts=frame.time?new Date(frame.time*1000):null;
+      setMapStatus(`RainViewer · ${ts?ts.toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"}):"actif"}`);
+    })
+    .catch(()=>setMapStatus("RainViewer indisponible · carte active"));
+}
+function initMap(){
+  const target=document.getElementById("leafletMap"); if(!target)return;
+  if(typeof L==="undefined"){setMapStatus("Leaflet indisponible · vérifier le chargement CDN");return;}
+  if(MV_MAP){setTimeout(()=>MV_MAP.invalidateSize(),80);return;}
+  MV_MAP=L.map(target,{zoomControl:true,scrollWheelZoom:true,preferCanvas:true}).setView([50.64,4.67],8);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",{maxZoom:19,attribution:"&copy; OpenStreetMap &copy; CARTO"}).addTo(MV_MAP);
+  if(PROVINCES_GEOJSON&&PROVINCES_GEOJSON.type){
+    MV_PROVINCE_LAYER=L.geoJSON(PROVINCES_GEOJSON,{style:feature=>({color:cssVar("--accent"),weight:1,opacity:.55,fillColor:cssVar("--accent"),fillOpacity:.055}),onEachFeature:(feature,layer)=>{const p=(feature&&feature.properties&&feature.properties.province)||"Province";layer.bindTooltip(p,{sticky:true});}}).addTo(MV_MAP);
+  }
+  renderLeafletStations();
+  addRainViewerLayer();
+  const bounds=L.latLngBounds(stationRecords().map(s=>[s.lat,s.lon]));
+  if(bounds.isValid())MV_MAP.fitBounds(bounds.pad(.18));
+  const fit=document.getElementById("fitBelgium"); if(fit)fit.onclick=()=>{const b=MV_PROVINCE_LAYER?MV_PROVINCE_LAYER.getBounds():bounds;if(b&&b.isValid())MV_MAP.fitBounds(b.pad(.08));};
+  const toggle=document.getElementById("toggleRain"); if(toggle)toggle.onclick=()=>{MV_RAIN_VISIBLE=!MV_RAIN_VISIBLE;toggle.setAttribute("aria-pressed",String(MV_RAIN_VISIBLE));if(MV_RAIN_LAYER){MV_RAIN_VISIBLE?MV_RAIN_LAYER.addTo(MV_MAP):MV_MAP.removeLayer(MV_RAIN_LAYER);}setMapStatus(MV_RAIN_VISIBLE?"RainViewer · actif":"RainViewer · masqué");};
+  const sel=document.getElementById("locsel"); if(sel)sel.onchange=()=>{const records=stationRecords();const rec=records[Number(sel.value)];if(rec){MV_MAP.setView([rec.lat,rec.lon],10,{animate:true});setTimeout(()=>{MV_STATION_LAYER&&MV_STATION_LAYER.eachLayer(m=>{if(m.mvIndex===Number(sel.value))m.openPopup();});},220);}else if(bounds.isValid())MV_MAP.fitBounds(bounds.pad(.18));};
+  setTimeout(()=>MV_MAP.invalidateSize(),120);
+}
+function updateLeafletMap(){if(MV_MAP){renderLeafletStations();setTimeout(()=>MV_MAP.invalidateSize(),60);}}
+function drawMap(){initMap();updateLeafletMap();}
+
 
 /* ===== pills statut ===== */
 function pillFor(v){
@@ -3080,7 +3205,7 @@ function applyScenario(key){
 }
 
 /* ===== navigation ===== */
-function go(v){document.querySelectorAll(".tab").forEach(t=>t.setAttribute("aria-selected",t.dataset.v===v));document.querySelectorAll(".view").forEach(x=>x.classList.toggle("on",x.dataset.view===v));window.scrollTo({top:0,behavior:reduced?'auto':'smooth'});}
+function go(v){document.querySelectorAll(".tab").forEach(t=>t.setAttribute("aria-selected",t.dataset.v===v));document.querySelectorAll(".view").forEach(x=>x.classList.toggle("on",x.dataset.view===v));if(v==="carte"){initMap();setTimeout(()=>{if(MV_MAP)MV_MAP.invalidateSize();},180);}window.scrollTo({top:0,behavior:reduced?'auto':'smooth'});}
 window.go=go;
 document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>go(t.dataset.v)));
 document.querySelectorAll("#scn button").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll("#scn button").forEach(x=>x.setAttribute("aria-pressed","false"));b.setAttribute("aria-pressed","true");applyScenario(b.dataset.s);}));
