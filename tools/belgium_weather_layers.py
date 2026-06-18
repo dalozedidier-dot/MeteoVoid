@@ -274,7 +274,9 @@ def convective_parameters_summary(
     dew_values = [p.dew_point_c for p in points if p.dew_point_c is not None]
     humidity_values = [p.humidity_pct for p in points if p.humidity_pct is not None]
     storm_values = [p.storm_formation_score for p in points]
-    native_grid_values = [p.native_convective_score for p in points if p.native_convective_score is not None]
+    native_grid_values = [
+        p.native_convective_score for p in points if p.native_convective_score is not None
+    ]
     cape_values = [p.cape_j_kg for p in points if p.cape_j_kg is not None]
     cin_values = [p.cin_j_kg for p in points if p.cin_j_kg is not None]
     lifted_values = [p.lifted_index_c for p in points if p.lifted_index_c is not None]
@@ -528,7 +530,6 @@ async function loadRainViewer() {
 }
 loadRainViewer();
 """
-
 
 
 def render_native_convective_map_html(report: dict[str, Any], points: list[LayerPoint]) -> str:
