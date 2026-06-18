@@ -2163,28 +2163,42 @@ paint();
 </html>"""
 
 
-def _write_country_pages(site_dir: Path) -> dict[str, str]:
-    """Write one dedicated European follow-up page per configured country."""
+def _write_country_pages(site_dir: Path) -> list[dict[str, str]]:
+    """Generate dedicated Europe country pages and their JSON APIs.
+
+    The country pages are static and use the same public-site design language as
+    the Belgium/Europe pages. They remain honest about radar evidence: a
+    national radar network can be displayed without a key, but machine evidence
+    is published only when a readable radar file has been transformed into
+    metrics.
+    """
     api_dir = site_dir / "api"
     api_dir.mkdir(parents=True, exist_ok=True)
-    country_links: dict[str, str] = {}
     try:
         countries = build_all_countries()
     except Exception:
         countries = {}
-    for country_key, model in countries.items():
+
+    links: list[dict[str, str]] = []
+    for key, model in countries.items():
         if not isinstance(model, dict):
             continue
-        page_name = f"{country_key}.html"
-        public_model = dict(model)
-        public_model["page_href"] = page_name
-        public_model["api_href"] = f"api/country_{country_key}.json"
-        _write_json(api_dir / f"country_{country_key}.json", public_model)
-        payload = json.dumps(public_model, ensure_ascii=False).replace("</", "<\\/")
+        safe_key = str(key)
+        html_name = f"{safe_key}.html"
+        api_name = f"country_{safe_key}.json"
+        _write_json(api_dir / api_name, model)
+        payload = json.dumps(model, ensure_ascii=False).replace("</", "<\\/")
         page = COUNTRY_TEMPLATE.replace("__COUNTRY_BOOTSTRAP__", payload)
-        (site_dir / page_name).write_text(page, encoding="utf-8")
-        country_links[country_key] = page_name
-    return country_links
+        (site_dir / html_name).write_text(page, encoding="utf-8")
+        links.append(
+            {
+                "country": safe_key,
+                "label": str(model.get("label") or safe_key.title()),
+                "href": html_name,
+                "api": f"api/{api_name}",
+            }
+        )
+    return links
 
 
 def _write_methodology_page(site_dir: Path) -> None:
@@ -2223,26 +2237,25 @@ def build_index(report_dir: Path, site_dir: Path) -> dict[str, Any]:
         "__GENERATED_AT__", str(vm["meta"].get("generated_at") or "")
     )
     (site_dir / "index.html").write_text(page, encoding="utf-8")
+
     country_links = _write_country_pages(site_dir)
     try:
         source_registry = build_source_registry()
     except Exception:
         source_registry = {}
     _write_json(site_dir / "api" / "radar_sources.json", source_registry)
+
     europe_model = build_europe_model(site_dir / "reports" / "latest", vm)
     europe_model["country_pages"] = country_links
-    for country in europe_model.get("countries", []):
-        if isinstance(country, dict):
-            key = str(country.get("country") or "")
-            if key in country_links:
-                country["page_href"] = country_links[key]
     europe_model["master_sources"] = source_registry
     _write_json(site_dir / "api" / "europe.json", europe_model)
     _write_europe_page(site_dir, europe_model)
+
     _write_methodology_page(site_dir)
     (site_dir / "README.md").write_text(
         "# MeteoVoid Belgique\n\nSite statique généré automatiquement.\n"
-        "Lecture en trois niveaux (simple, opérationnel, expert), page Europe, page méthodologie et API JSON dans `api/`.\n",
+        "Lecture en trois niveaux (simple, opérationnel, expert), page Europe, "
+        "pages pays, page méthodologie et API JSON dans `api/`.\n",
         encoding="utf-8",
     )
     return vm
