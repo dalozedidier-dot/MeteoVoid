@@ -38,6 +38,10 @@ def _get_db_url() -> str:
 
 
 def _connect() -> Any:
+    url = _get_db_url()
+    if not url:
+        raise RuntimeError("DATABASE_URL environment variable is not set")
+
     try:
         import psycopg2  # type: ignore[import-untyped]
     except ImportError as exc:  # pragma: no cover
@@ -45,9 +49,6 @@ def _connect() -> Any:
             "psycopg2 is required for database persistence. "
             "Install with: pip install psycopg2-binary"
         ) from exc
-    url = _get_db_url()
-    if not url:
-        raise RuntimeError("DATABASE_URL environment variable is not set")
     return psycopg2.connect(url)
 
 

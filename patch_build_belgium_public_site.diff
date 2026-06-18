@@ -1,0 +1,35 @@
+--- meteo_orig/MeteoVoid-main/tools/build_belgium_public_site.py	2026-06-18 19:46:04.000000000 +0000
++++ meteo_repo/MeteoVoid-main/tools/build_belgium_public_site.py	2026-06-18 19:57:22.426246683 +0000
+@@ -212,6 +212,32 @@
+ 
+ 
+ def _meta(key: Any) -> dict[str, Any]:
++    """Return normalized severity metadata.
++
++    Some parts of the public view-model already carry a full severity object,
++    e.g. ``{"key": "alert", "label": "Critique", "class": "danger"}``.
++    Re-wrapping that object with ``str(dict)`` used to leak Python dictionary
++    reprs into the public bulletin ("Zones à surveiller").  Accept both raw
++    severity keys and already-normalized dicts so rendering stays clean.
++    """
++    if isinstance(key, dict):
++        lowered = {str(k).lower(): v for k, v in key.items()}
++        raw_key = str(lowered.get("key") or lowered.get("level") or "normal").lower()
++        raw_cls = str(lowered.get("class") or _KEY_TO_CLASS.get(raw_key, "calm")).lower()
++        cls = raw_cls if raw_cls in _CLASS_RANK else _KEY_TO_CLASS.get(raw_key, "calm")
++        raw_label = lowered.get("label")
++        label = (
++            str(raw_label)
++            if raw_label not in (None, "")
++            else _KEY_TO_LABEL.get(raw_key, raw_key.replace("_", " ").title())
++        )
++        raw_rank = lowered.get("rank")
++        try:
++            rank = int(raw_rank) if raw_rank is not None else _CLASS_RANK.get(cls, 0)
++        except (TypeError, ValueError):
++            rank = _CLASS_RANK.get(cls, 0)
++        return {"key": raw_key, "label": label, "class": cls, "rank": rank}
++
+     key = str(key or "normal").lower()
+     cls = _KEY_TO_CLASS.get(key, "calm")
+     return {

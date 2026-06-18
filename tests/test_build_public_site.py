@@ -271,6 +271,27 @@ def test_level_meta_reserves_red_for_real_danger() -> None:
     assert site._meta(None)["class"] == "calm"
 
 
+def test_level_meta_accepts_already_normalized_dicts() -> None:
+    meta = site._meta({"key": "alert", "label": "Critique", "class": "danger", "rank": 5})
+
+    assert meta == {"key": "alert", "label": "Critique", "class": "danger", "rank": 5}
+
+
+def test_bulletin_zones_do_not_render_python_dict_repr(tmp_path: Path) -> None:
+    report_dir = _minimal_report_dir(tmp_path)
+    site_dir = tmp_path / "site"
+    vm = site.build_index(report_dir, site_dir)
+
+    zone_section = next(
+        s for s in vm["bulletin"]["sections"] if s.get("title") == "Zones à surveiller"
+    )
+    joined = "\n".join(zone_section["items"])
+
+    assert "Critique" in joined
+    assert "{'" not in joined
+    assert "key" not in joined.lower()
+
+
 def test_map_scaffolding_and_enriched_stations(tmp_path: Path) -> None:
     report_dir = _minimal_report_dir(tmp_path)
     site_dir = tmp_path / "site"
