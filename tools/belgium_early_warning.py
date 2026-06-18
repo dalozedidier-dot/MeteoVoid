@@ -269,10 +269,10 @@ table{{width:100%;border-collapse:collapse;background:#fff;border-radius:18px;ov
 <header><h1>MeteoVoid Belgique · Signaux précoces de transition</h1><p>Autocorrélation, variance, asymétrie et flickering sur les séries de risque.</p></header>
 <div class='wrap'>
 <div class='grid'>
-  <div class='card'><small>Score réseau</small><span class='big'>{_as_float(summary.get('network_early_warning_score')):.3f}</span></div>
-  <div class='card'><small>Stations critiques</small><span class='big'>{html.escape(str(summary.get('critical_station_count', 0)))}</span></div>
-  <div class='card'><small>Stations déstabilisées</small><span class='big'>{html.escape(str(summary.get('destabilizing_station_count', 0)))}</span></div>
-  <div class='card'><small>Lecture</small><span class='big' style='font-size:20px'>{html.escape(str(summary.get('interpretation','n/a')))}</span></div>
+  <div class='card'><small>Score réseau</small><span class='big'>{_as_float(summary.get("network_early_warning_score")):.3f}</span></div>
+  <div class='card'><small>Stations critiques</small><span class='big'>{html.escape(str(summary.get("critical_station_count", 0)))}</span></div>
+  <div class='card'><small>Stations déstabilisées</small><span class='big'>{html.escape(str(summary.get("destabilizing_station_count", 0)))}</span></div>
+  <div class='card'><small>Lecture</small><span class='big' style='font-size:20px'>{html.escape(str(summary.get("interpretation", "n/a")))}</span></div>
 </div>
 <div class='note'><strong>Lecture ORI-C.</strong> Ces indicateurs visent à repérer une perte de stabilité fonctionnelle avant la bascule. Ils ne remplacent pas les avertissements officiels.</div>
 <table><thead><tr><th>Station</th><th>Phase</th><th>Score EWS</th><th>ACF lag-1</th><th>Variance ×</th><th>Flickering</th></tr></thead><tbody>{table}</tbody></table>

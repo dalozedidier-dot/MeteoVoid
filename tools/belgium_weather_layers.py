@@ -552,7 +552,7 @@ const stations = {stations_js};
 const grid = {grid_js};
 {_leaflet_base_script()}
 {_station_layer_js()}
-{_heat_layer_js('native_convective_score', 'nativeLayer', radius=11)}
+{_heat_layer_js("native_convective_score", "nativeLayer", radius=11)}
 nativeLayer.addTo(map);
 stationLayer.addTo(map);
 L.control.layers({{'OpenStreetMap': osm}}, {{'Convectif natif': nativeLayer, 'Stations': stationLayer}}, {{collapsed:false}}).addTo(map);
@@ -609,7 +609,7 @@ const stations = {stations_js};
 const grid = {grid_js};
 {_leaflet_base_script()}
 {_station_layer_js()}
-{_heat_layer_js(field, 'heatLayer', radius=9)}
+{_heat_layer_js(field, "heatLayer", radius=9)}
 heatLayer.addTo(map);
 stationLayer.addTo(map);
 L.control.layers({{'OpenStreetMap': osm}}, {{'Couche interpolée': heatLayer, 'Stations': stationLayer}}, {{collapsed:false}}).addTo(map);
@@ -636,9 +636,9 @@ const grid = {grid_js};
 {_leaflet_base_script()}
 {_station_layer_js()}
 {_rainviewer_js()}
-{_heat_layer_js('humidity_pct', 'humidityLayer', radius=8)}
-{_heat_layer_js('dew_point_c', 'dewLayer', radius=8)}
-{_heat_layer_js('storm_formation_score', 'stormLayer', radius=11)}
+{_heat_layer_js("humidity_pct", "humidityLayer", radius=8)}
+{_heat_layer_js("dew_point_c", "dewLayer", radius=8)}
+{_heat_layer_js("storm_formation_score", "stormLayer", radius=11)}
 function toggle(btn, layer) {{
   const el = document.getElementById(btn);
   el.addEventListener('click', () => {{

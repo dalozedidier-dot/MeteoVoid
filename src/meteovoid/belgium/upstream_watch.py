@@ -928,8 +928,7 @@ def _write_html_map(watch: dict[str, Any], path: Path) -> None:
             f'fill-opacity="0.84"><title>{name} · score {score:.2f}</title></circle>'
         )
         labels.append(
-            f'<text x="{x + 10:.1f}" y="{y - 8:.1f}" font-size="12" fill="#162033">'
-            f"{name}</text>"
+            f'<text x="{x + 10:.1f}" y="{y - 8:.1f}" font-size="12" fill="#162033">{name}</text>'
         )
     top = (
         watch.get("summary", {}).get("top_corridors", [])
@@ -969,11 +968,11 @@ svg{{width:100%;height:auto;background:linear-gradient(180deg,#dfefff,#f7fbff);b
 <text x=\"395\" y=\"420\" font-size=\"28\" fill=\"#b0bdc9\">France</text>
 <text x=\"590\" y=\"250\" font-size=\"22\" fill=\"#9aaec3\">Belgique</text>
 <text x=\"700\" y=\"355\" font-size=\"22\" fill=\"#a8b6c5\">Allemagne</text>
-{''.join(lines)}
-{''.join(circles)}
-{''.join(labels)}
+{"".join(lines)}
+{"".join(circles)}
+{"".join(labels)}
 </svg></div>
-<div class=\"card\"><h2>Couloirs prioritaires</h2><ol>{''.join(top_items)}</ol><p class=\"muted\">Rouge/orange = signal amont plus structuré. Bleu = signal faible ou incomplet.</p></div></div>
+<div class=\"card\"><h2>Couloirs prioritaires</h2><ol>{"".join(top_items)}</ol><p class=\"muted\">Rouge/orange = signal amont plus structuré. Bleu = signal faible ou incomplet.</p></div></div>
 <div class=\"card\"><h2>Limites</h2><p>Cette carte combine régions amont, scores de corridor, flux Open‑Meteo si activé et interfaces radar/foudre si configurées. Elle ne remplace pas OPERA, IRM/KMI, MeteoAlarm ou un produit radar national.</p></div>
 </main></body></html>"""
     path.write_text(html, encoding="utf-8")

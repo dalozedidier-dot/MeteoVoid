@@ -10,7 +10,6 @@ committed, verifies the alert_state contract fields, and then deletes itself.
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -123,18 +122,18 @@ def patch_operational_state(func: str) -> str:
     anchor = (
         '    if trend_status in {"rising", "rising_fast"} and level in {"watch", "watch_reinforced"}:\n'
         '        reason = f"{reason}. Tendance en hausse"\n'
-        '    return {\n'
+        "    return {\n"
     )
     replacement = (
         '    if trend_status in {"rising", "rising_fast"} and level in {"watch", "watch_reinforced"}:\n'
         '        reason = f"{reason}. Tendance en hausse"\n'
         "\n"
-        '    notification_allowed = level in {\n'
+        "    notification_allowed = level in {\n"
         '        "watch_reinforced",\n'
         '        "pre_alert_confirmed",\n'
         '        "alert_confirmed",\n'
-        '    }\n'
-        '    public_wording = {\n'
+        "    }\n"
+        "    public_wording = {\n"
         '        "alert_confirmed": "alerte technique confirmée, non officielle",\n'
         '        "pre_alert_confirmed": "pré-alerte technique confirmée, non officielle",\n'
         '        "watch_reinforced": "veille renforcée, non officielle",\n'
@@ -142,9 +141,9 @@ def patch_operational_state(func: str) -> str:
         '        "low_watch": "surveillance faible, non officielle",\n'
         '        "normal": "pas de signal notable, non officiel",\n'
         '    }.get(level, "veille météo technique non officielle")\n'
-        '    official_alert = False\n'
+        "    official_alert = False\n"
         "\n"
-        '    return {\n'
+        "    return {\n"
     )
     if anchor not in func:
         raise SystemExit("Could not find operational_state return anchor.")
@@ -178,10 +177,10 @@ def patch_notification_state(func: str) -> str:
         '        "reason": reason,\n'
         '        "notification_allowed": bool(\n'
         '            operational.get("notification_allowed", should_notify)\n'
-        '        ),\n'
+        "        ),\n"
         '        "public_wording": str(\n'
         '            operational.get("public_wording", "veille météo technique non officielle")\n'
-        '        ),\n'
+        "        ),\n"
         '        "official_alert": bool(operational.get("official_alert", False)),\n'
         '        "public_alert_allowed": bool(operational.get("public_alert_allowed", False)),\n'
     )

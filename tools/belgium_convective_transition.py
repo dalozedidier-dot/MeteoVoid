@@ -465,15 +465,15 @@ th {{ color:var(--muted); font-size:12px; text-transform:uppercase; letter-spaci
 </header>
 <main>
 <div class="grid">
-{_card('Signal void national', national.get('national_void_collapse_signal', 0), 'Mesure synthétique de la bascule potentielle.', level)}
-{_card('Niveau transition', national.get('national_transition_level', 'stable'), 'Classe MeteoVoid non officielle.', level)}
-{_card('Émergence externe', transition.get('external_emergence_proxy', 0), 'Proxy issu des confirmations externes disponibles.', level)}
-{_card('Charge convective', mean_value('convective_load_index'), 'Énergie, chaleur et humidité.', level)}
-{_card('Déclenchement', mean_value('trigger_readiness_index'), 'Forçage proxy : précipitations, pression, codes météo.', level)}
-{_card('Organisation', mean_value('storm_organization_potential'), 'Potentiel d’organisation via vent, précipitations et signal modèle.', level)}
+{_card("Signal void national", national.get("national_void_collapse_signal", 0), "Mesure synthétique de la bascule potentielle.", level)}
+{_card("Niveau transition", national.get("national_transition_level", "stable"), "Classe MeteoVoid non officielle.", level)}
+{_card("Émergence externe", transition.get("external_emergence_proxy", 0), "Proxy issu des confirmations externes disponibles.", level)}
+{_card("Charge convective", mean_value("convective_load_index"), "Énergie, chaleur et humidité.", level)}
+{_card("Déclenchement", mean_value("trigger_readiness_index"), "Forçage proxy : précipitations, pression, codes météo.", level)}
+{_card("Organisation", mean_value("storm_organization_potential"), "Potentiel d’organisation via vent, précipitations et signal modèle.", level)}
 </div>
-<section class="panel"><h2>Lecture opérationnelle</h2><p class="note">{html.escape(str(transition.get('interpretation') or ''))}</p></section>
-<section class="panel"><h2>Stations les plus sensibles</h2><table><thead><tr><th>Station</th><th>Région</th><th>Void</th><th>Charge</th><th>Déclencheur</th><th>Organisation</th><th>Niveau</th></tr></thead><tbody>{''.join(rows)}</tbody></table></section>
+<section class="panel"><h2>Lecture opérationnelle</h2><p class="note">{html.escape(str(transition.get("interpretation") or ""))}</p></section>
+<section class="panel"><h2>Stations les plus sensibles</h2><table><thead><tr><th>Station</th><th>Région</th><th>Void</th><th>Charge</th><th>Déclencheur</th><th>Organisation</th><th>Niveau</th></tr></thead><tbody>{"".join(rows)}</tbody></table></section>
 <section class="panel"><h2>Limites</h2><p class="note">Ce module ne remplace pas les alertes officielles. Il pose une couche expérimentale d’analyse de cohérence convective au-dessus des prévisions et observations disponibles.</p></section>
 </main>
 </body>

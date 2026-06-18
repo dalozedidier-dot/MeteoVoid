@@ -34,13 +34,25 @@ def test_weather_layers_outputs_are_written(tmp_path: Path) -> None:
         "belgium_windy_compare.html",
         "weather_layers_grid.csv",
         "convective_parameters.json",
+        "native_convective_parameters.json",
+        "native_convective_grid.csv",
+        "belgium_native_convective_map.html",
     }
     assert expected <= {p.name for p in out_dir.iterdir() if p.is_file()}
 
     convective = json.loads((out_dir / "convective_parameters.json").read_text(encoding="utf-8"))
-    assert convective["mode"] == "derived_from_station_forecasts"
+    assert convective["mode"] in {
+        "derived_from_station_forecasts",
+        "proxy_plus_native_convective_fields",
+    }
     assert convective["inputs"]["grid_point_count"] > 0
     assert convective["summary"]["max_storm_formation_score_grid"] is not None
+    assert convective["native_convective_contract"] == "native_convective_fields_optional_v1"
+    assert convective["inputs"]["native_convective_grid_point_count"] > 0
+
+    native = json.loads((out_dir / "native_convective_parameters.json").read_text(encoding="utf-8"))
+    assert native["native_convective_contract"] == "native_convective_fields_optional_v1"
+    assert native["inputs"]["native_convective_grid_point_count"] > 0
 
     layers_html = (out_dir / "belgium_weather_layers.html").read_text(encoding="utf-8")
     assert "Radar pluie" in layers_html
