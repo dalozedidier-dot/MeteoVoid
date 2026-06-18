@@ -73,4 +73,10 @@ def test_build_belgium_public_site(tmp_path: Path) -> None:
     assert "MeteoVoid Belgique" in index
     assert "Prototype technique" in index
     assert "reports/latest/belgium_alert_dashboard.html" in index
+    assert "scénario" not in index
+    assert "offline_demo" not in index
+    assert "demo_heat" not in index
+    assert "function initMap(){}" not in index
+    assert "rainviewerTileUrl" in index
+    assert "api/latest.json" in index
     assert (site_dir / "reports" / "latest" / "belgium_alert_dashboard.html").exists()

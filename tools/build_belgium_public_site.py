@@ -2563,12 +2563,8 @@ button:focus-visible,.tab:focus-visible,a:focus-visible{outline:2px solid var(--
 <header class="topbar"><div class="wrap topbar-in">
   <div class="brand"><div class="glyph"></div><div><h1>MeteoVoid Belgique</h1><div class="sub">Veille de bascule convective · prototype ORI-C</div></div></div>
   <div class="run"><span class="lab">RUN</span><span id="runts">—</span></div>
-  <div class="live"><span class="dot"></span>en veille</div>
-  <div class="scn"><span class="lab">scénario&nbsp;(démo)</span><div class="seg" id="scn">
-    <button data-s="stable" aria-pressed="true">stable</button>
-    <button data-s="tension">tension</button>
-    <button data-s="bascule">bascule</button>
-  </div></div>
+  <div class="live"><span class="dot"></span><span id="liveState">run réel</span></div>
+  <div class="run"><span class="lab">RADAR</span><span id="radarLiveState">RainViewer live</span></div>
 </div></header>
 
 <nav class="tabs"><div class="wrap tabs-in" role="tablist" id="tabs">
@@ -2848,7 +2844,7 @@ button:focus-visible,.tab:focus-visible,a:focus-visible{outline:2px solid var(--
 </main>
 
 <footer class="wrap">
-  MeteoVoid Belgique · run <span class="ftag">demo_heat</span> · mode <span class="ftag">offline_demo</span> ·
+  MeteoVoid Belgique · run <span class="ftag" id="footerRun">run actuel</span> · mode <span class="ftag" id="footerMode">live static</span> ·
   <a href="europe.html">Europe</a> ·
   <a href="methodology.html">Méthodologie</a> · ori-c.be
   <div style="margin-top:8px">Prototype technique non officiel. Toujours comparer avec les sources officielles, le radar et la foudre.</div>
@@ -2870,7 +2866,7 @@ const ns="http://www.w3.org/2000/svg";
 const el=(n,a)=>{const e=document.createElementNS(ns,n);for(const k in a)e.setAttribute(k,a[k]);return e;};
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 
-/* ---- données de base (= run demo_heat documenté) ---- */
+/* ---- valeurs de secours issues du dernier build, remplacées par le run réel injecté ---- */
 const BASE={
   composantes:[
     {n:"Charge convective",v:0.50,d:"énergie qui s'accumule (chaleur + humidité)",chips:["36 °C max","21 °C point de rosée"],ic:"flame"},
@@ -2894,7 +2890,7 @@ const BASE={
 const COMFORT=[{c:"var(--t1)",name:"Aucun inconfort",band:"< 20"},{c:"var(--t2)",name:"Confortable",band:"20 – 29"},{c:"var(--t3)",name:"Inconfort léger",band:"30 – 39"},{c:"var(--t4)",name:"Inconfort marqué · prudence",band:"40 – 45"},{c:"var(--t5)",name:"Danger",band:"46 – 53"},{c:"var(--t6)",name:"Danger extrême",band:"≥ 54"}];
 const STATIONS_GEO=[["Ostende",51.23,2.92],["Anvers",51.22,4.40],["Gand",51.05,3.72],["Hasselt",50.93,5.34],["Kleine-Brogel",51.17,5.47],["Uccle",50.80,4.36],["Liège",50.63,5.57],["Charleroi",50.41,4.44],["Namur",50.47,4.87],["Virton",49.57,5.53]];
 
-/* ---- scénarios (démo de thématisation dynamique) ---- */
+/* ---- états visuels dérivés du run réel côté interface ---- */
 const SCN={
   stable:{accent:"var(--calm)",soft:"rgba(70,197,176,.13)",mot:"Veille",ope:"Stable",zone:"Stable",indice:0.28,score:0.62,conf:63,
     opeDesc:"Atmosphère chaude et sèche, risque convectif limité.",
@@ -3053,6 +3049,7 @@ let MV_STATION_LAYER=null;
 let MV_RAIN_LAYER=null;
 let MV_PROVINCE_LAYER=null;
 let MV_RAIN_VISIBLE=true;
+let MV_RAIN_REFRESH=null;
 
 function cssVar(name){return getComputedStyle(document.documentElement).getPropertyValue(name).trim()||name;}
 function normName(v){return String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"");}
@@ -3107,22 +3104,40 @@ function renderLeafletStations(){
   });
 }
 function setMapStatus(text){const e=document.getElementById("mapStatus"); if(e)e.textContent=text;}
+function rainviewerTileUrl(data,frame){
+  const host=String((data&&data.host)||"https://tilecache.rainviewer.com").replace(/\/$/,"");
+  const path=String((frame&&frame.path)||"");
+  if(!path)throw new Error("rainviewer_no_frame_path");
+  if(/^https?:\/\//i.test(path))return `${path}/256/{z}/{x}/{y}/2/1_1.png`;
+  return `${host}${path.startsWith("/")?path:"/"+path}/256/{z}/{x}/{y}/2/1_1.png`;
+}
 function addRainViewerLayer(){
   if(!MV_MAP||typeof L==="undefined")return;
-  setMapStatus("RainViewer · chargement");
+  setMapStatus("RainViewer live · chargement");
+  const radarBadge=document.getElementById("radarLiveState"); if(radarBadge)radarBadge.textContent="RainViewer live";
   fetch("https://api.rainviewer.com/public/weather-maps.json",{cache:"no-store"})
     .then(r=>r.ok?r.json():Promise.reject(new Error("rainviewer_http")))
     .then(data=>{
-      const frames=((data&&data.radar&&data.radar.past)||[]).concat((data&&data.radar&&data.radar.nowcast)||[]);
-      const frame=frames[frames.length-1];
+      const past=(data&&data.radar&&data.radar.past)||[];
+      const nowcast=(data&&data.radar&&data.radar.nowcast)||[];
+      const frames=past.concat(nowcast);
+      const frame=frames[frames.length-1]||past[past.length-1];
       if(!frame||!frame.path)throw new Error("rainviewer_no_frame");
-      if(MV_RAIN_LAYER)MV_MAP.removeLayer(MV_RAIN_LAYER);
-      MV_RAIN_LAYER=L.tileLayer(`https://tilecache.rainviewer.com/v2/radar/${frame.path}/256/{z}/{x}/{y}/2/1_1.png`,{opacity:.70,zIndex:220,attribution:"RainViewer"});
-      if(MV_RAIN_VISIBLE)MV_RAIN_LAYER.addTo(MV_MAP);
+      const tileUrl=rainviewerTileUrl(data,frame);
+      const next=L.tileLayer(tileUrl,{opacity:.70,zIndex:220,attribution:"RainViewer",crossOrigin:true});
+      if(MV_RAIN_VISIBLE)next.addTo(MV_MAP);
+      const previous=MV_RAIN_LAYER;
+      MV_RAIN_LAYER=next;
+      if(previous)setTimeout(()=>{try{MV_MAP.removeLayer(previous);}catch(e){}},250);
       const ts=frame.time?new Date(frame.time*1000):null;
-      setMapStatus(`RainViewer · ${ts?ts.toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"}):"actif"}`);
+      const stamp=ts?ts.toLocaleTimeString("fr-BE",{hour:"2-digit",minute:"2-digit"}):"actif";
+      setMapStatus(`RainViewer live · ${stamp}`);
+      if(radarBadge)radarBadge.textContent=`Radar live ${stamp}`;
     })
-    .catch(()=>setMapStatus("RainViewer indisponible · carte active"));
+    .catch(()=>{
+      setMapStatus("RainViewer live indisponible · fond et stations actifs");
+      const radarBadge=document.getElementById("radarLiveState"); if(radarBadge)radarBadge.textContent="radar live indisponible";
+    });
 }
 function initMap(){
   const target=document.getElementById("leafletMap"); if(!target)return;
@@ -3135,6 +3150,7 @@ function initMap(){
   }
   renderLeafletStations();
   addRainViewerLayer();
+  if(!MV_RAIN_REFRESH)MV_RAIN_REFRESH=setInterval(addRainViewerLayer,300000);
   const bounds=L.latLngBounds(stationRecords().map(s=>[s.lat,s.lon]));
   if(bounds.isValid())MV_MAP.fitBounds(bounds.pad(.18));
   const fit=document.getElementById("fitBelgium"); if(fit)fit.onclick=()=>{const b=MV_PROVINCE_LAYER?MV_PROVINCE_LAYER.getBounds():bounds;if(b&&b.isValid())MV_MAP.fitBounds(b.pad(.08));};
@@ -3180,8 +3196,8 @@ function renderStatic(){
   $("#provTbl").innerHTML=BASE.provinces.map(p=>{const name=p[0],sc=numVal(p[1]),st=p[2]||"",lab=p[3]||"Élevé",pc=p[4]||"veille";return `<tr><td>${escTxt(name)}</td><td><span class="pill ${pc}"><span class="pd"></span>${escTxt(lab)}</span></td><td class="n">${sc.toFixed(2)}</td><td>${escTxt(st)}</td></tr>`}).join("");
 }
 
-/* ===== contenu piloté par scénario ===== */
-function applyScenario(key){
+/* ===== contenu piloté par l’état réel du run ===== */
+function applySignalState(key){
   S=SCN[key];
   document.documentElement.style.setProperty("--accent",S.accent);
   document.documentElement.style.setProperty("--accent-soft",S.soft);
@@ -3208,7 +3224,6 @@ function applyScenario(key){
 function go(v){document.querySelectorAll(".tab").forEach(t=>t.setAttribute("aria-selected",t.dataset.v===v));document.querySelectorAll(".view").forEach(x=>x.classList.toggle("on",x.dataset.view===v));if(v==="carte"){initMap();setTimeout(()=>{if(MV_MAP)MV_MAP.invalidateSize();},180);}window.scrollTo({top:0,behavior:reduced?'auto':'smooth'});}
 window.go=go;
 document.querySelectorAll(".tab").forEach(t=>t.addEventListener("click",()=>go(t.dataset.v)));
-document.querySelectorAll("#scn button").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll("#scn button").forEach(x=>x.setAttribute("aria-pressed","false"));b.setAttribute("aria-pressed","true");applyScenario(b.dataset.s);}));
 document.querySelectorAll("#subnav button").forEach(b=>b.addEventListener("click",()=>{document.querySelectorAll("#subnav button").forEach(x=>x.setAttribute("aria-pressed","false"));b.setAttribute("aria-pressed","true");document.querySelectorAll(".subview").forEach(x=>x.classList.toggle("on",x.dataset.sv===b.dataset.sv));}));
 
 
@@ -3220,14 +3235,14 @@ function firstNum(...vals){for(const v of vals){const n=Number(v);if(Number.isFi
 function hourNum(h){const m=String(h||"").match(/(\d{1,2})h|T(\d{2}):/);return m?Number(m[1]||m[2]):null;}
 function fmtHourFromIso(x){const s=String(x||"");const m=s.match(/T(\d{2}):(\d{2})/);return m?`${Number(m[1])}h`:s.replace(":00","")||"—";}
 function scoreToZone(v){if(v<0.30)return "Stable";if(v<0.45)return "Veille";if(v<0.65)return "Latent";return "Transition → Bascule";}
-function scenarioNameFromClass(cls,idx){const r={calm:0,info:1,watch:2,elevated:3,high:4,danger:5}[String(cls||"").toLowerCase()]||0;if(r>=4||idx>=0.72)return "bascule";if(r>=2||idx>=0.45)return "tension";return "stable";}
+function stateNameFromClass(cls,idx){const r={calm:0,info:1,watch:2,elevated:3,high:4,danger:5}[String(cls||"").toLowerCase()]||0;if(r>=4||idx>=0.72)return "bascule";if(r>=2||idx>=0.45)return "tension";return "stable";}
 function iconForBlock(k){return {charge:"flame",declencheur:"bolt",organisation:"layers",couvercle:"lid",observation:"eye",amont:"arrow",void:"target"}[k]||"target";}
 function updateScenarioFromVM(vm){
   const s=vm.simple||{},op=vm.operational||{},h=vm.heat||{};
   const level=s.operational_level||s.severity||{};
   const conf=Math.round(clamp01(s.confidence&&s.confidence.score)*100)||0;
   const idx=clamp01(op.void_collapse_signal ?? s.model_score ?? 0);
-  const key=scenarioNameFromClass(level.class,idx);
+  const key=stateNameFromClass(level.class,idx);
   const factors=(s.confidence&&s.confidence.factors)||[];
   const bars=factors.length?factors.map(f=>[f.name,Math.round(clamp01(f.value)*100)]):[["Qualité des sources",conf],["Cohérence interne",conf],["Confirmation externe",0],["Cohérence spatiale",0]];
   const chips=[]; if(h.level&&h.level.label)chips.push(h.level.label); if(s.main_zone&&s.main_zone.name)chips.push("zone : "+s.main_zone.name);
@@ -3271,11 +3286,53 @@ function renderDynamicLinks(vm){
   const f=document.getElementById('expertFrameLinks'); if(f){f.innerHTML=(e.frames||[]).slice(0,9).map(x=>`<a class="kpi" href="${escTxt(x.file)}"><div class="name">${escTxt(x.group||'Carte')}</div><div class="foot mono">${escTxt(x.label||x.file)}</div></a>`).join("");}
   const ex=document.getElementById('expertExportLinks'); if(ex){ex.innerHTML=`<div class="row c3">${(e.exports||[]).slice(0,9).map(x=>`<a class="kpi" href="${escTxt(x.file)}"><div class="name">Export</div><div class="foot mono">${escTxt(x.label||x.file)}</div></a>`).join("")}</div>`;}
 }
-function renderMap(){}
-function initMap(){}
+function renderMap(){drawMap();}
+function updateLiveBadges(vm){
+  const meta=(vm&&vm.meta)||{};
+  const runLabel=meta.run_id||meta.generated_at||RUN||"run actuel";
+  const modeLabel=meta.data_mode||"live static";
+  const fr=document.getElementById("footerRun"); if(fr)fr.textContent=String(runLabel).slice(0,32);
+  const fm=document.getElementById("footerMode"); if(fm)fm.textContent=String(modeLabel).replace(/demo/gi,"run");
+  const live=document.getElementById("liveState"); if(live)live.textContent="run réel";
+}
+function applyLiveModel(vm){
+  const state=hydrateFromVM(vm);
+  updateLiveBadges(vm);
+  renderStatic();
+  renderBulletin(vm);
+  renderDynamicLinks(vm);
+  applySignalState(state);
+  updateLeafletMap();
+}
+function loadLiveModel(){
+  if(location.protocol==="file:")return;
+  fetch("api/latest.json",{cache:"no-store"})
+    .then(r=>r.ok?r.json():Promise.reject(new Error("api_latest_http")))
+    .then(latest=>{
+      const vm={...FALLBACK,meta:{...(FALLBACK.meta||{}),generated_at:latest.generated_at||FALLBACK.meta?.generated_at,run_id:latest.run_id||FALLBACK.meta?.run_id,data_mode:latest.data_mode||FALLBACK.meta?.data_mode},simple:{...(FALLBACK.simple||{}),operational_level:latest.operational_level||FALLBACK.simple?.operational_level,severity:latest.severity||FALLBACK.simple?.severity,model_score:latest.model_score??FALLBACK.simple?.model_score,score_layers:latest.score_layers||FALLBACK.simple?.score_layers,confidence:latest.confidence||FALLBACK.simple?.confidence,critical_window:latest.critical_window||FALLBACK.simple?.critical_window,main_zone:latest.main_zone||FALLBACK.simple?.main_zone,synthesis:latest.synthesis||FALLBACK.simple?.synthesis,public_wording:latest.public_wording||FALLBACK.simple?.public_wording,official_alert:latest.official_alert??FALLBACK.simple?.official_alert,public_alert_allowed:latest.public_alert_allowed??FALLBACK.simple?.public_alert_allowed,strong_external_confirmation:latest.strong_external_confirmation??FALLBACK.simple?.strong_external_confirmation},operational:{...(FALLBACK.operational||{}),void_collapse_signal:latest.void_collapse_signal??FALLBACK.operational?.void_collapse_signal,transition_level:latest.transition_level||FALLBACK.operational?.transition_level,alert_explanation:latest.alert_explanation||FALLBACK.operational?.alert_explanation}};
+      return Promise.allSettled([
+        fetch("api/stations.json",{cache:"no-store"}).then(r=>r.ok?r.json():null),
+        fetch("api/timeline.json",{cache:"no-store"}).then(r=>r.ok?r.json():null),
+        fetch("api/transition.json",{cache:"no-store"}).then(r=>r.ok?r.json():null),
+        fetch("api/heat.json",{cache:"no-store"}).then(r=>r.ok?r.json():null),
+        fetch("api/sources.json",{cache:"no-store"}).then(r=>r.ok?r.json():null),
+        fetch("api/validation.json",{cache:"no-store"}).then(r=>r.ok?r.json():null)
+      ]).then(results=>{
+        const [stations,timeline,transition,heat,sources,validation]=results.map(x=>x.status==="fulfilled"?x.value:null);
+        if(stations){vm.expert={...(vm.expert||{}),stations:stations.stations||vm.expert?.stations,provinces:stations.provinces||vm.expert?.provinces};}
+        if(timeline){vm.operational={...(vm.operational||{}),timeline:{...(vm.operational?.timeline||{}),...timeline}};}
+        if(transition){vm.operational={...(vm.operational||{}),...transition};}
+        if(heat){vm.heat={...(vm.heat||{}),...heat};}
+        if(sources){vm.expert={...(vm.expert||{}),sources:sources.sources||vm.expert?.sources,observation:sources.observation||vm.expert?.observation,watchdog:sources.watchdog||vm.expert?.watchdog};}
+        if(validation){vm.expert={...(vm.expert||{}),validation:{...(vm.expert?.validation||{}),...validation}};}
+        applyLiveModel(vm);
+      });
+    })
+    .catch(()=>{updateLiveBadges(FALLBACK);});
+}
 
-const DEFAULT_SCENARIO=hydrateFromVM(FALLBACK);
-renderStatic();renderBulletin(FALLBACK);renderDynamicLinks(FALLBACK);applyScenario(DEFAULT_SCENARIO);
+applyLiveModel(FALLBACK);
+loadLiveModel();
 
 </script>
 </body>
