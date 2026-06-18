@@ -207,3 +207,19 @@ python tools/build_belgium_public_site.py --report-dir _out/belgium --site-dir _
 ```
 
 Sans clé, la carte affiche quand même les sites radar réels et RainViewer, et signale `interface_ready_awaiting_national_key`.
+
+### Registre maître des sources radar européennes
+
+`config/european_radar_master_sources.yaml` est la référence unique des fournisseurs radar (8 sources), exposée de façon **sanitisée** dans `api/radar_sources.json` et sur l’onglet Sources de la page Europe. Pour chaque source : authentification, quota documenté, formats, niveau de preuve, attribution et **priorité opérationnelle**.
+
+Ordre de priorité : **MeteoGate OPERA ORD** (pivot Europe) → **KNMI** (Pays-Bas) → **Météo-France** → **AEMET** (Espagne) → **MeteoSwiss** → **DWD** (Allemagne) → **RainViewer** (visuel) → **DMI** (Danemark).
+
+Contrat de sécurité : les clés (`AEMET_API_KEY`, `METEOFRANCE_API_KEY`, `KNMI_API_KEY`, `METEOGATE_API_KEY`) restent dans les **secrets GitHub Actions** ou un `.env` local. Le site public ne reçoit **jamais** une valeur de clé, seulement des booléens `configured`/`enabled` et des statuts. Voir `.env.example` pour le schéma complet (clés, interrupteurs `*_ENABLED`, garde-fous de quota/cache/attribution).
+
+### Champs convectifs natifs, validation et preuve machine
+
+MeteoVoid sépare et **étiquette honnêtement** trois niveaux de rigueur, par pays :
+
+- **Couche convective** : en mode live, le moteur lit les champs **natifs** Open‑Meteo (CAPE, CIN, Lifted Index, et cisaillement dérivé des vents par niveau de pression) ; hors‑ligne, il reste un **proxy** explicitement étiqueté (`convective_basis: proxy`). La couche n’est jamais présentée comme une carte modèle si elle est un proxy.
+- **Validation historique** : tant qu’aucun événement vérifié n’est fourni (`config/<pays>_verified_storm_events.csv`), le statut reste `needs_verified_events` et Brier/POD/FAR/CSI restent **non calculés** (`null`), jamais inventés.
+- **Preuve radar machine** : `0` métrique tant qu’aucun fichier radar lisible n’est fourni. En configurant une clé/OPERA ORD et un fichier via `METEOVOID_RADAR_FILE_<PAYS>` (ODIM HDF5 / GeoTIFF), MeteoVoid calcule des métriques et **promeut** la source en preuve machine. RainViewer reste une couche visuelle, jamais une preuve.

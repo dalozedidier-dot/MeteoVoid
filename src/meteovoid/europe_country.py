@@ -96,6 +96,10 @@ def _synthetic_hourly(station_id: str, run_day: str, hours: int = 48) -> dict[st
     precip: list[float] = []
     pressure: list[float] = []
     gust: list[float] = []
+    cape: list[float] = []
+    cin: list[float] = []
+    lifted: list[float] = []
+    shear: list[float] = []
     for h in range(hours):
         hour_of_day = h % 24
         diurnal = math.sin((hour_of_day - 9) / 24.0 * 2.0 * math.pi)
@@ -110,12 +114,24 @@ def _synthetic_hourly(station_id: str, run_day: str, hours: int = 48) -> dict[st
         precip.append(round(min(100.0, pr), 0))
         pressure.append(round(p, 1))
         gust.append(round(max(0.0, g), 1))
+        # Proxy convective fields, shaped like the real ones (clearly flagged
+        # "proxy" downstream so they are never confused with model output).
+        cape.append(
+            round(max(0.0, 2600.0 * convective_peak * near_storm + rng.uniform(-80, 120)), 0)
+        )
+        cin.append(round(-(40.0 * (1.0 - near_storm) * convective_peak + rng.uniform(0, 30)), 0))
+        lifted.append(round(3.0 - 9.0 * convective_peak * near_storm + rng.uniform(-0.5, 0.5), 1))
+        shear.append(round(6.0 + 16.0 * convective_peak * near_storm + rng.uniform(-1.0, 2.0), 1))
     return {
         "temperature_c": temp,
         "dew_point_c": dew,
         "precip_prob_pct": precip,
         "pressure_hpa": pressure,
         "wind_gust_ms": gust,
+        "cape_jkg": cape,
+        "cin_jkg": cin,
+        "lifted_index": lifted,
+        "bulk_shear_ms": shear,
     }
 
 
@@ -126,8 +142,56 @@ def _humidex_proxy(temp_c: float, dew_c: float) -> float:
     return max(0.0, min(1.0, (humidex - 21.0) / 24.0))
 
 
+def _convective_block(
+    series: dict[str, list[float]], idx: int, basis: str, precip_v: float, gust_v: float
+) -> dict[str, Any]:
+    """Native convective indices (CAPE/CIN/LI/shear) when present, else a proxy.
+
+    ``basis`` is "native_openmeteo" when real model fields were fetched, or
+    "proxy_demo" / "proxy_live" otherwise. The distinction is published so the
+    page never presents a proxy as a real convective model field.
+    """
+    have = all(k in series and series[k] for k in ("cape_jkg", "cin_jkg", "lifted_index"))
+    native = have and basis == "native_openmeteo"
+    if have:
+        cape_v = series["cape_jkg"][idx]
+        cin_v = series["cin_jkg"][idx]
+        li_v = series["lifted_index"][idx]
+        shear_v = series.get("bulk_shear_ms", [0.0] * (idx + 1))[idx]
+        cape_term = min(1.0, max(0.0, cape_v) / 2500.0)
+        li_term = min(1.0, max(0.0, -li_v) / 8.0)
+        shear_term = min(1.0, max(0.0, shear_v) / 25.0)
+        cin_penalty = min(1.0, abs(cin_v) / 120.0)
+        score = max(
+            0.0,
+            min(
+                1.0,
+                (0.5 * cape_term + 0.3 * li_term + 0.2 * shear_term) * (1.0 - 0.4 * cin_penalty),
+            ),
+        )
+        fields: dict[str, Any] = {
+            "cape_jkg": cape_v,
+            "cin_jkg": cin_v,
+            "lifted_index": li_v,
+            "bulk_shear_ms": shear_v,
+        }
+    else:
+        score = max(0.0, min(1.0, precip_v / 100.0 * 0.6 + gust_v / 28.0 * 0.4))
+        fields = {"cape_jkg": None, "cin_jkg": None, "lifted_index": None, "bulk_shear_ms": None}
+    return {
+        "basis": basis if have else "proxy_precip_gust",
+        "native_fields_available": native,
+        "score": round(score, 3),
+        **fields,
+    }
+
+
 def _detect_station(
-    station: dict[str, Any], *, run_day: str, series: dict[str, list[float]]
+    station: dict[str, Any],
+    *,
+    run_day: str,
+    series: dict[str, list[float]],
+    convective_basis: str = "proxy_demo",
 ) -> dict[str, Any]:
     """Score one station with the generic MeteoVoid engine plus weather proxies."""
     now = datetime.now(UTC)
@@ -150,10 +214,12 @@ def _detect_station(
     peak_idx = max(range(len(gusts)), key=lambda i: gusts[i] + precip[i] / 100.0)
     pressure_drop = round(max(0.0, max(pressure) - min(pressure)), 1)
     heat = _humidex_proxy(temp[peak_idx], dew[peak_idx])
-    convective = max(0.0, min(1.0, precip[peak_idx] / 100.0 * 0.6 + gusts[peak_idx] / 28.0 * 0.4))
+    conv = _convective_block(series, peak_idx, convective_basis, precip[peak_idx], gusts[peak_idx])
+    convective = float(conv["score"])
 
     # Same engine at the core (volatility/spike/drift of gusts), blended with the
-    # weather proxies into a public risk score, exactly the Belgium philosophy.
+    # convective layer (native CAPE/CIN/LI/shear when available) and the heat
+    # proxy into a public risk score, exactly the Belgium philosophy.
     score = max(0.0, min(1.0, 0.45 * composite.score + 0.35 * convective + 0.20 * heat))
     severity = _severity(score)
 
@@ -164,7 +230,13 @@ def _detect_station(
 
     signals: list[str] = []
     if convective > 0.5:
-        signals.append("potentiel convectif marqué (pluie + rafales)")
+        if conv["native_fields_available"]:
+            signals.append(
+                f"convectif natif : CAPE {conv['cape_jkg']} J/kg, LI {conv['lifted_index']}, "
+                f"cisaillement {conv['bulk_shear_ms']} m/s"
+            )
+        else:
+            signals.append("potentiel convectif (proxy pluie + rafales)")
     if pressure_drop >= 5.0:
         signals.append(f"chute de pression {pressure_drop} hPa sur la fenêtre")
     if heat > 0.55:
@@ -191,6 +263,7 @@ def _detect_station(
         },
         "hourly": hourly,
         "signals": signals[:4],
+        "convective": conv,
         "engine_signals": {k: round(v, 3) for k, v in composite.signals.items()},
     }
 
@@ -231,21 +304,31 @@ def build_country_detection(
     *,
     run_day: str | None = None,
     enable_live: bool = False,
+    master_sources: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build the full per-country follow-up model (detection + radar network)."""
     run_day = run_day or date.today().isoformat()
     stations_cfg = [s for s in _as_list(cfg.get("stations")) if isinstance(s, dict) and s.get("id")]
 
     data_mode = "offline_demo"
+    native_convective = False
     detections: list[dict[str, Any]] = []
     for station in stations_cfg:
         series = _synthetic_hourly(str(station["id"]), run_day)
+        basis = "proxy_demo"
         if enable_live:
             live = _try_live_series(station)
             if live is not None:
                 series = live
                 data_mode = "live_openmeteo"
-        detections.append(_detect_station(station, run_day=run_day, series=series))
+                if live.get("cape_jkg"):
+                    basis = "native_openmeteo"
+                    native_convective = True
+                else:
+                    basis = "proxy_live"
+        detections.append(
+            _detect_station(station, run_day=run_day, series=series, convective_basis=basis)
+        )
 
     detections.sort(key=lambda d: d.get("score") or 0.0, reverse=True)
     scores = [float(d.get("score") or 0.0) for d in detections]
@@ -277,10 +360,91 @@ def build_country_detection(
             "mean_score": mean_score,
             "severity_counts": counts,
             "radar_site_count": _radar_network(cfg)["site_count"],
+            "convective_basis": "native_openmeteo" if native_convective else "proxy",
+            "native_convective_fields": native_convective,
         },
         "stations": detections,
         "radar_network": _radar_network(cfg),
+        "machine_radar": _machine_radar_status(country_key, cfg),
+        "validation": _validation_status(country_key),
+        "convective": {
+            "basis": "native_openmeteo" if native_convective else "proxy",
+            "native_fields_available": native_convective,
+            "fields": ["CAPE", "CIN", "lifted_index", "bulk_shear"],
+            "note": (
+                "Champs convectifs natifs (CAPE/CIN/LI/cisaillement) lus via Open-Meteo "
+                "en mode live ; sinon proxy déterministe explicitement étiqueté."
+            ),
+        },
+        "data_sources": master_sources or [],
         "non_official": True,
+    }
+
+
+def _machine_radar_status(country_key: str, cfg: dict[str, Any]) -> dict[str, Any]:
+    """Honest machine-radar state: 0 metrics until a real radar file is read."""
+    key_env = cfg.get("radar_api_key_env")
+    radar_file = os.environ.get(f"METEOVOID_RADAR_FILE_{country_key.upper()}")
+    available = bool(radar_file) and Path(str(radar_file)).exists()
+    metrics: dict[str, Any] | None = None
+    if available and radar_file:
+        try:
+            from .belgium.opera_ord import analyse_radar_file
+
+            metrics = analyse_radar_file(Path(str(radar_file)))
+        except Exception:
+            metrics = None
+            available = False
+    blockers = []
+    if not radar_file:
+        blockers.append("aucun fichier radar national fourni pour ce run")
+    if key_env and not os.environ.get(str(key_env)):
+        blockers.append(f"clé {key_env} non configurée")
+    return {
+        "available": available,
+        "metrics": metrics,
+        "blockers": blockers,
+        "how_to_enable": [
+            "configurer la clé nationale ou activer OPERA ORD / MeteoGate",
+            f"fournir un fichier radar via METEOVOID_RADAR_FILE_{country_key.upper()} (ODIM HDF5 / GeoTIFF)",
+            "MeteoVoid calcule alors des métriques machine et promeut la source en preuve",
+        ],
+        "note": (
+            "Une carte affichée (RainViewer, page nationale) n'est pas une preuve machine. "
+            "La preuve exige un fichier radar lisible transformé en métriques."
+        ),
+    }
+
+
+def _validation_status(country_key: str) -> dict[str, Any]:
+    """Honest historical-validation state: metrics need verified storm events."""
+    events_path = Path(f"config/{country_key}_verified_storm_events.csv")
+    count = 0
+    if events_path.exists():
+        try:
+            lines = [
+                ln
+                for ln in events_path.read_text(encoding="utf-8").splitlines()
+                if ln.strip() and not ln.lstrip().startswith("#")
+            ]
+            count = max(0, len(lines) - 1)  # minus header
+        except Exception:
+            count = 0
+    status = "available" if count > 0 else "needs_verified_events"
+    return {
+        "status": status,
+        "verified_event_count": count,
+        "metrics": {
+            "brier_score": None,
+            "pod": None,
+            "far": None,
+            "csi": None,
+        },
+        "note": (
+            "Brier, POD, FAR et CSI ne sont calculables qu'avec des événements "
+            f"vérifiés. Fournir config/{country_key}_verified_storm_events.csv pour "
+            "mesurer vrais/faux positifs et délai de détection."
+        ),
     }
 
 
@@ -294,11 +458,14 @@ def _try_live_series(station: dict[str, Any]) -> dict[str, list[float]] | None:
         import json
         from urllib.request import Request, urlopen
 
+        # Open-Meteo exposes native convective fields (cape, convective_inhibition,
+        # lifted_index) and pressure-level winds used to derive bulk shear.
         url = (
             "https://api.open-meteo.com/v1/forecast"
             f"?latitude={float(lat)}&longitude={float(lon)}"
             "&hourly=temperature_2m,dew_point_2m,precipitation_probability,"
-            "surface_pressure,wind_gusts_10m&forecast_days=2&timezone=UTC"
+            "surface_pressure,wind_gusts_10m,cape,convective_inhibition,lifted_index,"
+            "wind_speed_1000hPa,wind_speed_500hPa&forecast_days=2&timezone=UTC"
         )
         req = Request(url, headers={"User-Agent": "MeteoVoid/CountryFollowup"})
         with urlopen(req, timeout=8) as resp:  # noqa: S310 - fixed https host
@@ -319,13 +486,25 @@ def _try_live_series(station: dict[str, Any]) -> dict[str, list[float]] | None:
         n = min(len(temp), len(dew), len(precip), len(pressure), len(gust))
         if n < 12:
             return None
-        return {
+        out: dict[str, list[float]] = {
             "temperature_c": temp[:n],
             "dew_point_c": dew[:n],
             "precip_prob_pct": precip[:n],
             "pressure_hpa": pressure[:n],
             "wind_gust_ms": gust[:n],
         }
+        cape = _floats("cape")
+        cin = _floats("convective_inhibition")
+        lifted = _floats("lifted_index")
+        w1000 = _floats("wind_speed_1000hPa")
+        w500 = _floats("wind_speed_500hPa")
+        if len(cape) >= n and len(lifted) >= n:
+            out["cape_jkg"] = cape[:n]
+            out["cin_jkg"] = cin[:n] if len(cin) >= n else [0.0] * n
+            out["lifted_index"] = lifted[:n]
+            if len(w1000) >= n and len(w500) >= n:
+                out["bulk_shear_ms"] = [abs(w500[i] - w1000[i]) for i in range(n)]
+        return out
     except Exception:
         return None
 
@@ -341,11 +520,28 @@ def build_all_countries(
     cfg = load_country_config(config_path)
     registry = cfg.get("countries", {})
     keys = countries or list(registry.keys())
+
+    # Attach the sanitised master radar source registry to each country so the
+    # per-country page can show the honest source detail (env, quota, priority).
+    country_source_map: dict[str, list[dict[str, Any]]] = {}
+    try:
+        from .radar_sources import build_source_registry, sources_for_country
+
+        source_registry = build_source_registry()
+        for key in keys:
+            country_source_map[key] = sources_for_country(source_registry, key)
+    except Exception:
+        country_source_map = {}
+
     out: dict[str, dict[str, Any]] = {}
     for key in keys:
         country_cfg = registry.get(key)
         if isinstance(country_cfg, dict):
             out[key] = build_country_detection(
-                key, country_cfg, run_day=run_day, enable_live=enable_live
+                key,
+                country_cfg,
+                run_day=run_day,
+                enable_live=enable_live,
+                master_sources=country_source_map.get(key, []),
             )
     return out

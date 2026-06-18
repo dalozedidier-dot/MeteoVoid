@@ -34,6 +34,7 @@ if _SRC.exists() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from meteovoid.europe_country import build_all_countries  # noqa: E402
+from meteovoid.radar_sources import build_source_registry  # noqa: E402
 
 # Artifacts copied verbatim into reports/latest/ so the expert view (iframes) and
 # the export links keep working. Kept intentionally broad.
@@ -1033,6 +1034,102 @@ def _build_heat(report: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _build_bulletin(vm: dict[str, Any]) -> dict[str, Any]:
+    """Assemble a public, prose weather bulletin from the Belgium view-model.
+
+    Pure synthesis of fields already computed for the page: operational level,
+    sensitive window, leading zone, heat layer and key signals. It stays in the
+    prudent MeteoVoid wording and never invents an official alert.
+    """
+    meta = vm.get("meta", {}) if isinstance(vm.get("meta"), dict) else {}
+    simple = vm.get("simple", {}) if isinstance(vm.get("simple"), dict) else {}
+    heat = vm.get("heat", {}) if isinstance(vm.get("heat"), dict) else {}
+    expert = vm.get("expert", {}) if isinstance(vm.get("expert"), dict) else {}
+
+    level = (
+        simple.get("operational_level", {})
+        if isinstance(simple.get("operational_level"), dict)
+        else {}
+    )
+    window = (
+        simple.get("critical_window", {}) if isinstance(simple.get("critical_window"), dict) else {}
+    )
+    zone = simple.get("main_zone", {}) if isinstance(simple.get("main_zone"), dict) else {}
+    layers = simple.get("score_layers", {}) if isinstance(simple.get("score_layers"), dict) else {}
+    window_phrase = _window_phrase(window)
+
+    level_label = str(level.get("label") or "Veille")
+    level_key = str(level.get("key") or "calm")
+    headline = f"Veille MeteoVoid : niveau {level_label.lower()}"
+    if level_key in {"calm", "normal", "stable"}:
+        headline = "Veille MeteoVoid : situation calme, pas de bascule imminente"
+
+    sections: list[dict[str, Any]] = []
+    sections.append(
+        {
+            "title": "Situation générale",
+            "body": str(simple.get("synthesis") or simple.get("public_wording") or "")
+            or "Pas de dynamique de bascule notable sur la fenêtre surveillée.",
+        }
+    )
+    zone_name = str(zone.get("name") or "—")
+    sections.append(
+        {
+            "title": "Fenêtre sensible et zone principale",
+            "body": (
+                f"Fenêtre la plus sensible {window_phrase}. "
+                f"Zone à suivre en priorité : {zone_name}. "
+                f"Score interne {layers.get('convective_risk_score') if layers else '—'} "
+                "(risque convectif), distinct de la lourdeur thermique."
+            ),
+        }
+    )
+
+    heat_level = heat.get("level", {}) if isinstance(heat.get("level"), dict) else {}
+    heat_advice = [str(a) for a in (heat.get("advice") or [])][:3]
+    sections.append(
+        {
+            "title": "Chaleur et humidité",
+            "body": (
+                f"Charge thermique : {heat_level.get('label') or 'non notable'}. "
+                f"Température max {heat.get('max_temperature_c')} °C, "
+                f"humidex {heat.get('max_humidex')} vers {heat.get('peak_hour') or '—'}."
+            ),
+            "advice": heat_advice,
+        }
+    )
+
+    provinces = expert.get("provinces") if isinstance(expert.get("provinces"), list) else []
+    zone_items = [
+        f"{p.get('province')} · {(_meta(p.get('severity')) or {}).get('label')} ({p.get('max_score')})"
+        for p in provinces[:6]
+        if isinstance(p, dict)
+    ]
+    if zone_items:
+        sections.append({"title": "Zones à surveiller", "items": zone_items})
+
+    signals = [str(s) for s in (simple.get("headline_signals") or [])][:4]
+    if signals:
+        sections.append({"title": "Signaux clés", "items": signals})
+
+    return {
+        "contract": "meteovoid_belgium_bulletin_v1",
+        "title": "Bulletin de veille MeteoVoid Belgique",
+        "headline": headline,
+        "level": level,
+        "issued_at": meta.get("generated_at"),
+        "timezone": meta.get("timezone"),
+        "validity": window_phrase,
+        "summary": str(simple.get("synthesis") or ""),
+        "public_wording": simple.get("public_wording") or meta.get("public_wording"),
+        "sections": sections,
+        "confidence": simple.get("confidence"),
+        "advice": heat_advice,
+        "non_official": True,
+        "disclaimer": meta.get("disclaimer"),
+    }
+
+
 def build_view_model(report_dir: Path) -> dict[str, Any]:
     report = _load_json(report_dir / "belgium_alert_report.json")
     alert_state = _load_json(report_dir / "alert_state.json")
@@ -1204,6 +1301,15 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
         "operational": operational_view,
         "heat": _build_heat(report),
         "expert": expert,
+        "bulletin": _build_bulletin(
+            {
+                "meta": meta,
+                "simple": simple,
+                "operational": operational_view,
+                "heat": _build_heat(report),
+                "expert": expert,
+            }
+        ),
     }
 
 
@@ -1512,7 +1618,8 @@ function renderMap(){const layers=MODEL.radar_layers||[];const legend=[['ok','pr
 function countryCard(c){return `<article class="card country"><div class="head"><div><div class="eyebrow">${esc(c.iso2||c.country)}</div><h3>${esc(c.label)}</h3></div><span class="badge">${state(c.machine_radar_available)}</span></div><p class="muted">${esc(c.upstream_role||'')}</p><p><b>Corridor :</b> ${esc(c.corridor||'—')}</p><div class="score">${num(c.readiness_score)}</div><div class="muted">indice de préparation Europe</div>${bar(c.readiness_score)}<div class="dl"><span>Priorité Belgique</span><strong>${esc(c.priority_for_belgium||'—')}</strong></div><div class="dl"><span>Sources</span><strong>${esc(c.configured_source_count||0)} prêtes / ${esc(c.source_count||0)} référencées</strong></div><div class="dl"><span>Fichiers lisibles</span><strong>${esc(c.readable_file_count||0)} / ${esc(c.file_count||0)}</strong></div><div class="dl"><span>Corridors liés</span><strong>${esc(c.linked_corridor_count||0)}</strong></div><div class="section-title">Blocages</div><ul>${(c.blockers||[]).map(b=>`<li>${esc(b)}</li>`).join('')}</ul><div class="links" style="margin-top:12px"><a href="${esc(c.country)}.html"><b>Page ${esc(c.label)} →</b></a></div></article>`}
 function renderCountries(){const links=(MODEL.country_pages||[]).map(p=>`<a href="${esc(p.href)}">${esc(p.label)} · ${esc(p.station_count||0)} stations · ${esc(p.radar_site_count||0)} radars</a>`).join('');return `<div class="notice"><b>Suivi dédié par pays.</b> Chaque pays dispose maintenant d’une page au même niveau que la Belgique : détection MeteoVoid par station, réseau radar national réel et radar RainViewer en direct.</div>${links?`<div class="links" style="margin-bottom:8px">${links}</div>`:''}<div class="section-title">Lecture par pays</div><div class="grid country-grid">${(MODEL.countries||[]).map(countryCard).join('')}</div>`}
 function renderCorridors(){const rows=(MODEL.corridors||[]);return `<div class="card"><div class="eyebrow">Propagation vers la Belgique</div><h2>Corridors amont</h2><p class="muted">Ces corridors relient les zones sources européennes à des zones belges cibles. Ils ne sont pas une trajectoire radar certaine, mais une lecture de propagation possible.</p></div><div class="card" style="overflow:auto;margin-top:14px"><table><thead><tr><th>Corridor</th><th>Score</th><th>Source</th><th>Cibles</th><th>Fenêtre</th><th>Lecture</th></tr></thead><tbody>${rows.map(c=>`<tr><td><b>${esc(c.name||c.id)}</b><p class="muted small">${esc(c.id||'')}</p></td><td>${num(c.score)}</td><td>${esc(c.source_region||'—')}</td><td>${esc((c.target_zones||[]).join(', '))}</td><td>${esc((c.estimated_arrival_hours||[]).join(' à '))} h</td><td>${esc(c.interpretation||'')}</td></tr>`).join('')}</tbody></table></div>`}
-function renderSources(){const rows=MODEL.sources||[];return `<div class="grid cards3"><div class="card"><h3>Sources prêtes</h3><div class="score ok">${esc((MODEL.summary||{}).source_ready_count||0)}</div></div><div class="card"><h3>Sources bloquées</h3><div class="score watch">${esc((MODEL.summary||{}).source_blocked_count||0)}</div></div><div class="card"><h3>Clés manquantes</h3><div class="score watch">${esc((MODEL.summary||{}).missing_api_key_count||0)}</div></div></div><div class="section-title">Registre des sources</div><div class="card" style="overflow:auto"><table><thead><tr><th>Pays</th><th>Fournisseur</th><th>Statut</th><th>Niveau</th><th>Format</th><th>Clé</th></tr></thead><tbody>${rows.map(s=>`<tr><td><b>${esc(s.country)}</b></td><td>${esc(s.provider)}<p class="muted small">${esc(s.role||'')}</p></td><td>${esc(s.status||'')}</td><td>${esc(s.evidence_level||'')}</td><td>${esc(s.expected_format||'—')}</td><td>${s.api_key_env?esc(s.api_key_env)+(s.api_key_configured?' configurée':' manquante'):'—'}</td></tr>`).join('')}</tbody></table></div>`}
+function masterRow(s){const env=s.auth_env?esc(s.auth_env)+(s.requires_key?(s.configured?' ✓':' ✗'):(s.enabled?' ✓':' ✗')):'—';const col=s.machine_evidence_ready?'ok':((s.configured||s.enabled)?'watch':'muted');return `<tr><td><b>#${esc(s.rank)}</b></td><td><b>${esc(s.provider)}</b><p class="muted small">${esc(s.role||'')}</p></td><td>${esc(s.scope)}${s.country?(' · '+esc(s.country)):''}</td><td>${esc(s.auth)}<p class="muted small">${env}</p></td><td class="small">${esc(s.rate_limit||'—')}</td><td class="small">${esc((s.formats||[]).join(', '))}</td><td><span class="${col}">${esc(s.status)}</span></td></tr>`;}
+function renderSources(){const ms=MODEL.master_sources||{},msum=ms.summary||{};const mrows=(ms.sources||[]).map(masterRow).join('');const rows=MODEL.sources||[];return `<div class="notice"><b>Registre maître des sources radar européennes.</b> ${esc(ms.security_note||'')}</div><div class="grid cards4"><div class="card kpi"><span>Sources</span><b>${esc(msum.source_count||0)}</b></div><div class="card kpi"><span>Activées</span><b>${esc(msum.enabled_count||0)}</b></div><div class="card kpi"><span>Clés configurées</span><b>${esc(msum.configured_key_count||0)}</b></div><div class="card kpi"><span>Prêtes preuve machine</span><b>${esc(msum.machine_ready_count||0)}</b></div></div><div class="section-title">Sources par priorité opérationnelle</div><div class="card" style="overflow:auto"><table><thead><tr><th>Rang</th><th>Fournisseur</th><th>Portée</th><th>Auth / variable</th><th>Quota</th><th>Formats</th><th>Statut</th></tr></thead><tbody>${mrows||'<tr><td colspan="7" class="muted">Registre indisponible.</td></tr>'}</tbody></table></div>${(ms.excluded_as_machine_evidence&&ms.excluded_as_machine_evidence.length)?`<div class="section-title">Exclu de la preuve machine</div><ul>${ms.excluded_as_machine_evidence.map(x=>`<li class="muted">${esc(x)}</li>`).join('')}</ul>`:''}<div class="section-title">Interfaces nationales par pays (run courant)</div><div class="card" style="overflow:auto"><table><thead><tr><th>Pays</th><th>Fournisseur</th><th>Statut</th><th>Niveau</th><th>Format</th><th>Clé</th></tr></thead><tbody>${rows.map(s=>`<tr><td><b>${esc(s.country)}</b></td><td>${esc(s.provider)}<p class="muted small">${esc(s.role||'')}</p></td><td>${esc(s.status||'')}</td><td>${esc(s.evidence_level||'')}</td><td>${esc(s.expected_format||'—')}</td><td>${s.api_key_env?esc(s.api_key_env)+(s.api_key_configured?' configurée':' manquante'):'—'}</td></tr>`).join('')}</tbody></table></div>`}
 function renderExpert(){return `<div class="grid cards2"><div class="card"><div class="eyebrow">Exports</div><h2>Données Europe</h2><div class="links">${(MODEL.exports||[]).map(x=>`<a href="${esc(x.href)}">${esc(x.label)}</a>`).join('')}</div></div><div class="card"><div class="eyebrow">Contrat</div><h2>${esc(MODEL.page_contract||'')}</h2><p class="muted">Run ${esc(MODEL.run_id||'')} · ${esc(MODEL.generated_at||'')}</p></div></div><div class="section-title">Modèle brut</div><pre>${esc(JSON.stringify(MODEL,null,2))}</pre>`}
 /* ---------------- interactive Europe map ---------------- */
 const EU_BE=[50.64,4.67];
@@ -1627,9 +1734,13 @@ function renderKpis(){const s=M.summary||{},lv=M.operational_level||{},rn=M.rada
   document.getElementById('hero-lead').textContent='Détection MeteoVoid par station, réseau radar national '+(rn.operator||'')+' et radar RainViewer en direct. Même système que la page Belgique. Prototype non officiel.';
   const sc=s.severity_counts||{},alertCount=(sc.elevated||0)+(sc.danger||0);
   document.getElementById('kpis').innerHTML=[['Niveau',lv.label||'—'],['Stations',s.station_count||0],['Sites radar',s.radar_site_count||0],['Score max',pct(s.max_score)],['En alerte',alertCount],['Mode',M.data_mode||'']].map(x=>`<div class="card kpi"><span>${esc(x[0])}</span><b>${esc(x[1])}</b></div>`).join('');}
-function stationCard(s){const k=(s.severity||{}).key,d=s.drivers||{};return `<article class="card"><div class="head"><div><div class="eyebrow">${esc(s.name)}</div><div class="score" style="color:${sevColor(k)}">${pct(s.score)}</div></div><span class="badge" style="border-color:${sevColor(k)}"><span class="dot" style="background:${sevColor(k)}"></span>${esc((s.severity||{}).label)}</span></div>${spark(s.hourly)}<div class="dl"><span>Heure sensible</span><strong>${esc(s.worst_time)}</strong></div><div class="dl"><span>Temp / rosée</span><strong>${num(d.temperature_c,1)} / ${num(d.dew_point_c,1)} °C</strong></div><div class="dl"><span>Proba pluie</span><strong>${num(d.precip_prob_pct,0)} %</strong></div><div class="dl"><span>Chute pression</span><strong>${num(d.pressure_drop_hpa,1)} hPa</strong></div><div class="dl"><span>Rafales</span><strong>${num(d.wind_gust_ms,1)} m/s</strong></div><ul class="small">${(s.signals||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></article>`;}
-function renderDetection(){const s=M.summary||{},sc=s.severity_counts||{};return `<div class="notice"><b>Détection MeteoVoid · ${esc(M.label)}.</b> Le même moteur que la Belgique score chaque station (volatilité, à-coups et dérive des rafales via le moteur générique, plus proxys convectif et thermique). ${esc(s.station_count||0)} stations suivies, ${esc((sc.elevated||0)+(sc.danger||0))} en signal élevé/critique.</div><div class="grid cards3">${(M.stations||[]).map(stationCard).join('')}</div>`;}
-function renderReseau(){const r=M.radar_network||{};const rows=(r.sites||[]).map(s=>`<tr><td><b>${esc(s.name)}</b></td><td>${esc(s.band||'')}-band</td><td>${num(s.lat,2)}</td><td>${num(s.lon,2)}</td></tr>`).join('');return `<div class="grid cards3"><div class="card"><div class="eyebrow">Opérateur</div><div class="phrase" style="font-weight:600">${esc(r.operator||'')}</div><p class="muted small">${esc(r.network||'')}</p></div><div class="card"><div class="eyebrow">Sites radar réels</div><div class="score">${esc(r.site_count||0)}</div></div><div class="card"><div class="eyebrow">Statut clé nationale</div><div class="phrase" style="font-weight:600">${esc(r.status||'')}</div><p class="muted small">${r.api_key_env?esc(r.api_key_env)+(r.api_key_configured?' configurée':' manquante'):'open data, pas de clé'}</p></div></div><div class="notice" style="margin-top:14px">${esc(r.note||'')}</div><div class="section-title">Sites du réseau (${esc(r.site_count||0)})</div><div class="card" style="overflow:auto"><table><thead><tr><th>Site radar</th><th>Bande</th><th>Lat</th><th>Lon</th></tr></thead><tbody>${rows||'<tr><td colspan="4" class="muted">Aucun site radar configuré.</td></tr>'}</tbody></table></div>`;}
+function convRows(c){if(!c)return '';const tag=c.native_fields_available?'natif':'proxy';return `<div class="dl"><span>CAPE / LI</span><strong>${num(c.cape_jkg,0)} J/kg / ${num(c.lifted_index,1)}</strong></div><div class="dl"><span>CIN / cisaillement</span><strong>${num(c.cin_jkg,0)} / ${num(c.bulk_shear_ms,1)} m/s</strong></div><div class="dl"><span>Base convective</span><strong>${esc(tag)}</strong></div>`;}
+function stationCard(s){const k=(s.severity||{}).key,d=s.drivers||{};return `<article class="card"><div class="head"><div><div class="eyebrow">${esc(s.name)}</div><div class="score" style="color:${sevColor(k)}">${pct(s.score)}</div></div><span class="badge" style="border-color:${sevColor(k)}"><span class="dot" style="background:${sevColor(k)}"></span>${esc((s.severity||{}).label)}</span></div>${spark(s.hourly)}<div class="dl"><span>Heure sensible</span><strong>${esc(s.worst_time)}</strong></div><div class="dl"><span>Temp / rosée</span><strong>${num(d.temperature_c,1)} / ${num(d.dew_point_c,1)} °C</strong></div><div class="dl"><span>Proba pluie</span><strong>${num(d.precip_prob_pct,0)} %</strong></div><div class="dl"><span>Chute pression</span><strong>${num(d.pressure_drop_hpa,1)} hPa</strong></div><div class="dl"><span>Rafales</span><strong>${num(d.wind_gust_ms,1)} m/s</strong></div>${convRows(s.convective)}<ul class="small">${(s.signals||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></article>`;}
+function renderDetection(){const s=M.summary||{},sc=s.severity_counts||{},cv=M.convective||{};const native=cv.native_fields_available;const col=native?'#1d9a63':'#d28a19';const cvBadge=`<span class="badge" style="border-color:${col}"><span class="dot" style="background:${col}"></span>${native?'convectif natif (CAPE/CIN/LI/cisaillement)':'convectif proxy (étiqueté)'}</span>`;return `<div class="notice"><b>Détection MeteoVoid · ${esc(M.label)}.</b> Le même moteur que la Belgique score chaque station (volatilité, à-coups et dérive des rafales via le moteur générique). ${esc(s.station_count||0)} stations suivies, ${esc((sc.elevated||0)+(sc.danger||0))} en signal élevé/critique. ${cvBadge}</div>${!native?`<div class="notice" style="border-color:${col}"><b>Base convective : proxy.</b> ${esc(cv.note||'')} En mode live (Open-Meteo), MeteoVoid lit les champs natifs CAPE, CIN, Lifted Index et cisaillement ; sinon la couche convective reste un proxy explicite.</div>`:''}<div class="grid cards3">${(M.stations||[]).map(stationCard).join('')}</div>`;}
+function srcColor(s){return s.machine_evidence_ready?'#1d9a63':((s.configured||s.enabled)?'#d28a19':'#65738a');}
+function sourceCard(s){const col=srcColor(s),env=s.auth_env?esc(s.auth_env)+(s.requires_key?(s.configured?' ✓ configurée':' ✗ manquante'):(s.enabled?' ✓ activé':' ✗ désactivé')):'—';return `<article class="card"><div class="head"><div><div class="eyebrow">#${esc(s.rank)} · ${esc(s.scope)}</div><h3 style="font-size:17px;margin:2px 0">${esc(s.provider)}</h3></div><span class="badge" style="border-color:${col}"><span class="dot" style="background:${col}"></span>${esc(s.status)}</span></div><p class="muted small">${esc(s.role||'')}</p><div class="dl"><span>Auth</span><strong>${esc(s.auth)}</strong></div><div class="dl"><span>Variable</span><strong class="small">${env}</strong></div><div class="dl"><span>Quota</span><strong class="small">${esc(s.rate_limit||'—')}</strong></div><div class="dl"><span>Formats</span><strong class="small">${esc((s.formats||[]).join(', '))}</strong></div><div class="dl"><span>Preuve</span><strong>${esc(s.evidence_level||'')}</strong></div><p class="muted small">${esc(s.status_text||'')}</p>${s.public_reference?`<div class="links"><a href="${esc(s.public_reference)}" target="_blank" rel="noopener">documentation</a></div>`:''}</article>`;}
+function machineRadarBlock(){const mr=M.machine_radar||{},v=M.validation||{};const mcol=mr.available?'#1d9a63':'#d28a19';const vcol=(v.status==='available')?'#1d9a63':'#d28a19';return `<div class="grid cards2" style="margin-top:6px"><div class="card"><div class="head"><div class="eyebrow">Preuve radar machine</div><span class="badge" style="border-color:${mcol}"><span class="dot" style="background:${mcol}"></span>${mr.available?'métriques calculées':'aucune métrique machine'}</span></div><p class="muted small">${esc(mr.note||'')}</p>${(mr.blockers&&mr.blockers.length)?'<div class="eyebrow" style="margin-top:8px">Blocages</div><ul class="small">'+mr.blockers.map(b=>`<li>${esc(b)}</li>`).join('')+'</ul>':''}<div class="eyebrow" style="margin-top:8px">Pour activer la preuve machine</div><ul class="small">${(mr.how_to_enable||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div><div class="card"><div class="head"><div class="eyebrow">Validation historique</div><span class="badge" style="border-color:${vcol}"><span class="dot" style="background:${vcol}"></span>${esc(v.status||'needs_verified_events')}</span></div><p class="muted small">${esc(v.note||'')}</p><div class="dl"><span>Événements vérifiés</span><strong>${esc(v.verified_event_count||0)}</strong></div><div class="dl"><span>Brier / POD</span><strong>${num((v.metrics||{}).brier_score)} / ${num((v.metrics||{}).pod)}</strong></div><div class="dl"><span>FAR / CSI</span><strong>${num((v.metrics||{}).far)} / ${num((v.metrics||{}).csi)}</strong></div></div></div>`;}
+function renderReseau(){const r=M.radar_network||{};const rows=(r.sites||[]).map(s=>`<tr><td><b>${esc(s.name)}</b></td><td>${esc(s.band||'')}-band</td><td>${num(s.lat,2)}</td><td>${num(s.lon,2)}</td></tr>`).join('');const srcs=(M.data_sources||[]);return `<div class="grid cards3"><div class="card"><div class="eyebrow">Opérateur</div><div class="phrase" style="font-weight:600">${esc(r.operator||'')}</div><p class="muted small">${esc(r.network||'')}</p></div><div class="card"><div class="eyebrow">Sites radar réels</div><div class="score">${esc(r.site_count||0)}</div></div><div class="card"><div class="eyebrow">Statut clé nationale</div><div class="phrase" style="font-weight:600">${esc(r.status||'')}</div><p class="muted small">${r.api_key_env?esc(r.api_key_env)+(r.api_key_configured?' configurée':' manquante'):'open data, pas de clé'}</p></div></div><div class="notice" style="margin-top:14px">${esc(r.note||'')}</div>${machineRadarBlock()}${srcs.length?`<div class="section-title">Sources de données radar (priorité &amp; accès)</div><p class="muted small" style="margin-bottom:10px">Authentification, quotas et formats par fournisseur. Les clés restent côté secrets : cette page n'affiche que des statuts, jamais une valeur de clé.</p><div class="grid cards3">${srcs.map(sourceCard).join('')}</div>`:''}<div class="section-title">Sites du réseau (${esc(r.site_count||0)})</div><div class="card" style="overflow:auto"><table><thead><tr><th>Site radar</th><th>Bande</th><th>Lat</th><th>Lon</th></tr></thead><tbody>${rows||'<tr><td colspan="4" class="muted">Aucun site radar configuré.</td></tr>'}</tbody></table></div>`;}
 function renderExpert(){return `<div class="grid cards2"><div class="card"><div class="eyebrow">Exports</div><h2>Données ${esc(M.label)}</h2><div class="links"><a href="api/country_${esc(M.country)}.json">API pays JSON</a><a href="europe.html">Page Europe</a><a href="index.html">Belgique</a></div></div><div class="card"><div class="eyebrow">Contrat</div><h2>${esc(M.contract||'')}</h2><p class="muted">Run ${esc(M.run_day||'')} · ${esc(M.generated_at||'')} · mode ${esc(M.data_mode||'')}</p></div></div><div class="section-title">Modèle brut</div><pre>${esc(JSON.stringify(M,null,2))}</pre>`;}
 function renderCarte(){const rn=M.radar_network||{};const leg=[['calm','faible'],['watch','modéré'],['elevated','élevé'],['danger','critique']];return `<div class="notice"><b>Carte radar ${esc(M.label)}.</b> ${esc(rn.site_count||0)} sites radar ${esc(rn.operator||'')} réels, radar RainViewer animé en direct, et stations de détection MeteoVoid colorées par niveau — comme la carte Belgique. Une carte affichée ne vaut pas preuve machine.</div>
   <div class="map-bar">
@@ -1640,7 +1751,7 @@ function renderCarte(){const rn=M.radar_network||{};const leg=[['calm','faible']
     <div class="map-legend">${leg.map(x=>`<span><i style="background:${sevColor(x[0])}"></i>${x[1]}</span>`).join('')}<span><i style="background:#fff;border:2px solid var(--accent)"></i>radar</span></div>
   </div>
   <div class="map-wrap"><div id="cmap" class="mvmap"></div><aside id="c-detail" class="map-detail"><p class="muted">Clique une station pour son détail de détection, ou un point radar pour le site. Active RainViewer pour suivre la pluie en direct.</p></aside></div>`;}
-function stationDetail(s){const k=(s.severity||{}).key,d=s.drivers||{};return `<div class="md-head" style="--ac:${sevColor(k)}"><div><div class="eyebrow">${esc(M.label)} · ${esc(s.worst_time)}</div><h3>${esc(s.name)}</h3></div><span class="badge"><span class="dot" style="background:${sevColor(k)}"></span>${esc((s.severity||{}).label)}</span></div><div class="md-score"><div><div class="eyebrow">Score MeteoVoid</div><div class="score" style="color:${sevColor(k)}">${pct(s.score)}</div></div>${spark(s.hourly)}</div><div class="dl"><span>Temp / rosée</span><strong>${num(d.temperature_c,1)} / ${num(d.dew_point_c,1)} °C</strong></div><div class="dl"><span>Proba pluie</span><strong>${num(d.precip_prob_pct,0)} %</strong></div><div class="dl"><span>Chute pression</span><strong>${num(d.pressure_drop_hpa,1)} hPa</strong></div><div class="dl"><span>Rafales</span><strong>${num(d.wind_gust_ms,1)} m/s</strong></div>${(s.signals&&s.signals.length)?'<div class="section-title">Signaux</div><ul class="small">'+s.signals.map(x=>`<li>${esc(x)}</li>`).join('')+'</ul>':''}`;}
+function stationDetail(s){const k=(s.severity||{}).key,d=s.drivers||{};return `<div class="md-head" style="--ac:${sevColor(k)}"><div><div class="eyebrow">${esc(M.label)} · ${esc(s.worst_time)}</div><h3>${esc(s.name)}</h3></div><span class="badge"><span class="dot" style="background:${sevColor(k)}"></span>${esc((s.severity||{}).label)}</span></div><div class="md-score"><div><div class="eyebrow">Score MeteoVoid</div><div class="score" style="color:${sevColor(k)}">${pct(s.score)}</div></div>${spark(s.hourly)}</div><div class="dl"><span>Temp / rosée</span><strong>${num(d.temperature_c,1)} / ${num(d.dew_point_c,1)} °C</strong></div><div class="dl"><span>Proba pluie</span><strong>${num(d.precip_prob_pct,0)} %</strong></div><div class="dl"><span>Chute pression</span><strong>${num(d.pressure_drop_hpa,1)} hPa</strong></div><div class="dl"><span>Rafales</span><strong>${num(d.wind_gust_ms,1)} m/s</strong></div>${convRows(s.convective)}${(s.signals&&s.signals.length)?'<div class="section-title">Signaux</div><ul class="small">'+s.signals.map(x=>`<li>${esc(x)}</li>`).join('')+'</ul>':''}`;}
 let CMAP={inst:null,booted:false,radar:null,host:'',frames:[],pastCount:0,idx:0,timer:null,playing:true,markers:{},radarSites:[]};
 function cSelect(id){const s=(M.stations||[]).find(x=>x.station_id===id);if(!s)return;const det=document.getElementById('c-detail');if(det)det.innerHTML=stationDetail(s);if(CMAP.inst&&s.lat!=null&&s.lon!=null)CMAP.inst.flyTo([s.lat,s.lon],8,{duration:.6});const m=CMAP.markers[id];if(m&&m.openTooltip)m.openTooltip();}
 function cRadarStop(){if(CMAP.timer){clearInterval(CMAP.timer);CMAP.timer=null;}}
@@ -1751,8 +1862,14 @@ def build_index(report_dir: Path, site_dir: Path) -> dict[str, Any]:
     )
     (site_dir / "index.html").write_text(page, encoding="utf-8")
     country_links = _write_country_pages(site_dir)
+    try:
+        source_registry = build_source_registry()
+    except Exception:
+        source_registry = {}
+    _write_json(site_dir / "api" / "radar_sources.json", source_registry)
     europe_model = build_europe_model(site_dir / "reports" / "latest", vm)
     europe_model["country_pages"] = country_links
+    europe_model["master_sources"] = source_registry
     _write_europe_page(site_dir, europe_model)
     _write_methodology_page(site_dir)
     (site_dir / "README.md").write_text(
@@ -2019,6 +2136,7 @@ footer code{background:var(--panel-2);border-radius:6px;padding:2px 6px;}
   </div>
   <nav class="tabs" id="tabs">
     <button class="tab active" data-view="simple">Vue simple</button>
+    <button class="tab" data-view="bulletin">Bulletin</button>
     <button class="tab" data-view="operational">Vue opérationnelle</button>
     <button class="tab" data-view="heat">Chaleur</button>
     <button class="tab" data-view="map">Carte</button>
@@ -2030,6 +2148,7 @@ footer code{background:var(--panel-2);border-radius:6px;padding:2px 6px;}
 <main>
   <div class="disclaimer" id="disclaimer"></div>
   <section class="view active" id="view-simple"></section>
+  <section class="view" id="view-bulletin"></section>
   <section class="view" id="view-operational"></section>
   <section class="view" id="view-heat"></section>
   <section class="view" id="view-map"></section>
@@ -2546,10 +2665,15 @@ function initTheme(){let t='light';try{t=localStorage.getItem('mv-theme')|| (mat
 
 /* ---------------- boot ---------------- */
 let VM = FALLBACK;
+/* ---------------- bulletin view ---------------- */
+function renderBulletin(vm){const b=(vm&&vm.bulletin)||{};const lv=b.level||{};const c=cls(lv);
+  const sec=(s)=>{const items=(s.items||[]).map(x=>`<li>${esc(x)}</li>`).join('');const adv=(s.advice||[]).map(x=>`<li>${esc(x)}</li>`).join('');return `<div class="card"><div class="kicker">${esc(s.title)}</div>${s.body?`<p class="phrase">${esc(s.body)}</p>`:''}${items?`<ul>${items}</ul>`:''}${adv?`<div class="kicker" style="margin-top:10px">Conseils</div><ul>${adv}</ul>`:''}</div>`;};
+  return `<section class="hero ac-${c}"><div class="hero-top"><div><div class="hero-led ac-${c}"><span class="led"></span><span class="led-k">Bulletin de veille · non officiel</span></div><h1 class="hero-level ac-${c}">${esc(b.headline||'')}</h1><p class="hero-syn">${esc(b.summary||b.public_wording||'')}</p><div class="chips"><span class="chip">${esc(b.issued_at||'')}</span><span class="chip">${esc(b.timezone||'')}</span><span class="chip">Validité ${esc(b.validity||'')}</span><span class="chip">Niveau ${esc(lv.label||'')}</span></div></div></div></section><div class="section-title">Détail du bulletin</div>${(b.sections||[]).map(sec).join('')}<div class="card"><div class="kicker">Statut</div><p class="muted">${esc(b.disclaimer||'')} Bulletin non officiel généré automatiquement à partir du modèle interne MeteoVoid ; il ne remplace pas l’IRM/KMI ni MeteoAlarm.</p></div>`;}
 function paint(){
   document.getElementById('disclaimer').innerHTML = icon('info')+'<div><b>Prototype non officiel.</b> '+esc((VM.meta&&VM.meta.disclaimer)||'')+'</div>';
   document.getElementById('stamp').textContent = (VM.meta&&VM.meta.generated_at)||'—';
   document.getElementById('view-simple').innerHTML = renderSimple(VM);
+  document.getElementById('view-bulletin').innerHTML = renderBulletin(VM);
   document.getElementById('view-operational').innerHTML = renderOperational(VM);
   document.getElementById('view-heat').innerHTML = renderHeat(VM);
   document.getElementById('view-map').innerHTML = renderMap(VM);
