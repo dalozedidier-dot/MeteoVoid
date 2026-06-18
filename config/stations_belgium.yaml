@@ -91,6 +91,135 @@ stations:
     source: openmeteo
     variables: *vars
 
+
+  - id: BE_BRUGES
+    name: Bruges
+    region: belgium_coast
+    lat: 51.2093
+    lon: 3.2247
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_OOSTENDE
+    name: Ostende
+    region: belgium_coast
+    lat: 51.2154
+    lon: 2.9287
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_COURTRAI
+    name: Courtrai
+    region: belgium_west
+    lat: 50.8276
+    lon: 3.2659
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_TOURNAI
+    name: Tournai
+    region: belgium_west
+    lat: 50.6056
+    lon: 3.3893
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_AALST
+    name: Alost
+    region: belgium_northwest
+    lat: 50.9360
+    lon: 4.0397
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_SINT_NIKLAAS
+    name: Saint-Nicolas
+    region: belgium_northwest
+    lat: 51.1647
+    lon: 4.1396
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_MECHELEN
+    name: Malines
+    region: belgium_north
+    lat: 51.0259
+    lon: 4.4775
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_LEUVEN
+    name: Louvain
+    region: belgium_center
+    lat: 50.8798
+    lon: 4.7005
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_TURNHOUT
+    name: Turnhout
+    region: belgium_north
+    lat: 51.3225
+    lon: 4.9447
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_GENK
+    name: Genk
+    region: belgium_northeast
+    lat: 50.9650
+    lon: 5.5008
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_LA_LOUVIERE
+    name: La Louvière
+    region: belgium_southwest
+    lat: 50.4866
+    lon: 4.1879
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_DINANT
+    name: Dinant
+    region: belgium_south
+    lat: 50.2607
+    lon: 4.9120
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_MARCHE
+    name: Marche-en-Famenne
+    region: belgium_southeast
+    lat: 50.2268
+    lon: 5.3442
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_BASTOGNE
+    name: Bastogne
+    region: belgium_southeast
+    lat: 50.0035
+    lon: 5.7184
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_EUPEN
+    name: Eupen
+    region: belgium_east
+    lat: 50.6292
+    lon: 6.0348
+    source: openmeteo
+    variables: *vars
+
+  - id: BE_MALMEDY
+    name: Malmedy
+    region: belgium_east
+    lat: 50.4269
+    lon: 6.0279
+    source: openmeteo
+    variables: *vars
+
   - id: FR_LILLE
     name: Lille / approche sud-ouest
     region: approach_france

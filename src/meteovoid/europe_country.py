@@ -364,6 +364,7 @@ def build_country_detection(
             "native_convective_fields": native_convective,
         },
         "stations": detections,
+        "weather": _country_weather(detections),
         "radar_network": _radar_network(cfg),
         "machine_radar": _machine_radar_status(country_key, cfg),
         "validation": _validation_status(country_key),
@@ -380,6 +381,55 @@ def build_country_detection(
         "non_official": True,
     }
 
+
+
+def _humidex_value(temp_c: float, dew_c: float) -> float:
+    """Humidex-style apparent temperature in °C."""
+    try:
+        e = 6.11 * math.exp(5417.7530 * (1.0 / 273.16 - 1.0 / (273.16 + max(dew_c, -40.0))))
+        return round(max(temp_c, temp_c + 0.5555 * (e - 10.0)), 1)
+    except (OverflowError, ValueError):
+        return round(temp_c, 1)
+
+
+def _country_weather(stations: list[dict[str, Any]]) -> dict[str, Any]:
+    """Public weather bulletin for each country page.
+
+    It uses the same station detections as the map so every country page has the
+    same readable result: radar map + station temperatures + humidity signal.
+    """
+    rows: list[dict[str, Any]] = []
+    for s in stations:
+        drivers = _as_dict(s.get("drivers"))
+        t = drivers.get("temperature_c")
+        dew = drivers.get("dew_point_c")
+        if not isinstance(t, int | float) or not isinstance(dew, int | float):
+            continue
+        rows.append(
+            {
+                "station_id": s.get("station_id"),
+                "name": s.get("name"),
+                "lat": s.get("lat"),
+                "lon": s.get("lon"),
+                "temperature_c": round(float(t), 1),
+                "dew_point_c": round(float(dew), 1),
+                "humidex": _humidex_value(float(t), float(dew)),
+                "precip_prob_pct": drivers.get("precip_prob_pct"),
+                "wind_gust_ms": drivers.get("wind_gust_ms"),
+                "score": s.get("score"),
+                "severity": s.get("severity"),
+            }
+        )
+    rows.sort(key=lambda r: float(r.get("temperature_c") or -99.0), reverse=True)
+    top = rows[0] if rows else {}
+    return {
+        "station_count": len(rows),
+        "max_temperature_c": top.get("temperature_c"),
+        "max_humidex": top.get("humidex"),
+        "top_station": top.get("name"),
+        "stations": rows,
+        "note": "Températures issues du même maillage Open‑Meteo / MeteoVoid que la détection pays.",
+    }
 
 def _machine_radar_status(country_key: str, cfg: dict[str, Any]) -> dict[str, Any]:
     """Honest machine-radar state: 0 metrics until a real radar file is read."""

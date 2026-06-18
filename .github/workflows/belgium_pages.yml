@@ -56,6 +56,7 @@ jobs:
       METEOVOID_HISTORY_DIR: .meteovoid_history/belgium_alert
       METEOVOID_RADAR_JSON_URL: ${{ secrets.METEOVOID_RADAR_JSON_URL }}
       METEOVOID_LIGHTNING_JSON_URL: ${{ secrets.METEOVOID_LIGHTNING_JSON_URL }}
+      METEOVOID_COUNTRY_LIVE: "1"
 
     steps:
       - name: Checkout

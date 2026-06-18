@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -1073,6 +1074,7 @@ def _build_heat(report: dict[str, Any]) -> dict[str, Any]:
         "peak_hour": peak_hour,
         "timeline": timeline,
         "hottest": hottest[:8],
+        "regional_weather": _weather_region_summary(report),
         "advice": _heat_advice(rank),
         "notable": rank >= 3,
         "note": (
@@ -1082,6 +1084,81 @@ def _build_heat(report: dict[str, Any]) -> dict[str, Any]:
         ),
     }
 
+
+
+_REGION_LABELS = {
+    "belgium_coast": "Côte belge",
+    "belgium_north": "Nord / Anvers",
+    "belgium_northeast": "Nord-Est / Limbourg",
+    "belgium_northwest": "Nord-Ouest / Flandre orientale",
+    "belgium_center": "Centre / Bruxelles - Brabant",
+    "belgium_west": "Ouest / Hainaut occidental",
+    "belgium_southwest": "Sud-Ouest / Hainaut",
+    "belgium_south": "Sud / Namur",
+    "belgium_east": "Est / Liège",
+    "belgium_southeast": "Sud-Est / Luxembourg",
+}
+
+
+def _is_belgian_region(region: Any) -> bool:
+    return str(region or "").startswith("belgium_")
+
+
+def _region_label(region: Any) -> str:
+    key = str(region or "").strip()
+    if key in _REGION_LABELS:
+        return _REGION_LABELS[key]
+    if key.startswith("belgium_"):
+        return key.replace("belgium_", "").replace("_", " ").title()
+    return key.replace("_", " ").title() or "Région non précisée"
+
+
+def _weather_region_summary(report: dict[str, Any]) -> list[dict[str, Any]]:
+    """Summarise current/forecast weather by Belgian region from station maxima.
+
+    The public bulletin needs a real weather reading, not only a risk score.  This
+    is still derived from the same Open-Meteo station grid used by the alert
+    engine, and upstream approach points are deliberately excluded.
+    """
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for station in _stations(report):
+        region = str(station.get("region") or "").strip()
+        if not _is_belgian_region(region):
+            continue
+        grouped.setdefault(region, []).append(station)
+
+    rows: list[dict[str, Any]] = []
+    for region, stations in grouped.items():
+        top_temp = max(stations, key=lambda s: _num(s.get("max_temperature_c"), -99.0) or -99.0)
+        top_risk = max(stations, key=lambda s: _num(s.get("score"), -1.0) or -1.0)
+        temp = _num(top_temp.get("max_temperature_c"))
+        dew = _num(top_temp.get("max_dew_point_c"))
+        humidex = _humidex(temp, dew)
+        rows.append(
+            {
+                "region": region,
+                "label": _region_label(region),
+                "station_count": len(stations),
+                "representative_station": top_temp.get("name") or top_temp.get("station_id"),
+                "top_risk_station": top_risk.get("name") or top_risk.get("station_id"),
+                "temperature_c": _round(temp, 1),
+                "dew_point_c": _round(dew, 1),
+                "humidex": humidex,
+                "humidity_pct": _round(top_temp.get("max_relative_humidity_pct"), 0),
+                "precip_prob_pct": _round(
+                    max(_num(s.get("max_precip_probability_pct"), 0.0) or 0.0 for s in stations),
+                    0,
+                ),
+                "wind_gust_ms": _round(
+                    max(_num(s.get("max_wind_gust_ms"), 0.0) or 0.0 for s in stations),
+                    1,
+                ),
+                "score": _round(top_risk.get("score"), 3),
+                "severity": _meta(top_risk.get("severity")),
+            }
+        )
+    rows.sort(key=lambda r: _num(r.get("temperature_c"), -99.0) or -99.0, reverse=True)
+    return rows
 
 def _build_bulletin(vm: dict[str, Any]) -> dict[str, Any]:
     """Assemble a public, prose weather bulletin from the Belgium view-model.
@@ -1147,6 +1224,34 @@ def _build_bulletin(vm: dict[str, Any]) -> dict[str, Any]:
             "advice": heat_advice,
         }
     )
+
+    regional_weather = (
+        heat.get("regional_weather") if isinstance(heat.get("regional_weather"), list) else []
+    )
+    regional_items = []
+    for row in regional_weather[:12]:
+        if not isinstance(row, dict):
+            continue
+        temp = _score_label(row.get("temperature_c")).replace(".", ",")
+        humidex = _score_label(row.get("humidex")).replace(".", ",")
+        dew = _score_label(row.get("dew_point_c")).replace(".", ",")
+        precip = _score_label(row.get("precip_prob_pct")).replace(".", ",")
+        station = str(row.get("representative_station") or "—")
+        regional_items.append(
+            f"{row.get('label') or 'Région'} · {temp} °C, "
+            f"humidex {humidex}, rosée {dew} °C, pluie {precip} % · station : {station}"
+        )
+    if regional_items:
+        sections.append(
+            {
+                "title": "Températures par région belge",
+                "items": regional_items,
+                "note": (
+                    "Ces valeurs proviennent du maillage de stations MeteoVoid/Open‑Meteo "
+                    "utilisé pour le run courant. Les points d’approche hors Belgique sont exclus."
+                ),
+            }
+        )
 
     provinces = expert.get("provinces") if isinstance(expert.get("provinces"), list) else []
     real_zones = [
@@ -1834,7 +1939,7 @@ def _build_europe_model_legacy(report_dir: Path, vm: dict[str, Any]) -> dict[str
         },
         "simple": {
             "headline": "Surveillance Europe amont",
-            "scope": "Espagne, France, Suisse, Pays-Bas + OPERA ORD + RainViewer",
+            "scope": "Espagne, France, Suisse, Pays-Bas, Allemagne, Danemark + OPERA ORD + RainViewer",
             "status_label": (
                 "Donnée machine disponible"
                 if machine_count
@@ -2049,6 +2154,20 @@ def build_api(vm: dict[str, Any], site_dir: Path) -> None:
         {"generated_at": generated_at, **vm["heat"]},
     )
     _write_json(
+        api_dir / "weather_belgium.json",
+        {
+            "generated_at": generated_at,
+            "timezone": meta.get("timezone"),
+            "data_mode": meta.get("data_mode"),
+            "regions": vm["heat"].get("regional_weather", []),
+            "stations": vm["expert"].get("stations", []),
+            "note": (
+                "Bulletin météo régional issu du dernier run MeteoVoid. "
+                "Ce n'est pas un bulletin officiel IRM/KMI."
+            ),
+        },
+    )
+    _write_json(
         api_dir / "europe.json",
         build_europe_model(site_dir / "reports" / "latest", vm),
     )
@@ -2062,6 +2181,7 @@ def build_api(vm: dict[str, Any], site_dir: Path) -> None:
             "extra_endpoints": {
                 "radar": "api/radar.json",
                 "heat": "api/heat.json",
+                "weather_belgium": "api/weather_belgium.json",
                 "europe": "api/europe.json",
             },
             "disclaimer": meta.get("disclaimer"),
@@ -2182,7 +2302,8 @@ function renderKpis(){const s=M.summary||{},lv=M.operational_level||{},rn=M.rada
   document.getElementById('kpis').innerHTML=[['Niveau',lv.label||'—'],['Stations',s.station_count||0],['Sites radar',s.radar_site_count||0],['Score max',pct(s.max_score)],['En alerte',alertCount],['Mode',M.data_mode||'']].map(x=>`<div class="card kpi"><span>${esc(x[0])}</span><b>${esc(x[1])}</b></div>`).join('');}
 function convRows(c){if(!c)return '';const tag=c.native_fields_available?'natif':'proxy';return `<div class="dl"><span>CAPE / LI</span><strong>${num(c.cape_jkg,0)} J/kg / ${num(c.lifted_index,1)}</strong></div><div class="dl"><span>CIN / cisaillement</span><strong>${num(c.cin_jkg,0)} / ${num(c.bulk_shear_ms,1)} m/s</strong></div><div class="dl"><span>Base convective</span><strong>${esc(tag)}</strong></div>`;}
 function stationCard(s){const k=(s.severity||{}).key,d=s.drivers||{};return `<article class="card"><div class="head"><div><div class="eyebrow">${esc(s.name)}</div><div class="score" style="color:${sevColor(k)}">${pct(s.score)}</div></div><span class="badge" style="border-color:${sevColor(k)}"><span class="dot" style="background:${sevColor(k)}"></span>${esc((s.severity||{}).label)}</span></div>${spark(s.hourly)}<div class="dl"><span>Heure sensible</span><strong>${esc(s.worst_time)}</strong></div><div class="dl"><span>Temp / rosée</span><strong>${num(d.temperature_c,1)} / ${num(d.dew_point_c,1)} °C</strong></div><div class="dl"><span>Proba pluie</span><strong>${num(d.precip_prob_pct,0)} %</strong></div><div class="dl"><span>Chute pression</span><strong>${num(d.pressure_drop_hpa,1)} hPa</strong></div><div class="dl"><span>Rafales</span><strong>${num(d.wind_gust_ms,1)} m/s</strong></div>${convRows(s.convective)}<ul class="small">${(s.signals||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></article>`;}
-function renderDetection(){const s=M.summary||{},sc=s.severity_counts||{},cv=M.convective||{};const native=cv.native_fields_available;const col=native?'#1d9a63':'#d28a19';const cvBadge=`<span class="badge" style="border-color:${col}"><span class="dot" style="background:${col}"></span>${native?'convectif natif (CAPE/CIN/LI/cisaillement)':'convectif proxy (étiqueté)'}</span>`;return `<div class="notice"><b>Détection MeteoVoid · ${esc(M.label)}.</b> Le même moteur que la Belgique score chaque station (volatilité, à-coups et dérive des rafales via le moteur générique). ${esc(s.station_count||0)} stations suivies, ${esc((sc.elevated||0)+(sc.danger||0))} en signal élevé/critique. ${cvBadge}</div>${!native?`<div class="notice" style="border-color:${col}"><b>Base convective : proxy.</b> ${esc(cv.note||'')} En mode live (Open-Meteo), MeteoVoid lit les champs natifs CAPE, CIN, Lifted Index et cisaillement ; sinon la couche convective reste un proxy explicite.</div>`:''}<div class="grid cards3">${(M.stations||[]).map(stationCard).join('')}</div>`;}
+function renderWeatherBulletin(){const w=M.weather||{},rows=w.stations||[];return `<div class="card"><div class="eyebrow">Bulletin météo pays · dernier run</div><h2>${esc(M.label)} · températures par station</h2><p class="muted">${esc(w.note||'Même maillage que la détection MeteoVoid.')} Maximum : ${num(w.max_temperature_c,1)} °C, humidex ${num(w.max_humidex,1)} · station ${esc(w.top_station||'—')}.</p><div style="overflow:auto"><table><thead><tr><th>Station</th><th style="text-align:right">Temp.</th><th style="text-align:right">Humidex</th><th style="text-align:right">Rosée</th><th style="text-align:right">Pluie</th><th style="text-align:right">Rafales</th></tr></thead><tbody>${rows.slice(0,14).map(r=>`<tr><td><b>${esc(r.name)}</b><p class="muted small">${esc((r.severity||{}).label||'')}</p></td><td style="text-align:right">${num(r.temperature_c,1)} °C</td><td style="text-align:right">${num(r.humidex,1)}</td><td style="text-align:right">${num(r.dew_point_c,1)} °C</td><td style="text-align:right">${num(r.precip_prob_pct,0)} %</td><td style="text-align:right">${num(r.wind_gust_ms,1)} m/s</td></tr>`).join('')}</tbody></table></div></div>`;}
+function renderDetection(){const s=M.summary||{},sc=s.severity_counts||{},cv=M.convective||{};const native=cv.native_fields_available;const col=native?'#1d9a63':'#d28a19';const cvBadge=`<span class="badge" style="border-color:${col}"><span class="dot" style="background:${col}"></span>${native?'convectif natif (CAPE/CIN/LI/cisaillement)':'convectif proxy (étiqueté)'}</span>`;return `<div class="notice"><b>Détection MeteoVoid · ${esc(M.label)}.</b> Le même moteur que la Belgique score chaque station (volatilité, à-coups et dérive des rafales via le moteur générique). ${esc(s.station_count||0)} stations suivies, ${esc((sc.elevated||0)+(sc.danger||0))} en signal élevé/critique. ${cvBadge}</div>${renderWeatherBulletin()}${!native?`<div class="notice" style="border-color:${col}"><b>Base convective : proxy.</b> ${esc(cv.note||'')} En mode live (Open-Meteo), MeteoVoid lit les champs natifs CAPE, CIN, Lifted Index et cisaillement ; sinon la couche convective reste un proxy explicite.</div>`:''}<div class="grid cards3">${(M.stations||[]).map(stationCard).join('')}</div>`;}
 function srcColor(s){return s.machine_evidence_ready?'#1d9a63':((s.configured||s.enabled)?'#d28a19':'#65738a');}
 function sourceCard(s){const col=srcColor(s),env=s.auth_env?esc(s.auth_env)+(s.requires_key?(s.configured?' ✓ configurée':' ✗ manquante'):(s.enabled?' ✓ activé':' ✗ désactivé')):'—';return `<article class="card"><div class="head"><div><div class="eyebrow">#${esc(s.rank)} · ${esc(s.scope)}</div><h3 style="font-size:17px;margin:2px 0">${esc(s.provider)}</h3></div><span class="badge" style="border-color:${col}"><span class="dot" style="background:${col}"></span>${esc(s.status)}</span></div><p class="muted small">${esc(s.role||'')}</p><div class="dl"><span>Auth</span><strong>${esc(s.auth)}</strong></div><div class="dl"><span>Variable</span><strong class="small">${env}</strong></div><div class="dl"><span>Quota</span><strong class="small">${esc(s.rate_limit||'—')}</strong></div><div class="dl"><span>Formats</span><strong class="small">${esc((s.formats||[]).join(', '))}</strong></div><div class="dl"><span>Preuve</span><strong>${esc(s.evidence_level||'')}</strong></div><p class="muted small">${esc(s.status_text||'')}</p>${s.public_reference?`<div class="links"><a href="${esc(s.public_reference)}" target="_blank" rel="noopener">documentation</a></div>`:''}</article>`;}
 function machineRadarBlock(){const mr=M.machine_radar||{},v=M.validation||{};const mcol=mr.available?'#1d9a63':'#d28a19';const vcol=(v.status==='available')?'#1d9a63':'#d28a19';return `<div class="grid cards2" style="margin-top:6px"><div class="card"><div class="head"><div class="eyebrow">Preuve radar machine</div><span class="badge" style="border-color:${mcol}"><span class="dot" style="background:${mcol}"></span>${mr.available?'métriques calculées':'aucune métrique machine'}</span></div><p class="muted small">${esc(mr.note||'')}</p>${(mr.blockers&&mr.blockers.length)?'<div class="eyebrow" style="margin-top:8px">Blocages</div><ul class="small">'+mr.blockers.map(b=>`<li>${esc(b)}</li>`).join('')+'</ul>':''}<div class="eyebrow" style="margin-top:8px">Pour activer la preuve machine</div><ul class="small">${(mr.how_to_enable||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div><div class="card"><div class="head"><div class="eyebrow">Validation historique</div><span class="badge" style="border-color:${vcol}"><span class="dot" style="background:${vcol}"></span>${esc(v.status||'needs_verified_events')}</span></div><p class="muted small">${esc(v.note||'')}</p><div class="dl"><span>Événements vérifiés</span><strong>${esc(v.verified_event_count||0)}</strong></div><div class="dl"><span>Brier / POD</span><strong>${num((v.metrics||{}).brier_score)} / ${num((v.metrics||{}).pod)}</strong></div><div class="dl"><span>FAR / CSI</span><strong>${num((v.metrics||{}).far)} / ${num((v.metrics||{}).csi)}</strong></div></div></div>`;}
@@ -2238,7 +2359,7 @@ def _write_country_pages(site_dir: Path) -> list[dict[str, str]]:
     api_dir = site_dir / "api"
     api_dir.mkdir(parents=True, exist_ok=True)
     try:
-        countries = build_all_countries()
+        countries = build_all_countries(enable_live=os.environ.get("METEOVOID_COUNTRY_LIVE", "0") == "1")
     except Exception:
         countries = {}
 
@@ -2352,7 +2473,7 @@ INDEX_TEMPLATE = r"""<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MeteoVoid Belgique · Veille de bascule convective</title>
-<!-- MeteoVoid refonte public UI · compatibility tokens: renderMap initMap locsel leaflet data-view="map" reports/latest/belgium_alert_dashboard.html Radars Europe Radars nationaux Europe Espagne, France, Suisse, Pays-Bas european_national_radar_map.html european_national_radar_report.md -->
+<!-- MeteoVoid refonte public UI · compatibility tokens: renderMap initMap locsel leaflet data-view="map" reports/latest/belgium_alert_dashboard.html Radars Europe Radars nationaux Europe Espagne, France, Suisse, Pays-Bas, Allemagne, Danemark european_national_radar_map.html european_national_radar_report.md -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -2726,6 +2847,12 @@ button:focus-visible,.tab:focus-visible,a:focus-visible{outline:2px solid var(--
         <table style="margin-top:10px"><thead><tr><th>Lieu</th><th>Niveau</th><th style="text-align:right">Temp.</th><th style="text-align:right">Hx</th><th style="text-align:right">Pt rosée</th></tr></thead><tbody id="lieux"></tbody></table>
       </div>
       <div class="card">
+        <div class="eyebrow"><span class="d" style="background:var(--t4);box-shadow:0 0 8px var(--t4)"></span>Températures par région</div>
+        <table style="margin-top:10px"><thead><tr><th>Région</th><th>Station</th><th style="text-align:right">Temp.</th><th style="text-align:right">Hx</th><th style="text-align:right">Pluie</th></tr></thead><tbody id="regionsWeather"></tbody></table>
+      </div>
+    </div>
+    <div class="row split c2" style="margin-top:16px">
+      <div class="card">
         <div class="eyebrow"><span class="d" style="background:var(--t5);box-shadow:0 0 8px var(--t5)"></span>Conseils de prudence</div>
         <ul class="advice" id="conseils" style="margin-top:10px"></ul>
         <div class="note" id="heatNote"></div>
@@ -2885,7 +3012,8 @@ const BASE={
   heat:{niveau:4,courbe:{h:[6,8,10,12,14,15,16,18,20],t:[24,28,31,34,35.5,36,35.5,33,31],hx:[31,36,40,43,44.5,45,44,40,37],pic:15},
     lieux:[["Kleine-Brogel","Est","extreme",36.4,43,18.8],["Uccle","Centre","extreme",35.8,43,19.5],["Liège","Est","extreme",35.1,42,19.2],["Virton","Sud","forte+",34.6,41,18.0],["Gand","Nord","forte+",33.9,42,20.1],["Ostende","Littoral","forte",29.7,38,21.0]],
     conseils:["s'hydrater régulièrement, sans attendre la sensation de soif","rester au frais et éviter toute exposition prolongée au soleil","ne jamais laisser un enfant ou un animal dans un véhicule","contacter et accompagner les personnes vulnérables de l'entourage","consulter sans tarder en cas de malaise, crampes ou désorientation"],
-    note:"La chaleur (lourdeur thermique) est mesurée séparément du risque convectif. Une atmosphère chaude et humide n'implique pas un orage imminent ; les deux couches sont suivies indépendamment."},
+    note:"La chaleur (lourdeur thermique) est mesurée séparément du risque convectif. Une atmosphère chaude et humide n'implique pas un orage imminent ; les deux couches sont suivies indépendamment.",
+    regions:[]},
   stations:[["Kleine-Brogel","belgium_east",0.75],["Uccle","belgium_center",0.73],["Liège","belgium_east",0.70],["Virton","belgium_south",0.68],["Gand","belgium_north",0.67],["Ostende","belgium_coast",0.58]],
   provinces:[["Limbourg",0.64,"Kleine-Brogel"]]
 };
@@ -3191,6 +3319,7 @@ function renderStatic(){
   $("#comfort").innerHTML=COMFORT.map((c,i)=>`<div class="comfort-row ${i===BASE.heat.niveau-1?'cur':''}"><span class="sw" style="background:${c.c}"></span><span>${c.name}</span><span class="band">${c.band}</span></div>`).join("");
   // lieux
   $("#lieux").innerHTML=BASE.heat.lieux.map(([n,sub,niv,t,hx,r])=>{const [pc,pl]=NIV[niv];return `<tr><td><div class="place">${n}</div><div class="sub">${sub}</div></td><td><span class="pill ${pc}"><span class="pd"></span>${pl}</span></td><td class="n">${t.toFixed(1)} °C</td><td class="n">${hx}</td><td class="n">${r.toFixed(1)} °C</td></tr>`;}).join("");
+  const rw=document.getElementById("regionsWeather"); if(rw){rw.innerHTML=(BASE.heat.regions||[]).map(r=>`<tr><td><div class="place">${escTxt(r.label)}</div><div class="sub">${escTxt(r.severity)}</div></td><td>${escTxt(r.station)}</td><td class="n">${Number(r.temperature||0).toFixed(1)} °C</td><td class="n">${Number(r.humidex||0).toFixed(1)}</td><td class="n">${Number(r.precip||0).toFixed(0)} %</td></tr>`).join("");}
   $("#conseils").innerHTML=BASE.heat.conseils.map(x=>`<li>${x}</li>`).join("");
   $("#heatNote").textContent=BASE.heat.note;
   // stations & provinces
@@ -3267,6 +3396,7 @@ function hydrateFromVM(vm){
   if(op.alert_explanation&&op.alert_explanation.title)document.getElementById('whyHead').textContent=op.alert_explanation.title;
   if(heat){BASE.heat.niveau=Math.max(1,Math.min(6,(heat.level&&heat.level.rank)||4));const ht=(heat.timeline||[]).filter(x=>x.t!=null||x.hx!=null);if(ht.length>=2){BASE.heat.courbe={h:ht.map(x=>hourNum(x.h)||0),t:ht.map(x=>firstNum(x.t,0)),hx:ht.map(x=>firstNum(x.hx,x.t,0)),pic:hourNum(heat.peak_hour)||hourNum(ht[0].h)||0};}
     BASE.heat.lieux=(heat.hottest||[]).map(x=>[x.name||"—",x.region||"",(x.level&&x.level.class)==="danger"?"extreme":(x.level&&x.level.class)==="high"?"forte+":"forte",firstNum(x.temperature_c,0),Math.round(firstNum(x.humidex,0)),firstNum(x.dew_point_c,0)]);
+    BASE.heat.regions=(heat.regional_weather||[]).map(x=>({label:x.label||x.region||"—",station:x.representative_station||"—",temperature:firstNum(x.temperature_c,0),humidex:firstNum(x.humidex,0),precip:firstNum(x.precip_prob_pct,0),severity:(x.severity&&x.severity.label)||"—"}));
     BASE.heat.conseils=heat.advice||BASE.heat.conseils; BASE.heat.note=heat.note||BASE.heat.note;
   }
   BASE.stations=(expert.stations||[]).slice(0,12).map(x=>[x.name||"—",x.region||"",firstNum(x.score,0),((x.severity||{}).label)||"—",sevPill((x.severity||{}).class),fmtHourFromIso(x.worst_time),((x.signals||[]).join(" · "))]);
@@ -3889,7 +4019,7 @@ EUROPE_MAX_TEMPLATE = r"""<!doctype html>
 </style>
 </head>
 <body>
-<header class="cmd"><div class="cmd-wrap"><div class="brand"><div class="mark">EU</div><div><h1>MeteoVoid Europe</h1><p>Page Europe complète · Espagne · France · Suisse · Pays-Bas · même design que Belgique</p></div></div><div class="cmd-right"><div class="status-chip"><span class="live-dot"></span><div><div class="st-k">run</div><div class="st-v" id="stamp"></div></div></div><button class="tgl" id="theme">◐</button></div></div><nav class="tabs"><button class="tab active" data-view="simple">Vue simple</button><button class="tab" data-view="operational">Opérationnel</button><button class="tab" data-view="radar">Carte Europe</button><button class="tab" data-view="countries">Pays</button><button class="tab" data-view="corridors">Corridors</button><button class="tab" data-view="sources">Sources</button><button class="tab" data-view="expert">Expert</button><a class="tab" href="index.html">Belgique</a><a class="tab" href="methodology.html">Méthodologie</a></nav></header>
+<header class="cmd"><div class="cmd-wrap"><div class="brand"><div class="mark">EU</div><div><h1>MeteoVoid Europe</h1><p>Page Europe complète · pays disponibles · radar live · Espagne · France · Suisse · Pays-Bas · Allemagne · Danemark · même design que Belgique</p></div></div><div class="cmd-right"><div class="status-chip"><span class="live-dot"></span><div><div class="st-k">run</div><div class="st-v" id="stamp"></div></div></div><button class="tgl" id="theme">◐</button></div></div><nav class="tabs"><button class="tab active" data-view="simple">Vue simple</button><button class="tab" data-view="operational">Opérationnel</button><button class="tab" data-view="radar">Carte Europe</button><button class="tab" data-view="countries">Pays</button><button class="tab" data-view="corridors">Corridors</button><button class="tab" data-view="sources">Sources</button><button class="tab" data-view="expert">Expert</button><a class="tab" href="index.html">Belgique</a><a class="tab" href="methodology.html">Méthodologie</a></nav></header>
 <main><div class="disclaimer"><b>Prototype non officiel.</b> Page Europe amont. Les cartes et interfaces ne remplacent pas les services météorologiques nationaux.</div><section class="view active" id="view-simple"></section><section class="view" id="view-operational"></section><section class="view" id="view-radar"></section><section class="view" id="view-countries"></section><section class="view" id="view-corridors"></section><section class="view" id="view-sources"></section><section class="view" id="view-expert"></section></main><footer id="foot"></footer>
 <script id="europe-bootstrap" type="application/json">__EUROPE_BOOTSTRAP__</script>
 <script>
