@@ -1,4 +1,0 @@
-# file: /mnt/data/meteovoid_repo_fixed/src/meteovoid/simulate.py
-# hypothesis_version: 6.151.5
-
-[0.001, 1.0, 200, 'DEMO', 'station_id', 'ts', 'value', 'variable', 'wind']

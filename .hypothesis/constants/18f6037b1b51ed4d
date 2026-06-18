@@ -1,4 +1,0 @@
-# file: /mnt/data/meteovoid_repo_fixed/src/meteovoid/live.py
-# hypothesis_version: 6.151.5
-
-[0.0, 0.15, 0.3, 1.0, 180, 'score', 'stable', 'state', 'transition', 'ts', 'unstable', 'window_s must be > 0']

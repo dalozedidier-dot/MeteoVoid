@@ -214,11 +214,10 @@ _KEY_TO_LABEL = {
 def _meta(key: Any) -> dict[str, Any]:
     """Return normalized severity metadata.
 
-    Some parts of the public view-model already carry a full severity object,
-    e.g. ``{"key": "alert", "label": "Critique", "class": "danger"}``.
-    Re-wrapping that object with ``str(dict)`` used to leak Python dictionary
-    reprs into the public bulletin ("Zones à surveiller").  Accept both raw
-    severity keys and already-normalized dicts so rendering stays clean.
+    Public view-model fragments can carry either a raw severity key
+    (``"alert"``, ``"high"``, ``"watch_reinforced"``) or an already
+    normalized severity object. Accept both forms so the bulletin never leaks
+    a Python dictionary representation into user-facing text.
     """
     if isinstance(key, dict):
         lowered = {str(k).lower(): v for k, v in key.items()}
@@ -246,6 +245,22 @@ def _meta(key: Any) -> dict[str, Any]:
         "class": cls,
         "rank": _CLASS_RANK.get(cls, 0),
     }
+
+
+def _is_upstream_zone_name(name: Any) -> bool:
+    return str(name or "").strip().lower().startswith("approche ")
+
+
+def _score_label(value: Any) -> str:
+    out = _round(value, 3)
+    return "—" if out is None else f"{out:.3f}"
+
+
+def _bulletin_zone_item(row: dict[str, Any], name_key: str = "province") -> str:
+    name = str(row.get(name_key) or row.get("name") or row.get("id") or "—")
+    label = _meta(row.get("severity") or row.get("level")).get("label")
+    score = _score_label(row.get("max_score") if "max_score" in row else row.get("score"))
+    return f"{name} · {label} ({score})"
 
 
 # --- small helpers ---------------------------------------------------------------
@@ -376,13 +391,16 @@ def _main_zone(report: dict[str, Any]) -> dict[str, Any]:
     provinces = report.get("province_summary")
     provinces = provinces if isinstance(provinces, list) else []
     usable = [p for p in provinces if isinstance(p, dict)]
-    if usable:
-        top = max(usable, key=lambda p: _num(p.get("max_score"), 0.0) or 0.0)
+    real_provinces = [p for p in usable if not _is_upstream_zone_name(p.get("province"))]
+    candidate_pool = real_provinces or usable
+    if candidate_pool:
+        top = max(candidate_pool, key=lambda p: _num(p.get("max_score"), 0.0) or 0.0)
         return {
             "name": str(top.get("province") or "—"),
             "score": _round(top.get("max_score")),
             "severity": _meta(top.get("severity")),
             "top_station": str(top.get("top_station") or ""),
+            "scope": "belgium" if top in real_provinces else "upstream",
         }
     stations = _stations(report)
     if stations:
@@ -1131,13 +1149,33 @@ def _build_bulletin(vm: dict[str, Any]) -> dict[str, Any]:
     )
 
     provinces = expert.get("provinces") if isinstance(expert.get("provinces"), list) else []
-    zone_items = [
-        f"{p.get('province')} · {(_meta(p.get('severity')) or {}).get('label')} ({p.get('max_score')})"
-        for p in provinces[:6]
-        if isinstance(p, dict)
+    real_zones = [
+        p
+        for p in provinces
+        if isinstance(p, dict) and not _is_upstream_zone_name(p.get("province"))
     ]
+    upstream_zones = [
+        p
+        for p in provinces
+        if isinstance(p, dict) and _is_upstream_zone_name(p.get("province"))
+    ]
+
+    zone_items = [_bulletin_zone_item(p) for p in real_zones[:6]]
     if zone_items:
-        sections.append({"title": "Zones à surveiller", "items": zone_items})
+        sections.append({"title": "Zones belges à surveiller", "items": zone_items})
+
+    upstream_items = [_bulletin_zone_item(p) for p in upstream_zones[:4]]
+    if upstream_items:
+        sections.append(
+            {
+                "title": "Couloirs amont à surveiller",
+                "items": upstream_items,
+                "note": (
+                    "Ces zones d’approche ne sont pas des provinces belges : "
+                    "elles servent à lire ce qui arrive depuis les pays voisins."
+                ),
+            }
+        )
 
     signals = [str(s) for s in (simple.get("headline_signals") or [])][:4]
     if signals:
@@ -3074,7 +3112,7 @@ function initTheme(){let t='light';try{t=localStorage.getItem('mv-theme')|| (mat
 let VM = FALLBACK;
 /* ---------------- bulletin view ---------------- */
 function renderBulletin(vm){const b=(vm&&vm.bulletin)||{};const lv=b.level||{};const c=cls(lv);
-  const sec=(s)=>{const items=(s.items||[]).map(x=>`<li>${esc(x)}</li>`).join('');const adv=(s.advice||[]).map(x=>`<li>${esc(x)}</li>`).join('');return `<div class="card"><div class="kicker">${esc(s.title)}</div>${s.body?`<p class="phrase">${esc(s.body)}</p>`:''}${items?`<ul>${items}</ul>`:''}${adv?`<div class="kicker" style="margin-top:10px">Conseils</div><ul>${adv}</ul>`:''}</div>`;};
+  const sec=(s)=>{const items=(s.items||[]).map(x=>`<li>${esc(x)}</li>`).join('');const adv=(s.advice||[]).map(x=>`<li>${esc(x)}</li>`).join('');return `<div class="card"><div class="kicker">${esc(s.title)}</div>${s.body?`<p class="phrase">${esc(s.body)}</p>`:''}${items?`<ul>${items}</ul>`:''}${s.note?`<p class="muted small">${esc(s.note)}</p>`:''}${adv?`<div class="kicker" style="margin-top:10px">Conseils</div><ul>${adv}</ul>`:''}</div>`;};
   return `<section class="hero ac-${c}"><div class="hero-top"><div><div class="hero-led ac-${c}"><span class="led"></span><span class="led-k">Bulletin de veille · non officiel</span></div><h1 class="hero-level ac-${c}">${esc(b.headline||'')}</h1><p class="hero-syn">${esc(b.summary||b.public_wording||'')}</p><div class="chips"><span class="chip">${esc(b.issued_at||'')}</span><span class="chip">${esc(b.timezone||'')}</span><span class="chip">Validité ${esc(b.validity||'')}</span><span class="chip">Niveau ${esc(lv.label||'')}</span></div></div></div></section><div class="section-title">Détail du bulletin</div>${(b.sections||[]).map(sec).join('')}<div class="card"><div class="kicker">Statut</div><p class="muted">${esc(b.disclaimer||'')} Bulletin non officiel généré automatiquement à partir du modèle interne MeteoVoid ; il ne remplace pas l’IRM/KMI ni MeteoAlarm.</p></div>`;}
 function paint(){
   document.getElementById('disclaimer').innerHTML = icon('info')+'<div><b>Prototype non officiel.</b> '+esc((VM.meta&&VM.meta.disclaimer)||'')+'</div>';

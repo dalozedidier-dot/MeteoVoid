@@ -277,17 +277,36 @@ def test_level_meta_accepts_already_normalized_dicts() -> None:
     assert meta == {"key": "alert", "label": "Critique", "class": "danger", "rank": 5}
 
 
-def test_bulletin_zones_do_not_render_python_dict_repr(tmp_path: Path) -> None:
+def test_bulletin_zones_are_clean_and_split_from_upstream(tmp_path: Path) -> None:
     report_dir = _minimal_report_dir(tmp_path)
+    report = json.loads((report_dir / "belgium_alert_report.json").read_text(encoding="utf-8"))
+    report["province_summary"].insert(
+        0,
+        {
+            "province": "Approche France",
+            "max_score": 0.871,
+            "severity": {"key": "alert", "label": "Critique", "class": "danger", "rank": 5},
+            "top_station": "FR_LILLE",
+            "station_count": 1,
+        },
+    )
+    (report_dir / "belgium_alert_report.json").write_text(
+        json.dumps(report, ensure_ascii=False),
+        encoding="utf-8",
+    )
     site_dir = tmp_path / "site"
     vm = site.build_index(report_dir, site_dir)
 
-    zone_section = next(
-        s for s in vm["bulletin"]["sections"] if s.get("title") == "Zones à surveiller"
-    )
-    joined = "\n".join(zone_section["items"])
+    assert vm["simple"]["main_zone"]["name"] == "Brabant wallon"
 
-    assert "Critique" in joined
+    sections = {s.get("title"): s for s in vm["bulletin"]["sections"]}
+    belgium = "\n".join(sections["Zones belges à surveiller"]["items"])
+    upstream = "\n".join(sections["Couloirs amont à surveiller"]["items"])
+    joined = belgium + "\n" + upstream
+
+    assert "Brabant wallon · Critique (0.840)" in belgium
+    assert "Approche France · Critique (0.871)" in upstream
+    assert "Approche France" not in belgium
     assert "{'" not in joined
     assert "key" not in joined.lower()
 
