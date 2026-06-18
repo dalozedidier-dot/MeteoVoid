@@ -367,3 +367,29 @@ def test_europe_page_is_dedicated_and_precise(tmp_path: Path) -> None:
 
     index_html = (site_dir / "index.html").read_text(encoding="utf-8")
     assert 'href="europe.html"' in index_html
+
+
+def test_country_pages_are_generated_and_linked(tmp_path: Path) -> None:
+    report_dir = _minimal_report_dir(tmp_path)
+    site_dir = tmp_path / "site"
+    site.build_index(report_dir, site_dir)
+
+    europe_html = (site_dir / "europe.html").read_text(encoding="utf-8")
+    for key in ("spain", "france", "switzerland", "netherlands"):
+        page = site_dir / f"{key}.html"
+        assert page.exists(), f"missing dedicated page for {key}"
+        html = page.read_text(encoding="utf-8")
+        for token in ["Détection", "Carte radar", "Réseau radar", "initCountryMap", "leaflet"]:
+            assert token in html, (key, token)
+        # the Europe page links to each dedicated country page
+        assert f"{key}.html" in europe_html
+
+        model = json.loads((site_dir / "api" / f"country_{key}.json").read_text(encoding="utf-8"))
+        assert model["contract"] == "meteovoid_country_followup_v1"
+        assert model["stations"], "country detection must score stations"
+        assert model["radar_network"]["site_count"] >= 1
+        assert model["summary"]["radar_site_count"] == model["radar_network"]["site_count"]
+
+    # France ships the densest real radar network of the four
+    france = json.loads((site_dir / "api" / "country_france.json").read_text(encoding="utf-8"))
+    assert france["summary"]["radar_site_count"] >= 15
