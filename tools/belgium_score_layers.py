@@ -61,10 +61,22 @@ NATIVE_CONVECTIVE_ALIASES: dict[str, tuple[str, ...]] = {
     "k_index_c": ("k_index_c", "k_index", "K_index"),
     "total_totals_index": ("total_totals_index", "total_totals", "TT"),
     "precipitable_water_mm": ("precipitable_water_mm", "pwat_mm", "pwat", "PWAT"),
+    "lightning_potential_index": (
+        "lightning_potential_index",
+        "lightning_potential",
+        "lpi",
+        "LPI",
+    ),
+    "freezing_level_height_m": ("freezing_level_height_m", "freezing_level_height"),
+    "boundary_layer_height_m": (
+        "boundary_layer_height_m",
+        "boundary_layer_height",
+        "pbl_height",
+    ),
     "shear_0_6km_ms": ("shear_0_6km_ms", "bulk_shear_0_6km_ms", "deep_layer_shear_ms"),
     "shear_0_3km_ms": ("shear_0_3km_ms", "bulk_shear_0_3km_ms"),
-    "srh_0_1km_m2_s2": ("srh_0_1km_m2_s2", "srh_0_1km"),
-    "srh_0_3km_m2_s2": ("srh_0_3km_m2_s2", "srh_0_3km"),
+    "srh_0_1km_m2_s2": ("srh_0_1km_m2_s2", "srh_0_1km_m2s2", "srh_0_1km"),
+    "srh_0_3km_m2_s2": ("srh_0_3km_m2_s2", "srh_0_3km_m2s2", "srh_0_3km"),
     "lcl_m": ("lcl_m", "lifted_condensation_level_m"),
     "lfc_m": ("lfc_m", "level_free_convection_m"),
     "theta_e_850k": ("theta_e_850k", "theta_e_850", "equivalent_potential_temperature_850hPa"),
@@ -98,6 +110,9 @@ def native_convective_indices_from_hourly(hourly: dict[str, Any]) -> dict[str, A
         "k_index": _ramp(raw["k_index_c"], 25.0, 40.0),
         "total_totals": _ramp(raw["total_totals_index"], 44.0, 52.0),
         "precipitable_water": _ramp(raw["precipitable_water_mm"], 25.0, 45.0),
+        "lightning_potential": _ramp(raw["lightning_potential_index"], 1.0, 8.0),
+        "freezing_level": _ramp(raw["freezing_level_height_m"], 2800.0, 4200.0),
+        "boundary_layer": _ramp(raw["boundary_layer_height_m"], 800.0, 2200.0),
         "shear_0_6km": _ramp(raw["shear_0_6km_ms"], 10.0, 25.0),
         "shear_0_3km": _ramp(raw["shear_0_3km_ms"], 7.0, 18.0),
         "srh_0_1km": _ramp(raw["srh_0_1km_m2_s2"], 50.0, 150.0),
@@ -114,8 +129,10 @@ def native_convective_indices_from_hourly(hourly: dict[str, Any]) -> dict[str, A
             + 0.20 * normalized["lifted_index"]
             + 0.14 * normalized["k_index"]
             + 0.12 * normalized["total_totals"]
-            + 0.12 * normalized["precipitable_water"]
-            + 0.12 * normalized["theta_e_850"]
+            + 0.10 * normalized["precipitable_water"]
+            + 0.08 * normalized["theta_e_850"]
+            + 0.06 * normalized["lightning_potential"]
+            + 0.04 * normalized["boundary_layer"]
         )
         organization = _clamp01(
             0.36 * normalized["shear_0_6km"]
@@ -127,7 +144,8 @@ def native_convective_indices_from_hourly(hourly: dict[str, Any]) -> dict[str, A
             0.42 * normalized["cin_erosion"]
             + 0.26 * normalized["lcl"]
             + 0.20 * normalized["lfc"]
-            + 0.12 * normalized["lapse_rate_700_500"]
+            + 0.08 * normalized["lapse_rate_700_500"]
+            + 0.04 * normalized["freezing_level"]
         )
         native_score = _clamp01(0.45 * instability + 0.30 * organization + 0.25 * cap_break)
     else:

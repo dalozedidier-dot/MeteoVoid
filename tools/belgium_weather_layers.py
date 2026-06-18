@@ -37,6 +37,10 @@ class LayerPoint:
     humidity_pct: float | None
     dew_point_c: float | None
     storm_formation_score: float
+    native_convective_score: float | None
+    cape_j_kg: float | None
+    cin_j_kg: float | None
+    lifted_index_c: float | None
     nearest_station: str
 
 
@@ -127,6 +131,19 @@ def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return math.sqrt(x * x + y * y)
 
 
+def _station_field_value(station: dict[str, Any], key: str) -> float | None:
+    if key == "storm_formation_score":
+        return _station_storm_score(station)
+    indices = station.get("convective_indices")
+    if isinstance(indices, dict):
+        if key == "native_convective_score":
+            return _safe_float(indices.get("native_convective_score"))
+        raw = indices.get("raw")
+        if isinstance(raw, dict) and key in raw:
+            return _safe_float(raw.get(key))
+    return _safe_float(station.get(key))
+
+
 def _idw_value(
     lat: float,
     lon: float,
@@ -144,11 +161,7 @@ def _idw_value(
         slon = _safe_float(station.get("lon"))
         if slat is None or slon is None:
             continue
-        value = (
-            _station_storm_score(station)
-            if key == "storm_formation_score"
-            else _safe_float(station.get(key))
-        )
+        value = _station_field_value(station, key)
         if value is None:
             continue
         distance = max(_distance_km(lat, lon, slat, slon), 1.0)
@@ -180,6 +193,10 @@ def build_weather_layer_grid(report: dict[str, Any], *, step: float = 0.12) -> l
                 humidity, nearest_h = _idw_value(lat, lon, stations, "max_relative_humidity_pct")
                 dew, nearest_d = _idw_value(lat, lon, stations, "max_dew_point_c")
                 storm, nearest_s = _idw_value(lat, lon, stations, "storm_formation_score")
+                native, nearest_n = _idw_value(lat, lon, stations, "native_convective_score")
+                cape, nearest_cape = _idw_value(lat, lon, stations, "cape_j_kg")
+                cin, nearest_cin = _idw_value(lat, lon, stations, "cin_j_kg")
+                lifted_index, nearest_li = _idw_value(lat, lon, stations, "lifted_index_c")
                 points.append(
                     LayerPoint(
                         lat=round(lat, 4),
@@ -187,7 +204,19 @@ def build_weather_layer_grid(report: dict[str, Any], *, step: float = 0.12) -> l
                         humidity_pct=round(humidity, 3) if humidity is not None else None,
                         dew_point_c=round(dew, 3) if dew is not None else None,
                         storm_formation_score=round(storm or 0.0, 6),
-                        nearest_station=nearest_s or nearest_d or nearest_h,
+                        native_convective_score=round(native, 6) if native is not None else None,
+                        cape_j_kg=round(cape, 3) if cape is not None else None,
+                        cin_j_kg=round(cin, 3) if cin is not None else None,
+                        lifted_index_c=round(lifted_index, 3) if lifted_index is not None else None,
+                        nearest_station=(
+                            nearest_n
+                            or nearest_cape
+                            or nearest_li
+                            or nearest_cin
+                            or nearest_s
+                            or nearest_d
+                            or nearest_h
+                        ),
                     )
                 )
             lon += step
@@ -203,6 +232,11 @@ def write_weather_layer_grid_csv(points: list[LayerPoint], path: Path) -> None:
         "dew_point_c",
         "storm_formation_score",
         "storm_formation_level",
+        "native_convective_score",
+        "native_convective_level",
+        "cape_j_kg",
+        "cin_j_kg",
+        "lifted_index_c",
         "nearest_station",
     ]
     with path.open("w", encoding="utf-8", newline="") as fh:
@@ -219,6 +253,15 @@ def write_weather_layer_grid_csv(points: list[LayerPoint], path: Path) -> None:
                     "storm_formation_level": _severity_from_storm_score(
                         point.storm_formation_score
                     ),
+                    "native_convective_score": point.native_convective_score,
+                    "native_convective_level": (
+                        _severity_from_storm_score(point.native_convective_score)
+                        if point.native_convective_score is not None
+                        else "unavailable"
+                    ),
+                    "cape_j_kg": point.cape_j_kg,
+                    "cin_j_kg": point.cin_j_kg,
+                    "lifted_index_c": point.lifted_index_c,
                     "nearest_station": point.nearest_station,
                 }
             )
@@ -231,6 +274,12 @@ def convective_parameters_summary(
     dew_values = [p.dew_point_c for p in points if p.dew_point_c is not None]
     humidity_values = [p.humidity_pct for p in points if p.humidity_pct is not None]
     storm_values = [p.storm_formation_score for p in points]
+    native_grid_values = [
+        p.native_convective_score for p in points if p.native_convective_score is not None
+    ]
+    cape_values = [p.cape_j_kg for p in points if p.cape_j_kg is not None]
+    cin_values = [p.cin_j_kg for p in points if p.cin_j_kg is not None]
+    lifted_values = [p.lifted_index_c for p in points if p.lifted_index_c is not None]
     station_scores = [_station_storm_score(s) for s in stations]
     top_stations = sorted(stations, key=_station_storm_score, reverse=True)[:8]
 
@@ -250,7 +299,11 @@ def convective_parameters_summary(
 
     return {
         "generated_at": report.get("generated_at"),
-        "mode": "derived_from_station_forecasts",
+        "mode": (
+            "proxy_plus_native_convective_fields"
+            if native_grid_values
+            else "derived_from_station_forecasts"
+        ),
         "native_convective_contract": "native_convective_fields_optional_v1",
         "source": report.get("source"),
         "limitations": [
@@ -264,10 +317,14 @@ def convective_parameters_summary(
             "native_convective_station_count": len(native_stations),
             "native_convective_fields": sorted(native_fields),
             "native_convective_score_max": round(max(native_scores), 6) if native_scores else None,
+            "native_convective_grid_point_count": len(native_grid_values),
+            "cape_max_j_kg": round(max(cape_values), 3) if cape_values else None,
+            "cin_min_j_kg": round(min(cin_values), 3) if cin_values else None,
+            "lifted_index_min_c": round(min(lifted_values), 3) if lifted_values else None,
             "cape_integrated": "cape_j_kg" in native_fields,
             "shear_integrated": any(field.startswith("shear_") for field in native_fields),
             "srh_integrated": any(field.startswith("srh_") for field in native_fields),
-            "lightning_potential_integrated": False,
+            "lightning_potential_integrated": "lightning_potential_index" in native_fields,
             "radar_overlay_available_in_html": True,
             "windy_optional_compare_available": True,
         },
@@ -280,6 +337,12 @@ def convective_parameters_summary(
             "max_storm_formation_score_station": (
                 round(max(station_scores), 6) if station_scores else None
             ),
+            "max_native_convective_score_grid": (
+                round(max(native_grid_values), 6) if native_grid_values else None
+            ),
+            "max_cape_j_kg": round(max(cape_values), 3) if cape_values else None,
+            "min_cin_j_kg": round(min(cin_values), 3) if cin_values else None,
+            "min_lifted_index_c": round(min(lifted_values), 3) if lifted_values else None,
         },
         "top_storm_formation_stations": [
             {
@@ -292,6 +355,16 @@ def convective_parameters_summary(
                 "humidity_pct": station.get("max_relative_humidity_pct"),
                 "native_convective_available": bool(station.get("native_convective_available")),
                 "native_convective_fields": station.get("native_convective_fields") or [],
+                "native_convective_score": (
+                    station.get("convective_indices", {}).get("native_convective_score")
+                    if isinstance(station.get("convective_indices"), dict)
+                    else None
+                ),
+                "native_raw": (
+                    station.get("convective_indices", {}).get("raw")
+                    if isinstance(station.get("convective_indices"), dict)
+                    else {}
+                ),
                 "signals": station.get("signals", []),
             }
             for station in top_stations
@@ -350,6 +423,10 @@ def _js_data(report: dict[str, Any], points: list[LayerPoint]) -> tuple[str, str
                 "dew": _safe_float(station.get("max_dew_point_c")),
                 "humidity": _safe_float(station.get("max_relative_humidity_pct")),
                 "storm": _station_storm_score(station),
+                "native": _station_field_value(station, "native_convective_score"),
+                "cape": _station_field_value(station, "cape_j_kg"),
+                "cin": _station_field_value(station, "cin_j_kg"),
+                "lifted_index": _station_field_value(station, "lifted_index_c"),
                 "signals": station.get("signals", []),
             }
         )
@@ -453,6 +530,39 @@ async function loadRainViewer() {
 }
 loadRainViewer();
 """
+
+
+def render_native_convective_map_html(report: dict[str, Any], points: list[LayerPoint]) -> str:
+    stations_js, grid_js = _js_data(report, points)
+    summary = convective_parameters_summary(report, points)
+    native_count = summary.get("inputs", {}).get("native_convective_grid_point_count", 0)
+    note = (
+        "Champs natifs disponibles : la carte montre le score convectif modèle interpolé depuis les stations."
+        if native_count
+        else "Aucun champ convectif natif disponible : cette carte reste vide côté modèle natif et ne bascule pas en proxy."
+    )
+    body = f"""
+<div class=\"panel\"><div class=\"legend\"><strong>Carte convective native</strong><br>
+{html.escape(note)}<br>
+<span class=\"value-pill\">CAPE</span><span class=\"value-pill\">CIN</span><span class=\"value-pill\">Lifted Index</span><span class=\"value-pill\">score natif</span></div>
+<div class=\"note\">Cette carte ne remplace pas une analyse convective professionnelle. Elle sépare les champs modèle natifs des proxys chaleur/humidité.</div></div>
+<div id=\"map\" class=\"map\"></div>
+<script>
+const stations = {stations_js};
+const grid = {grid_js};
+{_leaflet_base_script()}
+{_station_layer_js()}
+{_heat_layer_js('native_convective_score', 'nativeLayer', radius=11)}
+nativeLayer.addTo(map);
+stationLayer.addTo(map);
+L.control.layers({{'OpenStreetMap': osm}}, {{'Convectif natif': nativeLayer, 'Stations': stationLayer}}, {{collapsed:false}}).addTo(map);
+</script>
+"""
+    return _html_shell(
+        "MeteoVoid Belgique · Convectif natif",
+        body,
+        subtitle="CAPE, CIN, Lifted Index et score convectif natif lorsque le fournisseur météo les expose.",
+    )
 
 
 def render_radar_map_html(report: dict[str, Any], points: list[LayerPoint]) -> str:
@@ -600,14 +710,22 @@ function initWindy() {{
 def write_weather_layer_outputs(report: dict[str, Any], out_dir: Path) -> dict[str, str]:
     points = build_weather_layer_grid(report)
     write_weather_layer_grid_csv(points, out_dir / "weather_layers_grid.csv")
+    convective_summary = convective_parameters_summary(report, points)
     (out_dir / "convective_parameters.json").write_text(
-        _json_dumps(convective_parameters_summary(report, points)), encoding="utf-8"
+        _json_dumps(convective_summary), encoding="utf-8"
     )
+    (out_dir / "native_convective_parameters.json").write_text(
+        _json_dumps(convective_summary), encoding="utf-8"
+    )
+    write_weather_layer_grid_csv(points, out_dir / "native_convective_grid.csv")
     (out_dir / "belgium_weather_layers.html").write_text(
         render_weather_layers_html(report, points), encoding="utf-8"
     )
     (out_dir / "belgium_radar_map.html").write_text(
         render_radar_map_html(report, points), encoding="utf-8"
+    )
+    (out_dir / "belgium_native_convective_map.html").write_text(
+        render_native_convective_map_html(report, points), encoding="utf-8"
     )
     (out_dir / "belgium_humidity_map.html").write_text(
         render_variable_map_html(

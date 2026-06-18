@@ -49,6 +49,13 @@ HOURLY_VARIABLES = [
     "pressure_msl",
     "wind_speed_10m",
     "wind_gusts_10m",
+    # Native convective model fields exposed by Open-Meteo.
+    # These are model fields, not observed radar/lightning proof.
+    "cape",
+    "lifted_index",
+    "convective_inhibition",
+    "freezing_level_height",
+    "boundary_layer_height",
 ]
 THUNDERSTORM_CODES = {95, 96, 99}
 SHOWER_CODES = {51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82}
@@ -342,6 +349,11 @@ def _offline_payload(station: StationSpec, *, target: TargetWindow) -> dict[str,
     pressure: list[float] = []
     wind: list[float] = []
     gust: list[float] = []
+    cape: list[float] = []
+    lifted_index: list[float] = []
+    convective_inhibition: list[float] = []
+    freezing_level_height: list[float] = []
+    boundary_layer_height: list[float] = []
 
     cur = target.start
     while cur <= target.end:
@@ -361,6 +373,11 @@ def _offline_payload(station: StationSpec, *, target: TargetWindow) -> dict[str,
             pressure.append(1014.0 - (hour * 0.9 if 10 <= hour <= 19 else hour * 0.1))
             wind.append(4.0 + 3.0 * unstable)
             gust.append(9.0 + 10.0 * unstable + approach_bonus)
+            cape.append(250.0 + 1700.0 * unstable + 250.0 * approach_bonus)
+            lifted_index.append(1.5 - 6.5 * unstable - 0.4 * approach_bonus)
+            convective_inhibition.append(-160.0 + 105.0 * unstable)
+            freezing_level_height.append(3000.0 + 650.0 * unstable)
+            boundary_layer_height.append(900.0 + 950.0 * unstable)
         cur += timedelta(days=1)
 
     return {
@@ -377,6 +394,11 @@ def _offline_payload(station: StationSpec, *, target: TargetWindow) -> dict[str,
             "pressure_msl": pressure,
             "wind_speed_10m": wind,
             "wind_gusts_10m": gust,
+            "cape": cape,
+            "lifted_index": lifted_index,
+            "convective_inhibition": convective_inhibition,
+            "freezing_level_height": freezing_level_height,
+            "boundary_layer_height": boundary_layer_height,
         }
     }
 
