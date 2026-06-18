@@ -25,8 +25,15 @@ import argparse
 import json
 import math
 import shutil
+import sys
 from pathlib import Path
 from typing import Any
+
+_SRC = Path(__file__).resolve().parents[1] / "src"
+if _SRC.exists() and str(_SRC) not in sys.path:
+    sys.path.insert(0, str(_SRC))
+
+from meteovoid.europe_country import build_all_countries  # noqa: E402
 
 # Artifacts copied verbatim into reports/latest/ so the expert view (iframes) and
 # the export links keep working. Kept intentionally broad.
@@ -1502,8 +1509,8 @@ function renderMap(){const layers=MODEL.radar_layers||[];const legend=[['ok','pr
   <div class="section-title">Couches radar et fallback</div>
   <div class="grid cards4">${layers.map(layerCardEU).join('')}</div>
   <div class="links" style="margin-top:14px">${[['Carte nationale autonome','reports/latest/european_national_radar_map.html'],['RainViewer','reports/latest/rainviewer_radar_map.html'],['Europe amont','reports/latest/european_upstream_map.html'],['Rapport radars nationaux','reports/latest/european_national_radar_report.md'],['API Europe','api/europe.json'],['Belgique','index.html']].map(x=>`<a href="${x[1]}">${x[0]}</a>`).join('')}</div>`}
-function countryCard(c){return `<article class="card country"><div class="head"><div><div class="eyebrow">${esc(c.iso2||c.country)}</div><h3>${esc(c.label)}</h3></div><span class="badge">${state(c.machine_radar_available)}</span></div><p class="muted">${esc(c.upstream_role||'')}</p><p><b>Corridor :</b> ${esc(c.corridor||'—')}</p><div class="score">${num(c.readiness_score)}</div><div class="muted">indice de préparation Europe</div>${bar(c.readiness_score)}<div class="dl"><span>Priorité Belgique</span><strong>${esc(c.priority_for_belgium||'—')}</strong></div><div class="dl"><span>Sources</span><strong>${esc(c.configured_source_count||0)} prêtes / ${esc(c.source_count||0)} référencées</strong></div><div class="dl"><span>Fichiers lisibles</span><strong>${esc(c.readable_file_count||0)} / ${esc(c.file_count||0)}</strong></div><div class="dl"><span>Corridors liés</span><strong>${esc(c.linked_corridor_count||0)}</strong></div><div class="section-title">Blocages</div><ul>${(c.blockers||[]).map(b=>`<li>${esc(b)}</li>`).join('')}</ul></article>`}
-function renderCountries(){return `<div class="section-title">Lecture par pays</div><div class="grid country-grid">${(MODEL.countries||[]).map(countryCard).join('')}</div>`}
+function countryCard(c){return `<article class="card country"><div class="head"><div><div class="eyebrow">${esc(c.iso2||c.country)}</div><h3>${esc(c.label)}</h3></div><span class="badge">${state(c.machine_radar_available)}</span></div><p class="muted">${esc(c.upstream_role||'')}</p><p><b>Corridor :</b> ${esc(c.corridor||'—')}</p><div class="score">${num(c.readiness_score)}</div><div class="muted">indice de préparation Europe</div>${bar(c.readiness_score)}<div class="dl"><span>Priorité Belgique</span><strong>${esc(c.priority_for_belgium||'—')}</strong></div><div class="dl"><span>Sources</span><strong>${esc(c.configured_source_count||0)} prêtes / ${esc(c.source_count||0)} référencées</strong></div><div class="dl"><span>Fichiers lisibles</span><strong>${esc(c.readable_file_count||0)} / ${esc(c.file_count||0)}</strong></div><div class="dl"><span>Corridors liés</span><strong>${esc(c.linked_corridor_count||0)}</strong></div><div class="section-title">Blocages</div><ul>${(c.blockers||[]).map(b=>`<li>${esc(b)}</li>`).join('')}</ul><div class="links" style="margin-top:12px"><a href="${esc(c.country)}.html"><b>Page ${esc(c.label)} →</b></a></div></article>`}
+function renderCountries(){const links=(MODEL.country_pages||[]).map(p=>`<a href="${esc(p.href)}">${esc(p.label)} · ${esc(p.station_count||0)} stations · ${esc(p.radar_site_count||0)} radars</a>`).join('');return `<div class="notice"><b>Suivi dédié par pays.</b> Chaque pays dispose maintenant d’une page au même niveau que la Belgique : détection MeteoVoid par station, réseau radar national réel et radar RainViewer en direct.</div>${links?`<div class="links" style="margin-bottom:8px">${links}</div>`:''}<div class="section-title">Lecture par pays</div><div class="grid country-grid">${(MODEL.countries||[]).map(countryCard).join('')}</div>`}
 function renderCorridors(){const rows=(MODEL.corridors||[]);return `<div class="card"><div class="eyebrow">Propagation vers la Belgique</div><h2>Corridors amont</h2><p class="muted">Ces corridors relient les zones sources européennes à des zones belges cibles. Ils ne sont pas une trajectoire radar certaine, mais une lecture de propagation possible.</p></div><div class="card" style="overflow:auto;margin-top:14px"><table><thead><tr><th>Corridor</th><th>Score</th><th>Source</th><th>Cibles</th><th>Fenêtre</th><th>Lecture</th></tr></thead><tbody>${rows.map(c=>`<tr><td><b>${esc(c.name||c.id)}</b><p class="muted small">${esc(c.id||'')}</p></td><td>${num(c.score)}</td><td>${esc(c.source_region||'—')}</td><td>${esc((c.target_zones||[]).join(', '))}</td><td>${esc((c.estimated_arrival_hours||[]).join(' à '))} h</td><td>${esc(c.interpretation||'')}</td></tr>`).join('')}</tbody></table></div>`}
 function renderSources(){const rows=MODEL.sources||[];return `<div class="grid cards3"><div class="card"><h3>Sources prêtes</h3><div class="score ok">${esc((MODEL.summary||{}).source_ready_count||0)}</div></div><div class="card"><h3>Sources bloquées</h3><div class="score watch">${esc((MODEL.summary||{}).source_blocked_count||0)}</div></div><div class="card"><h3>Clés manquantes</h3><div class="score watch">${esc((MODEL.summary||{}).missing_api_key_count||0)}</div></div></div><div class="section-title">Registre des sources</div><div class="card" style="overflow:auto"><table><thead><tr><th>Pays</th><th>Fournisseur</th><th>Statut</th><th>Niveau</th><th>Format</th><th>Clé</th></tr></thead><tbody>${rows.map(s=>`<tr><td><b>${esc(s.country)}</b></td><td>${esc(s.provider)}<p class="muted small">${esc(s.role||'')}</p></td><td>${esc(s.status||'')}</td><td>${esc(s.evidence_level||'')}</td><td>${esc(s.expected_format||'—')}</td><td>${s.api_key_env?esc(s.api_key_env)+(s.api_key_configured?' configurée':' manquante'):'—'}</td></tr>`).join('')}</tbody></table></div>`}
 function renderExpert(){return `<div class="grid cards2"><div class="card"><div class="eyebrow">Exports</div><h2>Données Europe</h2><div class="links">${(MODEL.exports||[]).map(x=>`<a href="${esc(x.href)}">${esc(x.label)}</a>`).join('')}</div></div><div class="card"><div class="eyebrow">Contrat</div><h2>${esc(MODEL.page_contract||'')}</h2><p class="muted">Run ${esc(MODEL.run_id||'')} · ${esc(MODEL.generated_at||'')}</p></div></div><div class="section-title">Modèle brut</div><pre>${esc(JSON.stringify(MODEL,null,2))}</pre>`}
@@ -1574,6 +1581,93 @@ paint();
 </html>"""
 
 
+COUNTRY_TEMPLATE = r"""<!doctype html>
+<html lang="fr" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MeteoVoid · suivi pays · détection + réseau radar</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<style>
+:root{--bg:#eef3f9;--card:#fff;--ink:#132033;--muted:#65738a;--line:#d9e3f0;--accent:#2f7cc0;--ok:#1d9a63;--watch:#d28a19;--danger:#c74242;--soft:#f7fafc;--shadow:0 14px 34px rgba(18,34,58,.08)}
+[data-theme=dark]{--bg:#0d1625;--card:#142237;--ink:#e7eef8;--muted:#a7b5c9;--line:#293b57;--accent:#71b8ff;--soft:#101b2d;--shadow:0 14px 34px rgba(0,0,0,.22)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,Segoe UI,Arial,sans-serif;line-height:1.5}.top{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.85);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}[data-theme=dark] .top{background:rgba(13,22,37,.86)}.topin{max-width:1240px;margin:auto;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:16px}.brand h1{margin:0;font-size:22px}.brand p{margin:2px 0 0;color:var(--muted);font-size:13px}.nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.nav a,.nav button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:8px 12px;text-decoration:none;cursor:pointer}.nav a.active{background:var(--accent);color:#fff;border-color:var(--accent)}.hero{max-width:1240px;margin:22px auto 0;padding:0 18px}.hero-card{background:linear-gradient(135deg,rgba(47,124,192,.16),rgba(29,154,99,.09)),var(--card);border:1px solid var(--line);border-radius:28px;padding:26px;box-shadow:var(--shadow)}.eyebrow{text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-size:12px;font-weight:700}.title{font-size:42px;line-height:1.05;margin:8px 0 12px}.lead{max-width:900px;color:var(--muted);font-size:16px}.tabs{max-width:1240px;margin:18px auto 0;padding:0 18px;display:flex;gap:8px;flex-wrap:wrap}.tab{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:14px;padding:10px 13px;cursor:pointer}.tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}main{max-width:1240px;margin:18px auto 56px;padding:0 18px}.view{display:none}.view.active{display:block}.grid{display:grid;gap:14px}.kpis{grid-template-columns:repeat(6,minmax(120px,1fr))}.cards2{grid-template-columns:1.15fr .85fr}.cards3{grid-template-columns:repeat(3,minmax(0,1fr))}.cards4{grid-template-columns:repeat(4,minmax(0,1fr))}.card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:var(--shadow)}.kpi span{display:block;color:var(--muted);font-size:13px}.kpi b{font-size:26px}.notice{border:1px solid var(--line);background:var(--card);border-radius:18px;padding:14px 16px;margin-bottom:14px;color:var(--muted)}.section-title{margin:26px 0 10px;font-weight:800;font-size:18px}.pill,.badge{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:5px 10px;background:var(--soft);font-size:13px}.dot{width:9px;height:9px;border-radius:99px;display:inline-block}.ok{color:var(--ok)}.watch{color:var(--watch)}.danger{color:var(--danger)}.muted{color:var(--muted)}.score{font-size:30px;font-weight:800}.bar{height:9px;background:var(--soft);border:1px solid var(--line);border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:var(--accent);width:0}.head{display:flex;justify-content:space-between;gap:12px;align-items:start}.dl{display:flex;justify-content:space-between;gap:14px;border-top:1px solid var(--line);padding:9px 0}.dl span{color:var(--muted)}table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid var(--line);padding:10px;text-align:left;vertical-align:top}th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em}.links{display:flex;gap:8px;flex-wrap:wrap}.links a{border:1px solid var(--line);border-radius:999px;padding:7px 10px;color:var(--ink);text-decoration:none;background:var(--soft)}pre{white-space:pre-wrap;background:var(--soft);border:1px solid var(--line);border-radius:16px;padding:14px;max-height:420px;overflow:auto}.small{font-size:13px}.footer{max-width:1240px;margin:0 auto 40px;padding:0 18px;color:var(--muted)}
+.map-bar{display:flex;flex-wrap:wrap;gap:11px;align-items:center;margin:4px 0 14px}.map-toggle{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px;box-shadow:var(--shadow);cursor:pointer}.map-frame{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:80px}.map-legend{display:flex;gap:13px;flex-wrap:wrap;margin-left:auto;font-size:12px;color:var(--muted)}.map-legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.map-wrap{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:14px}.mvmap{height:66vh;min-height:440px;border-radius:20px;overflow:hidden;border:1px solid var(--line);box-shadow:var(--shadow);z-index:0;background:var(--soft)}.map-detail{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px;box-shadow:var(--shadow);max-height:66vh;overflow:auto}.map-fallback{display:grid;place-items:center;height:100%;color:var(--muted);padding:24px;text-align:center}
+.md-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;border-left:3px solid var(--ac,var(--accent));padding-left:12px;margin-bottom:12px}.md-head h3{margin:2px 0 0;font-size:20px}.md-score{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:4px 0 12px}
+.leaflet-container{font:inherit;background:var(--soft)}.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--card);color:var(--ink)}[data-theme=dark] .leaflet-tile{filter:brightness(.78) contrast(1.05) hue-rotate(178deg) invert(.92)}
+@media(max-width:900px){.title{font-size:32px}.kpis,.cards2,.cards3,.cards4{grid-template-columns:1fr}.map-wrap{grid-template-columns:1fr}.mvmap{height:52vh}.map-detail{max-height:none}.map-legend{margin-left:0}}
+</style>
+</head>
+<body>
+<header class="top"><div class="topin"><div class="brand"><h1 id="brand-title">MeteoVoid</h1><p id="brand-sub">Suivi pays · détection MeteoVoid · réseau radar national · RainViewer</p></div><nav class="nav"><a href="index.html">Belgique</a><a href="europe.html">Europe</a><a class="active" href="#">Pays</a><a href="methodology.html">Méthodologie</a><button id="theme">Thème</button></nav></div></header>
+<section class="hero"><div class="hero-card"><div class="eyebrow" id="hero-eyebrow">Suivi national</div><h2 class="title" id="hero-title"></h2><p class="lead" id="hero-lead"></p><div class="grid kpis" id="kpis"></div></div></section>
+<div class="tabs"><button class="tab active" data-view="detection">Détection</button><button class="tab" data-view="carte">Carte radar</button><button class="tab" data-view="reseau">Réseau radar</button><button class="tab" data-view="expert">Expert</button></div>
+<main>
+  <section class="view active" id="view-detection"></section>
+  <section class="view" id="view-carte"></section>
+  <section class="view" id="view-reseau"></section>
+  <section class="view" id="view-expert"></section>
+</main>
+<footer class="footer" id="foot"></footer>
+<script id="country-bootstrap" type="application/json">__COUNTRY_BOOTSTRAP__</script>
+<script>
+const M=JSON.parse(document.getElementById('country-bootstrap').textContent);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const num=(v,d=2)=>v==null||v===''?'—':(typeof v==='number'?v.toFixed(d):esc(v));
+const pct=v=>v==null?'—':Math.round(Number(v)*100)+' %';
+function getCss(v){try{return getComputedStyle(document.documentElement).getPropertyValue(v).trim()||'#2f7cc0';}catch(e){return '#2f7cc0';}}
+function sevColor(k){return {calm:'#1d9a63',watch:'#d28a19',elevated:'#e0683a',danger:'#c74242'}[k]||'#2f7cc0';}
+function spark(hourly){const v=(hourly||[]).map(x=>x.s).filter(x=>x!=null);if(v.length<2)return '';const W=150,H=38,n=v.length;const pts=v.map((s,i)=>[4+(W-8)*i/(n-1),H-3-(H-8)*Math.max(0,Math.min(1,s))]);const d='M'+pts.map(p=>p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' L ');return `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="margin:6px 0" aria-hidden="true"><path d="${d}" fill="none" stroke="var(--accent)" stroke-width="2"/></svg>`;}
+function renderKpis(){const s=M.summary||{},lv=M.operational_level||{},rn=M.radar_network||{};
+  document.getElementById('hero-title').textContent='Suivi '+(M.label||'');
+  document.getElementById('brand-title').textContent='MeteoVoid '+(M.label||'');
+  document.getElementById('hero-eyebrow').textContent='Suivi national · '+(M.iso2||'');
+  document.getElementById('hero-lead').textContent='Détection MeteoVoid par station, réseau radar national '+(rn.operator||'')+' et radar RainViewer en direct. Même système que la page Belgique. Prototype non officiel.';
+  const sc=s.severity_counts||{},alertCount=(sc.elevated||0)+(sc.danger||0);
+  document.getElementById('kpis').innerHTML=[['Niveau',lv.label||'—'],['Stations',s.station_count||0],['Sites radar',s.radar_site_count||0],['Score max',pct(s.max_score)],['En alerte',alertCount],['Mode',M.data_mode||'']].map(x=>`<div class="card kpi"><span>${esc(x[0])}</span><b>${esc(x[1])}</b></div>`).join('');}
+function stationCard(s){const k=(s.severity||{}).key,d=s.drivers||{};return `<article class="card"><div class="head"><div><div class="eyebrow">${esc(s.name)}</div><div class="score" style="color:${sevColor(k)}">${pct(s.score)}</div></div><span class="badge" style="border-color:${sevColor(k)}"><span class="dot" style="background:${sevColor(k)}"></span>${esc((s.severity||{}).label)}</span></div>${spark(s.hourly)}<div class="dl"><span>Heure sensible</span><strong>${esc(s.worst_time)}</strong></div><div class="dl"><span>Temp / rosée</span><strong>${num(d.temperature_c,1)} / ${num(d.dew_point_c,1)} °C</strong></div><div class="dl"><span>Proba pluie</span><strong>${num(d.precip_prob_pct,0)} %</strong></div><div class="dl"><span>Chute pression</span><strong>${num(d.pressure_drop_hpa,1)} hPa</strong></div><div class="dl"><span>Rafales</span><strong>${num(d.wind_gust_ms,1)} m/s</strong></div><ul class="small">${(s.signals||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul></article>`;}
+function renderDetection(){const s=M.summary||{},sc=s.severity_counts||{};return `<div class="notice"><b>Détection MeteoVoid · ${esc(M.label)}.</b> Le même moteur que la Belgique score chaque station (volatilité, à-coups et dérive des rafales via le moteur générique, plus proxys convectif et thermique). ${esc(s.station_count||0)} stations suivies, ${esc((sc.elevated||0)+(sc.danger||0))} en signal élevé/critique.</div><div class="grid cards3">${(M.stations||[]).map(stationCard).join('')}</div>`;}
+function renderReseau(){const r=M.radar_network||{};const rows=(r.sites||[]).map(s=>`<tr><td><b>${esc(s.name)}</b></td><td>${esc(s.band||'')}-band</td><td>${num(s.lat,2)}</td><td>${num(s.lon,2)}</td></tr>`).join('');return `<div class="grid cards3"><div class="card"><div class="eyebrow">Opérateur</div><div class="phrase" style="font-weight:600">${esc(r.operator||'')}</div><p class="muted small">${esc(r.network||'')}</p></div><div class="card"><div class="eyebrow">Sites radar réels</div><div class="score">${esc(r.site_count||0)}</div></div><div class="card"><div class="eyebrow">Statut clé nationale</div><div class="phrase" style="font-weight:600">${esc(r.status||'')}</div><p class="muted small">${r.api_key_env?esc(r.api_key_env)+(r.api_key_configured?' configurée':' manquante'):'open data, pas de clé'}</p></div></div><div class="notice" style="margin-top:14px">${esc(r.note||'')}</div><div class="section-title">Sites du réseau (${esc(r.site_count||0)})</div><div class="card" style="overflow:auto"><table><thead><tr><th>Site radar</th><th>Bande</th><th>Lat</th><th>Lon</th></tr></thead><tbody>${rows||'<tr><td colspan="4" class="muted">Aucun site radar configuré.</td></tr>'}</tbody></table></div>`;}
+function renderExpert(){return `<div class="grid cards2"><div class="card"><div class="eyebrow">Exports</div><h2>Données ${esc(M.label)}</h2><div class="links"><a href="api/country_${esc(M.country)}.json">API pays JSON</a><a href="europe.html">Page Europe</a><a href="index.html">Belgique</a></div></div><div class="card"><div class="eyebrow">Contrat</div><h2>${esc(M.contract||'')}</h2><p class="muted">Run ${esc(M.run_day||'')} · ${esc(M.generated_at||'')} · mode ${esc(M.data_mode||'')}</p></div></div><div class="section-title">Modèle brut</div><pre>${esc(JSON.stringify(M,null,2))}</pre>`;}
+function renderCarte(){const rn=M.radar_network||{};const leg=[['calm','faible'],['watch','modéré'],['elevated','élevé'],['danger','critique']];return `<div class="notice"><b>Carte radar ${esc(M.label)}.</b> ${esc(rn.site_count||0)} sites radar ${esc(rn.operator||'')} réels, radar RainViewer animé en direct, et stations de détection MeteoVoid colorées par niveau — comme la carte Belgique. Une carte affichée ne vaut pas preuve machine.</div>
+  <div class="map-bar">
+    <label class="map-toggle"><input type="checkbox" id="c-radartog" checked> Radar pluie (RainViewer)</label>
+    <label class="map-toggle"><input type="checkbox" id="c-sitetog" checked> Sites radar ${esc(rn.operator||'')}</label>
+    <button class="map-toggle" id="c-playtog" type="button">⏸ Animation</button>
+    <span class="map-frame" id="c-frame"></span>
+    <div class="map-legend">${leg.map(x=>`<span><i style="background:${sevColor(x[0])}"></i>${x[1]}</span>`).join('')}<span><i style="background:#fff;border:2px solid var(--accent)"></i>radar</span></div>
+  </div>
+  <div class="map-wrap"><div id="cmap" class="mvmap"></div><aside id="c-detail" class="map-detail"><p class="muted">Clique une station pour son détail de détection, ou un point radar pour le site. Active RainViewer pour suivre la pluie en direct.</p></aside></div>`;}
+function stationDetail(s){const k=(s.severity||{}).key,d=s.drivers||{};return `<div class="md-head" style="--ac:${sevColor(k)}"><div><div class="eyebrow">${esc(M.label)} · ${esc(s.worst_time)}</div><h3>${esc(s.name)}</h3></div><span class="badge"><span class="dot" style="background:${sevColor(k)}"></span>${esc((s.severity||{}).label)}</span></div><div class="md-score"><div><div class="eyebrow">Score MeteoVoid</div><div class="score" style="color:${sevColor(k)}">${pct(s.score)}</div></div>${spark(s.hourly)}</div><div class="dl"><span>Temp / rosée</span><strong>${num(d.temperature_c,1)} / ${num(d.dew_point_c,1)} °C</strong></div><div class="dl"><span>Proba pluie</span><strong>${num(d.precip_prob_pct,0)} %</strong></div><div class="dl"><span>Chute pression</span><strong>${num(d.pressure_drop_hpa,1)} hPa</strong></div><div class="dl"><span>Rafales</span><strong>${num(d.wind_gust_ms,1)} m/s</strong></div>${(s.signals&&s.signals.length)?'<div class="section-title">Signaux</div><ul class="small">'+s.signals.map(x=>`<li>${esc(x)}</li>`).join('')+'</ul>':''}`;}
+let CMAP={inst:null,booted:false,radar:null,host:'',frames:[],pastCount:0,idx:0,timer:null,playing:true,markers:{},radarSites:[]};
+function cSelect(id){const s=(M.stations||[]).find(x=>x.station_id===id);if(!s)return;const det=document.getElementById('c-detail');if(det)det.innerHTML=stationDetail(s);if(CMAP.inst&&s.lat!=null&&s.lon!=null)CMAP.inst.flyTo([s.lat,s.lon],8,{duration:.6});const m=CMAP.markers[id];if(m&&m.openTooltip)m.openTooltip();}
+function cRadarStop(){if(CMAP.timer){clearInterval(CMAP.timer);CMAP.timer=null;}}
+function cRadarShow(idx){if(!CMAP.inst||!window.L||!CMAP.frames.length)return;idx=(idx+CMAP.frames.length)%CMAP.frames.length;CMAP.idx=idx;const f=CMAP.frames[idx],next=L.tileLayer(CMAP.host+f.path+'/256/{z}/{x}/{y}/4/1_1.png',{opacity:.62,attribution:'RainViewer',zIndex:400});next.addTo(CMAP.inst);const prev=CMAP.radar;CMAP.radar=next;if(prev)setTimeout(()=>{try{CMAP.inst.removeLayer(prev);}catch(e){}},230);const fr=document.getElementById('c-frame');if(fr){const dt=new Date((f.time||0)*1000);fr.textContent=dt.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})+(idx>=CMAP.pastCount?' · prévision':'');}}
+function cRadarPlay(){cRadarStop();if(!CMAP.playing||CMAP.frames.length<2)return;CMAP.timer=setInterval(()=>cRadarShow(CMAP.idx+1),700);}
+function cToggleRadar(on){if(!CMAP.inst||!window.L)return;if(!on){cRadarStop();if(CMAP.radar){CMAP.inst.removeLayer(CMAP.radar);CMAP.radar=null;}const fr=document.getElementById('c-frame');if(fr)fr.textContent='';return;}if(CMAP.frames.length){cRadarShow(CMAP.idx);cRadarPlay();return;}fetch('https://api.rainviewer.com/public/weather-maps.json',{cache:'no-store'}).then(r=>r.json()).then(d=>{CMAP.host=d.host||'https://tilecache.rainviewer.com';const past=(d.radar&&d.radar.past)||[],now=(d.radar&&d.radar.nowcast)||[];CMAP.pastCount=past.length;CMAP.frames=past.concat(now);if(!CMAP.frames.length)return;CMAP.idx=Math.max(0,past.length-1);cRadarShow(CMAP.idx);cRadarPlay();}).catch(()=>{const t=document.getElementById('c-radartog');if(t)t.checked=false;const fr=document.getElementById('c-frame');if(fr)fr.textContent='radar indisponible (réseau)';});}
+function initCountryMap(){const host=document.getElementById('cmap');if(!host)return;if(!window.L){host.innerHTML='<div class="map-fallback">Fond de carte indisponible (réseau). La détection et le réseau radar restent lisibles dans les autres onglets.</div>';return;}if(CMAP.booted){if(CMAP.inst)CMAP.inst.invalidateSize();return;}CMAP.booted=true;const ctr=M.center||{};const map=L.map(host,{zoomControl:true,scrollWheelZoom:true}).setView([ctr.lat!=null?ctr.lat:47,ctr.lon!=null?ctr.lon:5],M.zoom||6);CMAP.inst=map;
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,attribution:'&copy; OpenStreetMap, &copy; CARTO'}).addTo(map);
+  const rn=M.radar_network||{};(rn.sites||[]).forEach(rs=>{if(rs.lat==null||rs.lon==null)return;const m=L.circleMarker([rs.lat,rs.lon],{radius:5,color:getCss('--accent'),weight:2,fillColor:'#fff',fillOpacity:.92});m.bindTooltip('📡 '+esc(rs.name)+(rs.band?(' · '+esc(rs.band)+'-band'):''),{direction:'top'});CMAP.radarSites.push(m);m.addTo(map);});
+  (M.stations||[]).forEach(s=>{if(s.lat==null||s.lon==null)return;const k=(s.severity||{}).key,col=sevColor(k),r=7+Math.round((s.score||0)*13);const m=L.circleMarker([s.lat,s.lon],{radius:r,color:'#fff',weight:1.5,fillColor:col,fillOpacity:.85});m.on('click',()=>cSelect(s.station_id));m.bindTooltip(esc(s.name)+' · '+pct(s.score),{direction:'top'});m.addTo(map);CMAP.markers[s.station_id]=m;});
+  const rt=document.getElementById('c-radartog');if(rt)rt.addEventListener('change',()=>cToggleRadar(rt.checked));
+  const sit=document.getElementById('c-sitetog');if(sit)sit.addEventListener('change',()=>{CMAP.radarSites.forEach(m=>{if(sit.checked)m.addTo(CMAP.inst);else CMAP.inst.removeLayer(m);});});
+  const pt=document.getElementById('c-playtog');if(pt)pt.addEventListener('click',()=>{CMAP.playing=!CMAP.playing;pt.textContent=(CMAP.playing?'⏸':'▶')+' Animation';if(CMAP.playing)cRadarPlay();else cRadarStop();});
+  if(rt&&rt.checked)cToggleRadar(true);
+  const first=(M.stations||[])[0];if(first)cSelect(first.station_id);
+  setTimeout(()=>map.invalidateSize(),60);}
+function paint(){renderKpis();document.getElementById('view-detection').innerHTML=renderDetection();document.getElementById('view-carte').innerHTML=renderCarte();document.getElementById('view-reseau').innerHTML=renderReseau();document.getElementById('view-expert').innerHTML=renderExpert();document.getElementById('foot').textContent='MeteoVoid '+(M.label||'')+' · '+(M.generated_at||'')+' · mode '+(M.data_mode||'')+' · prototype non officiel';}
+document.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));btn.classList.add('active');document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id==='view-'+btn.dataset.view));if(btn.dataset.view==='carte')initCountryMap();window.scrollTo({top:0,behavior:'smooth'});}));
+function cApplyTheme(t){document.documentElement.dataset.theme=t;try{localStorage.setItem('mv-theme',t);}catch(e){}}
+(function(){let t='light';try{t=localStorage.getItem('mv-theme')||((matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light');}catch(e){}cApplyTheme(t);})();
+document.getElementById('theme').onclick=()=>{cApplyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');};
+paint();
+</script>
+</body>
+</html>"""
+
+
 def _write_methodology_page(site_dir: Path) -> None:
     html_page = """<!doctype html>
 <html lang="fr">
@@ -1599,6 +1693,52 @@ body{margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:#f5f7fb;col
     (site_dir / "methodology.html").write_text(html_page, encoding="utf-8")
 
 
+def _write_country_pages(site_dir: Path) -> list[dict[str, Any]]:
+    """Build one dedicated follow-up page per European country (Belgium-level).
+
+    Each page reuses the site interface and the *same* MeteoVoid detection
+    engine, plus the real national radar network. Live national data is used
+    only when METEOVOID_ENABLE_LIVE_COUNTRY is set and the network/keys answer;
+    otherwise the deterministic offline model keeps CI and Pages reproducible.
+    """
+    import os
+
+    enable_live = os.environ.get("METEOVOID_ENABLE_LIVE_COUNTRY", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    try:
+        models = build_all_countries(enable_live=enable_live)
+    except Exception:  # pragma: no cover - never break the whole site build
+        models = {}
+
+    api_dir = site_dir / "api"
+    api_dir.mkdir(parents=True, exist_ok=True)
+    links: list[dict[str, Any]] = []
+    for key, model in models.items():
+        href = f"{key}.html"
+        _write_json(api_dir / f"country_{key}.json", model)
+        payload = json.dumps(model, ensure_ascii=False).replace("</", "<\\/")
+        (site_dir / href).write_text(
+            COUNTRY_TEMPLATE.replace("__COUNTRY_BOOTSTRAP__", payload), encoding="utf-8"
+        )
+        summary = model.get("summary", {}) if isinstance(model.get("summary"), dict) else {}
+        links.append(
+            {
+                "country": key,
+                "label": model.get("label"),
+                "iso2": model.get("iso2"),
+                "href": href,
+                "level": (model.get("operational_level") or {}).get("key"),
+                "radar_site_count": summary.get("radar_site_count"),
+                "station_count": summary.get("station_count"),
+            }
+        )
+    return links
+
+
 def build_index(report_dir: Path, site_dir: Path) -> dict[str, Any]:
     site_dir.mkdir(parents=True, exist_ok=True)
     _copy_outputs(report_dir, site_dir)
@@ -1610,7 +1750,10 @@ def build_index(report_dir: Path, site_dir: Path) -> dict[str, Any]:
         "__GENERATED_AT__", str(vm["meta"].get("generated_at") or "")
     )
     (site_dir / "index.html").write_text(page, encoding="utf-8")
-    _write_europe_page(site_dir, build_europe_model(site_dir / "reports" / "latest", vm))
+    country_links = _write_country_pages(site_dir)
+    europe_model = build_europe_model(site_dir / "reports" / "latest", vm)
+    europe_model["country_pages"] = country_links
+    _write_europe_page(site_dir, europe_model)
     _write_methodology_page(site_dir)
     (site_dir / "README.md").write_text(
         "# MeteoVoid Belgique\n\nSite statique généré automatiquement.\n"

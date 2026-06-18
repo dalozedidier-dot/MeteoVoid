@@ -177,3 +177,33 @@ python tools/generate_radar_stack.py --out-dir _out/belgium --country-radar-file
 ```
 
 Voir `docs/EUROPEAN_NATIONAL_RADARS.md` pour la logique d’intégration, les clés API possibles et la règle de prudence : aucune source nationale n’est traitée comme preuve machine tant qu’un fichier radar n’est pas lisible et métriqué.
+
+### Pages de suivi par pays
+
+Chaque pays suivi (Espagne, France, Suisse, Pays-Bas) dispose maintenant d’une page dédiée, au même niveau que la page Belgique : `spain.html`, `france.html`, `switzerland.html`, `netherlands.html`. Elles sont générées par `tools/build_belgium_public_site.py` et reliées depuis la page Europe.
+
+Chaque page expose :
+
+- la **détection MeteoVoid par station** via le même moteur générique (`meteovoid.scoring.compute_composite_score`) que la Belgique : volatilité, à-coups et dérive des rafales, complétés de proxys convectif et thermique ;
+- le **réseau radar national réel** (positions physiques des radars AEMET, Météo-France, MeteoSwiss, KNMI) affiché sur une carte Leaflet interactive, avec la couche **RainViewer** animée en direct ;
+- un statut de source **honnête** : un flux radar national n’est promu en preuve machine que si sa clé est configurée et qu’une trame est lisible.
+
+Le registre des stations et des sites radar est dans `config/european_country_radar_sites.yaml`.
+
+Mode hors-ligne déterministe (par défaut, reproductible pour la CI et GitHub Pages) :
+
+```bash
+python tools/build_belgium_public_site.py --report-dir _out/belgium --site-dir _site
+```
+
+Mode données réelles (Open-Meteo pour les observations, clés nationales pour le radar) :
+
+```bash
+export METEOVOID_ENABLE_LIVE_COUNTRY=1
+export AEMET_API_KEY=...        # Espagne (radar national)
+export METEOFRANCE_API_KEY=...  # France (radar national)
+export KNMI_API_KEY=...         # Pays-Bas (radar national)
+python tools/build_belgium_public_site.py --report-dir _out/belgium --site-dir _site
+```
+
+Sans clé, la carte affiche quand même les sites radar réels et RainViewer, et signale `interface_ready_awaiting_national_key`.
