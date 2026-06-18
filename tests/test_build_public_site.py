@@ -333,10 +333,15 @@ def test_europe_page_is_dedicated_and_precise(tmp_path: Path) -> None:
     for token in [
         "MeteoVoid Europe",
         "Espagne · France · Suisse · Pays-Bas",
-        "Carte Europe radar",
-        "Pays suivis",
-        "Sources radar par pays",
-        "Corridors amont vers la Belgique",
+        "Page Europe complète",
+        "Vue simple",
+        "Opérationnel",
+        "Carte Europe",
+        "Pays",
+        "Corridors",
+        "Sources",
+        "Expert",
+        "Source → radar → métrique → corridor",
         "european_national_radar_map.html",
         "api/europe.json",
     ]:
@@ -344,6 +349,10 @@ def test_europe_page_is_dedicated_and_precise(tmp_path: Path) -> None:
 
     europe = json.loads((site_dir / "api" / "europe.json").read_text(encoding="utf-8"))
     assert europe["summary"]["country_count"] == 4
+    assert europe["page_contract"] == "meteovoid_europe_page_full_v2"
+    assert "simple" in europe and "operational" in europe
+    assert "radar_layers" in europe and len(europe["radar_layers"]) == 3
+    assert "exports" in europe and len(europe["exports"]) >= 8
     assert {c["country"] for c in europe["countries"]} == {
         "spain",
         "france",
