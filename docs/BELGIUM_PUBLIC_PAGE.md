@@ -79,3 +79,8 @@ publie le dossier `_site`. En cas d’échec, vérifier dans `Settings > Pages` 
 bien **GitHub Actions**.
 
 Voir aussi `docs/METHODOLOGY.md` pour le contrat public, les limites et la séparation chaleur / risque convectif.
+
+
+## Refonte interface 2026-06
+
+La page Belgique utilise désormais la refonte sombre MeteoVoid : vue simple, bulletin, vue opérationnelle, chaleur, carte, expert et méthodologie. Le design reste alimenté par le view-model public généré par `tools/build_belgium_public_site.py`; les données de démo du prototype HTML sont remplacées au build par les sorties JSON du run.
