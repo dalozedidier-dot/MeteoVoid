@@ -242,7 +242,7 @@ def test_build_index_produces_site_and_api(tmp_path: Path) -> None:
         json.loads(api_file.read_text(encoding="utf-8"))  # parses
 
     # three-level view-model is complete
-    assert set(vm) == {"meta", "simple", "operational", "heat", "expert"}
+    assert set(vm) == {"meta", "simple", "operational", "heat", "expert", "bulletin"}
     assert len(vm["operational"]["blocks"]) == 7
     assert vm["operational"]["timeline"]["hours"]
 
@@ -375,7 +375,7 @@ def test_country_pages_are_generated_and_linked(tmp_path: Path) -> None:
     site.build_index(report_dir, site_dir)
 
     europe_html = (site_dir / "europe.html").read_text(encoding="utf-8")
-    for key in ("spain", "france", "switzerland", "netherlands"):
+    for key in ("spain", "france", "switzerland", "netherlands", "germany", "denmark"):
         page = site_dir / f"{key}.html"
         assert page.exists(), f"missing dedicated page for {key}"
         html = page.read_text(encoding="utf-8")
@@ -389,7 +389,39 @@ def test_country_pages_are_generated_and_linked(tmp_path: Path) -> None:
         assert model["stations"], "country detection must score stations"
         assert model["radar_network"]["site_count"] >= 1
         assert model["summary"]["radar_site_count"] == model["radar_network"]["site_count"]
+        assert model["data_sources"], "country links its master radar sources"
 
-    # France ships the densest real radar network of the four
+    # France ships the densest real radar network of the four original countries
     france = json.loads((site_dir / "api" / "country_france.json").read_text(encoding="utf-8"))
     assert france["summary"]["radar_site_count"] >= 15
+
+
+def test_master_radar_source_registry_is_published_and_sanitised(tmp_path: Path) -> None:
+    report_dir = _minimal_report_dir(tmp_path)
+    site_dir = tmp_path / "site"
+    site.build_index(report_dir, site_dir)
+
+    reg = json.loads((site_dir / "api" / "radar_sources.json").read_text(encoding="utf-8"))
+    assert reg["summary"]["source_count"] == 8
+    assert reg["sources"][0]["id"] == "meteogate_opera_ord"  # European pivot, rank 1
+
+    europe_html = (site_dir / "europe.html").read_text(encoding="utf-8")
+    assert "Registre maître" in europe_html
+    assert "priorité opérationnelle" in europe_html
+
+
+def test_belgium_page_has_a_weather_bulletin(tmp_path: Path) -> None:
+    report_dir = _minimal_report_dir(tmp_path)
+    site_dir = tmp_path / "site"
+    vm = site.build_index(report_dir, site_dir)
+
+    # bulletin is part of the view-model and rendered on the Belgium page
+    assert "bulletin" in vm
+    bulletin = vm["bulletin"]
+    assert bulletin["contract"] == "meteovoid_belgium_bulletin_v1"
+    assert bulletin["sections"], "bulletin must have content sections"
+    assert bulletin["non_official"] is True
+
+    index_html = (site_dir / "index.html").read_text(encoding="utf-8")
+    for token in ['data-view="bulletin"', "renderBulletin", "view-bulletin"]:
+        assert token in index_html, token
