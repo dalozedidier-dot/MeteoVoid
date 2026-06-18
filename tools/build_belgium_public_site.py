@@ -25,10 +25,8 @@ import argparse
 import json
 import math
 import shutil
-import sys
 from pathlib import Path
 from typing import Any
-
 _SRC = Path(__file__).resolve().parents[1] / "src"
 if _SRC.exists() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
@@ -2157,48 +2155,12 @@ function cApplyTheme(t){document.documentElement.dataset.theme=t;try{localStorag
 (function(){let t='light';try{t=localStorage.getItem('mv-theme')||((matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light');}catch(e){}cApplyTheme(t);})();
 document.getElementById('theme').onclick=()=>{cApplyTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');};
 paint();
+=======
+document.querySelectorAll('.tab').forEach(btn=>btn.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));btn.classList.add('active');document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id==='view-'+btn.dataset.view));window.scrollTo({top:0,behavior:'smooth'});}));document.getElementById('theme').onclick=()=>{document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark'};paint();
 
 </script>
 </body>
 </html>"""
-
-
-def _write_country_pages(site_dir: Path) -> list[dict[str, str]]:
-    """Generate dedicated Europe country pages and their JSON APIs.
-
-    The country pages are static and use the same public-site design language as
-    the Belgium/Europe pages. They remain honest about radar evidence: a
-    national radar network can be displayed without a key, but machine evidence
-    is published only when a readable radar file has been transformed into
-    metrics.
-    """
-    api_dir = site_dir / "api"
-    api_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        countries = build_all_countries()
-    except Exception:
-        countries = {}
-
-    links: list[dict[str, str]] = []
-    for key, model in countries.items():
-        if not isinstance(model, dict):
-            continue
-        safe_key = str(key)
-        html_name = f"{safe_key}.html"
-        api_name = f"country_{safe_key}.json"
-        _write_json(api_dir / api_name, model)
-        payload = json.dumps(model, ensure_ascii=False).replace("</", "<\\/")
-        page = COUNTRY_TEMPLATE.replace("__COUNTRY_BOOTSTRAP__", payload)
-        (site_dir / html_name).write_text(page, encoding="utf-8")
-        links.append(
-            {
-                "country": safe_key,
-                "label": str(model.get("label") or safe_key.title()),
-                "href": html_name,
-                "api": f"api/{api_name}",
-            }
-        )
-    return links
 
 
 def _write_methodology_page(site_dir: Path) -> None:
@@ -2237,25 +2199,23 @@ def build_index(report_dir: Path, site_dir: Path) -> dict[str, Any]:
         "__GENERATED_AT__", str(vm["meta"].get("generated_at") or "")
     )
     (site_dir / "index.html").write_text(page, encoding="utf-8")
-
+claude/happy-ramanujan-xse58t
     country_links = _write_country_pages(site_dir)
     try:
         source_registry = build_source_registry()
     except Exception:
         source_registry = {}
     _write_json(site_dir / "api" / "radar_sources.json", source_registry)
-
     europe_model = build_europe_model(site_dir / "reports" / "latest", vm)
     europe_model["country_pages"] = country_links
     europe_model["master_sources"] = source_registry
-    _write_json(site_dir / "api" / "europe.json", europe_model)
     _write_europe_page(site_dir, europe_model)
 
+    _write_europe_page(site_dir, build_europe_model(site_dir / "reports" / "latest", vm))
     _write_methodology_page(site_dir)
     (site_dir / "README.md").write_text(
         "# MeteoVoid Belgique\n\nSite statique généré automatiquement.\n"
-        "Lecture en trois niveaux (simple, opérationnel, expert), page Europe, "
-        "pages pays, page méthodologie et API JSON dans `api/`.\n",
+        "Lecture en trois niveaux (simple, opérationnel, expert), page Europe, page méthodologie et API JSON dans `api/`.\n",
         encoding="utf-8",
     )
     return vm

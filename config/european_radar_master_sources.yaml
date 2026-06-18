@@ -1,0 +1,177 @@
+# MeteoVoid - master registry of European radar sources.
+#
+# This is the single source of truth for the radar/precipitation providers
+# MeteoVoid can use across Europe. It encodes, for every provider: the auth
+# model (free key, free account, or keyless open data), the documented rate
+# limits, the data formats, the evidence level, the operational priority, and
+# the exact environment variable that switches it on.
+#
+# SECURITY CONTRACT
+#   - Secret keys (AEMET_API_KEY, METEOFRANCE_API_KEY, KNMI_API_KEY,
+#     METEOGATE_API_KEY) live ONLY in GitHub Actions secrets or a local .env.
+#   - The public site NEVER receives a key value. MeteoVoid only publishes
+#     booleans ("configured": true/false) and status strings in api/*.json.
+#   - A provider becomes "machine evidence" only when a real radar file/tile is
+#     downloaded and turned into metrics. A displayed map or a reachable
+#     endpoint is not, by itself, proof.
+contract: meteovoid_radar_master_sources_v1
+updated: "2026-06-18"
+
+# Operational switches and guardrails (read from the environment at build time).
+settings:
+  cache_minutes_env: METEOVOID_RADAR_CACHE_MINUTES
+  cache_minutes_default: 10
+  max_requests_per_run_env: METEOVOID_RADAR_MAX_REQUESTS_PER_RUN
+  max_requests_per_run_default: 50
+  require_attribution_env: METEOVOID_RADAR_REQUIRE_ATTRIBUTION
+  require_attribution_default: true
+  enable_live_env: METEOVOID_ENABLE_LIVE_COUNTRY
+
+sources:
+  - id: meteogate_opera_ord
+    rank: 1
+    provider: "EUMETNET OPERA ORD / MeteoGate"
+    scope: europe
+    country: null
+    role: "Colonne vertébrale radar européenne : single-site, composites, liens nationaux."
+    auth: free_account_or_anonymous
+    auth_env: METEOGATE_API_KEY
+    enabled_default: true
+    rate_limit: "Requêtes anonymes possibles, en-tête x-ratelimit-remaining ; clé recommandée via MeteoGate Developer Portal."
+    formats: ["ODIM_HDF5", "Cloud_Optimized_GeoTIFF"]
+    evidence_level: machine_radar_if_file_read
+    license: "CC BY 4.0 pour les composites OPERA."
+    attribution: "EUMETNET OPERA / MeteoGate"
+    public_reference: "https://eumetnet.github.io/openradardata-documentation/"
+    status_text: "Source pivot Europe : preuve machine si un fichier est réellement téléchargé et analysé."
+
+  - id: knmi_data_platform
+    rank: 2
+    provider: "KNMI Data Platform"
+    scope: country
+    country: netherlands
+    role: "Radar machine le plus intéressant au nord de la Belgique (flux nord-ouest)."
+    auth: api_key_required
+    auth_env: KNMI_API_KEY
+    enabled_default: false
+    rate_limit: "Clés anonyme / enregistrée / bulk ; clé enregistrée recommandée. WMS anonyme possible, quota partagé + limite IP."
+    formats: ["HDF5_volume_DenHelder_Herwijnen", "reflectivity_composite_5min", "radar_gauge_accumulation", "nowcast_2h", "WMS"]
+    evidence_level: machine_radar_if_file_read
+    license: "KNMI open data, clé requise."
+    attribution: "KNMI Data Platform"
+    public_reference: "https://dataplatform.knmi.nl/"
+    status_text: "Pays-Bas : source radar machine prioritaire, surtout pour le flux nord-ouest vers la Belgique."
+
+  - id: meteofrance_radar_api
+    rank: 3
+    provider: "Météo-France API Données Radar"
+    scope: country
+    country: france
+    role: "Indispensable pour les orages venant du nord de la France."
+    auth: free_account
+    auth_env: METEOFRANCE_API_KEY
+    enabled_default: false
+    rate_limit: "≈ 850 requêtes / 5 minutes ; accès via le portail API Météo-France."
+    formats: ["radar_national", "mosaique", "radiales_selon_acces"]
+    evidence_level: machine_radar_if_file_read
+    license: "Accès ouvert avec compte (data.gouv / portail API Météo-France)."
+    attribution: "Météo-France"
+    public_reference: "https://www.data.gouv.fr/dataservices/api-donnees-radar"
+    status_text: "France : clé Météo-France prioritaire pour le live."
+    companion:
+      id: aeris_meteofrance
+      provider: "AERIS / Météo-France (archive/recherche)"
+      role: "Mosaïque cumul 5 min, COMEPHORE horaire, radiales simple/double polarisation."
+      auth: access_request
+      evidence_level: archive_validation
+      status_text: "AERIS : source archive/recherche, utile pour la validation historique, pas une clé live universelle."
+
+  - id: aemet_opendata
+    rank: 4
+    provider: "AEMET OpenData"
+    scope: country
+    country: spain
+    role: "Extension Espagne et épisodes ibériques remontants vers la France puis la Belgique."
+    auth: api_key_required
+    auth_env: AEMET_API_KEY
+    enabled_default: false
+    rate_limit: "40 connexions / minute / utilisateur ; clé demandée par email, validité indéfinie."
+    formats: ["radar_regional_images", "composition_nationale"]
+    evidence_level: machine_radar_if_file_read
+    license: "AEMET OpenData, réutilisation selon conditions AEMET."
+    attribution: "AEMET OpenData"
+    public_reference: "https://opendata.aemet.es/"
+    status_text: "Espagne : source nationale disponible si clé AEMET configurée. Attention au quota 40 connexions/minute."
+
+  - id: meteoswiss_open_data
+    rank: 5
+    provider: "MeteoSwiss Open Data / STAC"
+    scope: country
+    country: switzerland
+    role: "Précipitation radar (5 radars C-band), produits grêle, très propre techniquement."
+    auth: keyless_open_data
+    auth_env: METEOSWISS_STAC_ENABLED
+    enabled_default: true
+    rate_limit: "Open data STAC, pas de clé. Produits PRECIP 5/10/60 min, 14 derniers jours ; produits grêle 5 min."
+    formats: ["STAC_assets", "precip_radar", "hail_radar"]
+    evidence_level: machine_radar_if_file_read
+    license: "MeteoSwiss Open Government Data."
+    attribution: "MeteoSwiss"
+    public_reference: "https://opendatadocs.meteoswiss.ch/d-radar-data"
+    status_text: "Suisse : source radar machine sans clé, très bon niveau pour MeteoVoid Europe."
+
+  - id: dwd_open_data
+    rank: 6
+    provider: "DWD Open Data"
+    scope: country
+    country: germany
+    role: "Zone amont est/nord-est importante pour Liège, Limbourg, Luxembourg et Ardennes."
+    auth: keyless_open_data
+    auth_env: DWD_OPEN_DATA_ENABLED
+    enabled_default: true
+    rate_limit: "Open data, pas de clé. Index public, fichiers HDF5 récents disponibles directement."
+    formats: ["RADOLAN", "RADKLIM", "HDF5", "precip_radar"]
+    evidence_level: machine_radar_if_file_read
+    license: "DWD open data."
+    attribution: "Deutscher Wetterdienst (DWD)"
+    public_reference: "https://opendata.dwd.de/"
+    status_text: "Allemagne : source amont gratuite sans clé (RADOLAN/RADKLIM HDF5)."
+
+  - id: rainviewer
+    rank: 7
+    provider: "RainViewer"
+    scope: europe
+    country: null
+    role: "Couche visuelle radar : 2 dernières heures + frames de nowcast."
+    auth: keyless_public
+    auth_env: RAINVIEWER_ENABLED
+    enabled_default: true
+    rate_limit: "Weather Maps API gratuit, sans clé, sans SLA ; usage perso/éducatif/petite communauté."
+    formats: ["XYZ_tiles", "nowcast_frames"]
+    evidence_level: display_only
+    license: "Gratuit, attribution obligatoire."
+    attribution: "RainViewer"
+    public_reference: "https://www.rainviewer.com/api/weather-maps-api.html"
+    status_text: "RainViewer : couche visuelle / animation, ne compte pas comme preuve radar machine."
+
+  - id: dmi_radar
+    rank: 8
+    provider: "DMI Radar API"
+    scope: country
+    country: denmark
+    role: "Extension nord / mer du Nord ; non prioritaire pour la Belgique mais facile."
+    auth: keyless_open_data
+    auth_env: DMI_RADAR_ENABLED
+    enabled_default: false
+    rate_limit: "API radar ouverte, sans authentification."
+    formats: ["radar_api"]
+    evidence_level: machine_radar_if_file_read
+    license: "DMI open data."
+    attribution: "Danmarks Meteorologiske Institut (DMI)"
+    public_reference: "https://opendatadocs.dmi.govcloud.dk/"
+    status_text: "Danemark : option Europe élargie, radar API sans clé, priorité moyenne."
+
+# Explicitly NOT treated as machine evidence (kept only as external/visual links).
+excluded_as_machine_evidence:
+  - "API mobiles non documentées (ex. app IRM/KMI) : pas une base propre pour un site public."
+  - "Pages HTML radar publiques : lien externe / comparaison visuelle, jamais métrique tant qu'un fichier ou flux documenté n'est pas lu."
