@@ -175,10 +175,10 @@ table{{margin-top:18px;width:100%;border-collapse:collapse;background:#fff;borde
 .note{{background:#eef6ff;border-left:5px solid #245b91;border-radius:14px;padding:14px;margin:18px 0}}@media(max-width:900px){{.grid{{grid-template-columns:1fr}}}}
 </style></head><body><header><h1>MeteoVoid Belgique · Graphe informationnel</h1><p>Arêtes apprises par corrélation retardée et proxy d'entropie de transfert.</p></header><div class='wrap'>
 <div class='grid'>
-<div class='card'><small>Score corridor</small><span class='big'>{_as_float(summary.get("information_corridor_score")):.3f}</span></div>
-<div class='card'><small>Arêtes</small><span class='big'>{html.escape(str(summary.get("edge_count", 0)))}</span></div>
-<div class='card'><small>Amont dominant</small><span class='big' style='font-size:18px'>{html.escape(str(summary.get("top_upstream_station") or "n/a"))}</span></div>
-<div class='card'><small>Aval dominant</small><span class='big' style='font-size:18px'>{html.escape(str(summary.get("top_downstream_station") or "n/a"))}</span></div>
+<div class='card'><small>Score corridor</small><span class='big'>{_as_float(summary.get('information_corridor_score')):.3f}</span></div>
+<div class='card'><small>Arêtes</small><span class='big'>{html.escape(str(summary.get('edge_count',0)))}</span></div>
+<div class='card'><small>Amont dominant</small><span class='big' style='font-size:18px'>{html.escape(str(summary.get('top_upstream_station') or 'n/a'))}</span></div>
+<div class='card'><small>Aval dominant</small><span class='big' style='font-size:18px'>{html.escape(str(summary.get('top_downstream_station') or 'n/a'))}</span></div>
 </div><div class='note'><strong>Lecture.</strong> Ce graphe mesure les liens directionnels apparents entre stations. Il ne prouve pas une causalité physique, mais signale les corridors d'information météo à vérifier avec le flux, radar et satellite.</div>
 <table><thead><tr><th>Source</th><th></th><th>Cible</th><th>Lag h</th><th>Corr.</th><th>TE proxy</th><th>Poids</th></tr></thead><tbody>{rows}</tbody></table>
 </div></body></html>"""

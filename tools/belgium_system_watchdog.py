@@ -150,9 +150,9 @@ def _render_html(data: dict[str, Any]) -> str:
     return f"""<!doctype html><html lang='fr'><head><meta charset='utf-8'/><meta name='viewport' content='width=device-width, initial-scale=1'/><title>MeteoVoid · Auto-surveillance</title><style>
 body{{margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:#eef3f8;color:#0d1b2e}}header{{background:#173b66;color:#fff;padding:22px 26px}}.wrap{{padding:22px;max-width:1100px;margin:auto}}.grid{{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}}.card{{background:white;border:1px solid #d9e3ef;border-radius:18px;padding:18px;box-shadow:0 14px 32px rgba(20,42,69,.08)}}.big{{font-size:30px;font-weight:900;display:block;margin-top:8px}}small{{color:#66758a;text-transform:uppercase;font-weight:800;letter-spacing:.08em}}@media(max-width:900px){{.grid{{grid-template-columns:1fr}}}}
 </style></head><body><header><h1>MeteoVoid Belgique · Auto-surveillance</h1><p>Le système observe sa propre cohérence : sources, fraîcheur, sorties et dégradation.</p></header><div class='wrap'><div class='grid'>
-<div class='card'><small>État</small><span class='big'>{html.escape(str(data.get("state")))}</span></div>
-<div class='card'><small>Perte de cohérence</small><span class='big'>{float(data.get("coherence_loss_score") or 0):.3f}</span></div>
-<div class='card'><small>Sources OK/erreurs</small><span class='big'>{source.get("source_ok_count", 0)}/{source.get("source_error_count", 0)}</span></div>
+<div class='card'><small>État</small><span class='big'>{html.escape(str(data.get('state')))}</span></div>
+<div class='card'><small>Perte de cohérence</small><span class='big'>{float(data.get('coherence_loss_score') or 0):.3f}</span></div>
+<div class='card'><small>Sources OK/erreurs</small><span class='big'>{source.get('source_ok_count',0)}/{source.get('source_error_count',0)}</span></div>
 </div><div class='card' style='margin-top:18px'><h2>Sorties manquantes</h2><ul>{missing_html}</ul></div></div></body></html>"""
 
 

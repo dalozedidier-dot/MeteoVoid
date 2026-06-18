@@ -228,8 +228,8 @@ header p {{ margin:6px 0 0; opacity:.88; }}
 <header><h1>{html.escape(title)}</h1><p>Lecture expérimentale des corridors spatiaux de risque. Généré : {generated_at}</p></header>
 <section class="panel kpis">
   <div class="kpi"><small>Score graphe</small><strong>{metric}</strong></div>
-  <div class="kpi"><small>Nœuds</small><strong>{metrics.get("node_count")}</strong></div>
-  <div class="kpi"><small>Liens</small><strong>{metrics.get("edge_count")}</strong></div>
+  <div class="kpi"><small>Nœuds</small><strong>{metrics.get('node_count')}</strong></div>
+  <div class="kpi"><small>Liens</small><strong>{metrics.get('edge_count')}</strong></div>
   <div class="kpi"><small>Lecture</small><p>{interp}</p></div>
 </section>
 <section class="panel"><div id="map"></div></section>

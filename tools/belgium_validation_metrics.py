@@ -183,11 +183,11 @@ def _render_html(data: dict[str, Any]) -> str:
 body{{margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:#eef3f8;color:#0d1b2e}}header{{background:#173b66;color:white;padding:22px 26px}}.wrap{{padding:22px;max-width:1100px;margin:auto}}
 .grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}}.card{{background:white;border:1px solid #d9e3ef;border-radius:18px;padding:18px;box-shadow:0 14px 32px rgba(20,42,69,.08)}}.big{{font-size:30px;font-weight:900;display:block;margin-top:8px}}small{{color:#66758a;text-transform:uppercase;font-weight:800;letter-spacing:.08em}}.note{{margin-top:18px;background:#fff7e8;border-left:5px solid #e28a26;border-radius:14px;padding:14px 16px}}
 </style></head><body><header><h1>MeteoVoid Belgique · Validation & skill scores</h1><p>POD, FAR, CSI, Brier et cadre coût-perte.</p></header><div class='wrap'><div class='grid'>
-<div class='card'><small>POD</small><span class='big'>{html.escape(_fmt(scores.get("pod")))}</span></div>
-<div class='card'><small>FAR</small><span class='big'>{html.escape(_fmt(scores.get("far")))}</span></div>
-<div class='card'><small>CSI</small><span class='big'>{html.escape(_fmt(scores.get("csi")))}</span></div>
-<div class='card'><small>Brier</small><span class='big'>{html.escape(_fmt(scores.get("brier_score")))}</span></div>
-</div><div class='note'><strong>Événements appariés : {html.escape(str(data.get("matched_event_count", 0)))}</strong><br>Confusion : TP {confusion.get("tp", 0)}, FP {confusion.get("fp", 0)}, FN {confusion.get("fn", 0)}, TN {confusion.get("tn", 0)}. Ajouter des cas vérifiés pour rendre ce module réfutable.</div></div></body></html>"""
+<div class='card'><small>POD</small><span class='big'>{html.escape(_fmt(scores.get('pod')))}</span></div>
+<div class='card'><small>FAR</small><span class='big'>{html.escape(_fmt(scores.get('far')))}</span></div>
+<div class='card'><small>CSI</small><span class='big'>{html.escape(_fmt(scores.get('csi')))}</span></div>
+<div class='card'><small>Brier</small><span class='big'>{html.escape(_fmt(scores.get('brier_score')))}</span></div>
+</div><div class='note'><strong>Événements appariés : {html.escape(str(data.get('matched_event_count', 0)))}</strong><br>Confusion : TP {confusion.get('tp',0)}, FP {confusion.get('fp',0)}, FN {confusion.get('fn',0)}, TN {confusion.get('tn',0)}. Ajouter des cas vérifiés pour rendre ce module réfutable.</div></div></body></html>"""
 
 
 def write_validation_outputs(report: dict[str, Any], out_dir: Path) -> dict[str, Any]:

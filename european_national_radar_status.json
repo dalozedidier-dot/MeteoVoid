@@ -8,6 +8,8 @@
         "south": 41.0,
         "west": -5.8
       },
+      "belgium_relevance": "directe, souvent décisive pour anticiper l'entrée des cellules par Hainaut, Flandre, Brabant wallon, Namur et Ardenne",
+      "corridor_family": "France nord -> Belgique",
       "country": "france",
       "iso2": "FR",
       "label": "France",
@@ -23,7 +25,10 @@
       "machine_radar_available": false,
       "priority_for_belgium": "high",
       "radar_activity_score": null,
-      "source_count": 2,
+      "required_env": [
+        "METEOFRANCE_API_KEY"
+      ],
+      "source_count": 5,
       "sources": [
         {
           "api_key_configured": false,
@@ -31,12 +36,45 @@
           "evidence_level": "api_required",
           "expected_format": "provider_specific_radar_package",
           "id": "meteofrance_api_radar_package",
-          "license_note": "Accès via portail API Météo-France / meteo.data.gouv.fr selon contrat du service.",
+          "license_note": "Accès via portail API Météo-France, compte requis selon le service.",
           "machine_evidence": false,
           "note": "Provider exists, but no public machine endpoint is configured in this registry.",
           "provider": "Météo-France API / Données publiques Radar",
           "public_reference": "https://www.data.gouv.fr/dataservices/api-donnees-radar",
           "role": "national_radar_package",
+          "source_family": "national_api",
+          "status": "endpoint_not_configured",
+          "update_interval_minutes": 5
+        },
+        {
+          "api_key_configured": null,
+          "api_key_env": null,
+          "evidence_level": "catalogue_or_account_required",
+          "expected_format": "mosaic_and_raw_products",
+          "id": "aeris_meteofrance_radar_network",
+          "license_note": null,
+          "machine_evidence": false,
+          "note": "Provider exists, but no public machine endpoint is configured in this registry.",
+          "provider": "AERIS / Réseau radar Météo-France",
+          "public_reference": "https://www.aeris-data.fr/en/projects/meteo-france-radar-network/",
+          "role": "research_radar_archive_and_products",
+          "source_family": "research_catalogue",
+          "status": "endpoint_not_configured",
+          "update_interval_minutes": null
+        },
+        {
+          "api_key_configured": null,
+          "api_key_env": null,
+          "evidence_level": "display_only",
+          "expected_format": "web_map_display",
+          "id": "meteofrance_public_radar_display",
+          "license_note": null,
+          "machine_evidence": false,
+          "note": "Provider exists, but no public machine endpoint is configured in this registry.",
+          "provider": "Météo-France",
+          "public_reference": "https://meteofrance.com/images-radar",
+          "role": "public_radar_display",
+          "source_family": "display",
           "status": "endpoint_not_configured",
           "update_interval_minutes": 5
         },
@@ -52,11 +90,35 @@
           "provider": "EUMETNET OPERA ORD",
           "public_reference": "https://eumetnet.github.io/openradardata-documentation/",
           "role": "pan_european_machine_radar",
+          "source_family": "opera_fallback",
           "status": "covered_by_opera_ord_connector",
+          "update_interval_minutes": null
+        },
+        {
+          "api_key_configured": null,
+          "api_key_env": null,
+          "evidence_level": "display_only",
+          "expected_format": "XYZ_tiles",
+          "id": "rainviewer_france_display",
+          "license_note": null,
+          "machine_evidence": false,
+          "note": "Provider exists, but no public machine endpoint is configured in this registry.",
+          "provider": "RainViewer",
+          "public_reference": "https://www.rainviewer.com/api/weather-maps-api.html",
+          "role": "visual_radar_tiles",
+          "source_family": "display",
+          "status": "endpoint_not_configured",
           "update_interval_minutes": null
         }
       ],
-      "upstream_role": "principal corridor amont vers Belgique : nord France / Manche / Champagne-Ardenne"
+      "upstream_role": "principal couloir amont vers Belgique : Hauts-de-France, Manche, Champagne-Ardenne, Grand Est",
+      "watch_zones": [
+        "Hauts-de-France",
+        "Champagne-Ardenne",
+        "Grand Est",
+        "Normandie et Manche",
+        "Bassin parisien"
+      ]
     },
     {
       "bbox": {
@@ -65,6 +127,8 @@
         "south": 50.6,
         "west": 3.0
       },
+      "belgium_relevance": "directe pour flux nord-ouest, mer du Nord, Flandre, Anvers, Limbourg et retour vers Liège",
+      "corridor_family": "Mer du Nord / Pays-Bas -> Belgique nord et est",
       "country": "netherlands",
       "iso2": "NL",
       "label": "Pays-Bas",
@@ -80,21 +144,73 @@
       "machine_radar_available": false,
       "priority_for_belgium": "high",
       "radar_activity_score": null,
-      "source_count": 2,
+      "required_env": [
+        "KNMI_API_KEY"
+      ],
+      "source_count": 6,
       "sources": [
         {
           "api_key_configured": false,
           "api_key_env": "KNMI_API_KEY",
           "evidence_level": "open_data_api",
           "expected_format": "HDF5",
-          "id": "knmi_dataplatform_radar_hdf5",
-          "license_note": "KNMI open data datasets are available via the KNMI Data Platform; radar products are commonly HDF5 / WMS / API depending on dataset.",
+          "id": "knmi_radar_reflectivity_composites",
+          "license_note": "KNMI Data Platform, Open Data API, CC-BY-4.0 according to dataset metadata.",
           "machine_evidence": false,
           "note": "Set KNMI_API_KEY to probe this provider endpoint.",
           "provider": "KNMI Data Platform",
-          "public_reference": "https://dataplatform.knmi.nl/dataset/",
-          "role": "national_radar_hdf5",
+          "public_reference": "https://dataplatform.knmi.nl/dataset/access/radar-reflectivity-composites-2-0",
+          "role": "5_min_reflectivity_composites",
+          "source_family": "national_api",
           "status": "requires_api_key",
+          "update_interval_minutes": 5
+        },
+        {
+          "api_key_configured": false,
+          "api_key_env": "KNMI_API_KEY",
+          "evidence_level": "open_data_api",
+          "expected_format": "HDF5",
+          "id": "knmi_radar_gauge_5min_realtime",
+          "license_note": null,
+          "machine_evidence": false,
+          "note": "Set KNMI_API_KEY to probe this provider endpoint.",
+          "provider": "KNMI Data Platform",
+          "public_reference": "https://dataplatform.knmi.nl/dataset/?tags=Radar",
+          "role": "5_min_radar_gauge_accumulations",
+          "source_family": "national_api",
+          "status": "requires_api_key",
+          "update_interval_minutes": 5
+        },
+        {
+          "api_key_configured": false,
+          "api_key_env": "KNMI_API_KEY",
+          "evidence_level": "open_data_api",
+          "expected_format": "HDF5_or_TXT",
+          "id": "knmi_radar_nowcast_2h",
+          "license_note": null,
+          "machine_evidence": false,
+          "note": "Set KNMI_API_KEY to probe this provider endpoint.",
+          "provider": "KNMI Data Platform",
+          "public_reference": "https://dataplatform.knmi.nl/dataset/radar-forecast-2-0",
+          "role": "radar_nowcast_0_120min",
+          "source_family": "national_nowcast",
+          "status": "requires_api_key",
+          "update_interval_minutes": 5
+        },
+        {
+          "api_key_configured": null,
+          "api_key_env": null,
+          "evidence_level": "wms_open_data",
+          "expected_format": "OGC_WMS",
+          "id": "knmi_wms_precipitation",
+          "license_note": null,
+          "machine_evidence": false,
+          "note": "Provider exists, but no public machine endpoint is configured in this registry.",
+          "provider": "KNMI WMS API",
+          "public_reference": "https://developer.dataplatform.knmi.nl/wms",
+          "role": "web_mapping_service",
+          "source_family": "wms_display",
+          "status": "endpoint_not_configured",
           "update_interval_minutes": 5
         },
         {
@@ -109,11 +225,35 @@
           "provider": "EUMETNET OPERA ORD",
           "public_reference": "https://eumetnet.github.io/openradardata-documentation/",
           "role": "pan_european_machine_radar",
+          "source_family": "opera_fallback",
           "status": "covered_by_opera_ord_connector",
+          "update_interval_minutes": null
+        },
+        {
+          "api_key_configured": null,
+          "api_key_env": null,
+          "evidence_level": "display_only",
+          "expected_format": "XYZ_tiles",
+          "id": "rainviewer_netherlands_display",
+          "license_note": null,
+          "machine_evidence": false,
+          "note": "Provider exists, but no public machine endpoint is configured in this registry.",
+          "provider": "RainViewer",
+          "public_reference": "https://www.rainviewer.com/api/weather-maps-api.html",
+          "role": "visual_radar_tiles",
+          "source_family": "display",
+          "status": "endpoint_not_configured",
           "update_interval_minutes": null
         }
       ],
-      "upstream_role": "retour nord-ouest / cellules mer du Nord vers Flandre, Anvers et Limbourg"
+      "upstream_role": "retour nord-ouest, mer du Nord, cellules vers Flandre, Anvers, Limbourg et est Belgique",
+      "watch_zones": [
+        "Zélande",
+        "Brabant-Septentrional",
+        "Limbourg néerlandais",
+        "mer du Nord",
+        "Randstad lors des lignes convectives"
+      ]
     },
     {
       "bbox": {
@@ -122,6 +262,8 @@
         "south": 35.5,
         "west": -10.0
       },
+      "belgium_relevance": "indirecte mais importante lors des épisodes chaleur-humidité remontant par golfe de Gascogne et France",
+      "corridor_family": "Iberia -> Golfe de Gascogne -> France -> Belgique",
       "country": "spain",
       "iso2": "ES",
       "label": "Espagne",
@@ -137,7 +279,10 @@
       "machine_radar_available": false,
       "priority_for_belgium": "medium",
       "radar_activity_score": null,
-      "source_count": 2,
+      "required_env": [
+        "AEMET_API_KEY"
+      ],
+      "source_count": 4,
       "sources": [
         {
           "api_key_configured": false,
@@ -145,12 +290,29 @@
           "evidence_level": "api_required",
           "expected_format": "image_or_redirect_json",
           "id": "aemet_opendata_national_composite",
-          "license_note": "AEMET OpenData, free/reuse subject to AEMET conditions and API key.",
+          "license_note": "AEMET OpenData, API key required, reuse subject to AEMET conditions.",
           "machine_evidence": false,
           "note": "Set AEMET_API_KEY to probe this provider endpoint.",
           "provider": "AEMET OpenData",
           "public_reference": "https://opendata.aemet.es/",
           "role": "national_radar_composite",
+          "source_family": "national_api",
+          "status": "requires_api_key",
+          "update_interval_minutes": 30
+        },
+        {
+          "api_key_configured": false,
+          "api_key_env": "AEMET_API_KEY",
+          "evidence_level": "api_required",
+          "expected_format": "image_or_redirect_json",
+          "id": "aemet_opendata_regional_radars",
+          "license_note": null,
+          "machine_evidence": false,
+          "note": "Set AEMET_API_KEY to probe this provider endpoint.",
+          "provider": "AEMET OpenData",
+          "public_reference": "https://opendata.aemet.es/centrodedescargas/productosAEMET",
+          "role": "regional_radar_images",
+          "source_family": "national_api",
           "status": "requires_api_key",
           "update_interval_minutes": 30
         },
@@ -166,11 +328,34 @@
           "provider": "EUMETNET OPERA ORD",
           "public_reference": "https://eumetnet.github.io/openradardata-documentation/",
           "role": "pan_european_machine_radar",
+          "source_family": "opera_fallback",
           "status": "covered_by_opera_ord_connector",
+          "update_interval_minutes": null
+        },
+        {
+          "api_key_configured": null,
+          "api_key_env": null,
+          "evidence_level": "display_only",
+          "expected_format": "XYZ_tiles",
+          "id": "rainviewer_spain_display",
+          "license_note": null,
+          "machine_evidence": false,
+          "note": "Provider exists, but no public machine endpoint is configured in this registry.",
+          "provider": "RainViewer",
+          "public_reference": "https://www.rainviewer.com/api/weather-maps-api.html",
+          "role": "visual_radar_tiles",
+          "source_family": "display",
+          "status": "endpoint_not_configured",
           "update_interval_minutes": null
         }
       ],
-      "upstream_role": "source chaleur/humidité et développement convectif sud-ouest"
+      "upstream_role": "réservoir chaleur et humidité, convection ibérique et advection sud-ouest vers France puis Belgique",
+      "watch_zones": [
+        "nord de l'Espagne",
+        "Pyrénées",
+        "golfe de Gascogne",
+        "Catalogne et vallée de l'Ebre lors des flux sud"
+      ]
     },
     {
       "bbox": {
@@ -179,6 +364,8 @@
         "south": 45.7,
         "west": 5.6
       },
+      "belgium_relevance": "indirecte, utile pour lire la dynamique alpine et les retours par Grand Est ou Allemagne",
+      "corridor_family": "Alpes/Jura -> Est France/Allemagne -> Belgique",
       "country": "switzerland",
       "iso2": "CH",
       "label": "Suisse",
@@ -194,7 +381,8 @@
       "machine_radar_available": false,
       "priority_for_belgium": "medium",
       "radar_activity_score": null,
-      "source_count": 2,
+      "required_env": [],
+      "source_count": 5,
       "sources": [
         {
           "api_key_configured": null,
@@ -203,13 +391,46 @@
           "evidence_level": "stac_open_data",
           "expected_format": "STAC_assets",
           "id": "meteoswiss_precip_stac",
-          "license_note": "MeteoSwiss Open Government Data. Products available through STAC/Open Data.",
+          "license_note": "MeteoSwiss Open Government Data. Radar precipitation products through STAC/Open Data.",
           "machine_evidence": false,
           "note": "Live probing disabled; pass --enable-national-radar-live to test endpoint reachability.",
           "provider": "MeteoSwiss Open Data",
           "public_reference": "https://opendatadocs.meteoswiss.ch/d-radar-data/d1-precipitation-radar-products",
           "role": "precipitation_radar_products",
+          "source_family": "stac_open_data",
           "status": "configured_not_probed",
+          "update_interval_minutes": 5
+        },
+        {
+          "api_key_configured": null,
+          "api_key_env": null,
+          "evidence_level": "stac_open_data",
+          "expected_format": "STAC_assets",
+          "id": "meteoswiss_hail_radar_products",
+          "license_note": null,
+          "machine_evidence": false,
+          "note": "Provider exists, but no public machine endpoint is configured in this registry.",
+          "provider": "MeteoSwiss Open Data",
+          "public_reference": "https://www.meteoswiss.admin.ch/services-and-publications/service/open-data.html",
+          "role": "hail_radar_products",
+          "source_family": "stac_open_data",
+          "status": "endpoint_not_configured",
+          "update_interval_minutes": 5
+        },
+        {
+          "api_key_configured": null,
+          "api_key_env": null,
+          "evidence_level": "data_on_request",
+          "expected_format": "1km_nowcast_data_on_request",
+          "id": "meteoswiss_nowcasting_request",
+          "license_note": null,
+          "machine_evidence": false,
+          "note": "Provider exists, but no public machine endpoint is configured in this registry.",
+          "provider": "MeteoSwiss Open Data",
+          "public_reference": "https://opendatadocs.meteoswiss.ch/e-forecast-data",
+          "role": "short_term_nowcasting",
+          "source_family": "forecast_nowcast",
+          "status": "endpoint_not_configured",
           "update_interval_minutes": 5
         },
         {
@@ -224,11 +445,34 @@
           "provider": "EUMETNET OPERA ORD",
           "public_reference": "https://eumetnet.github.io/openradardata-documentation/",
           "role": "pan_european_machine_radar",
+          "source_family": "opera_fallback",
           "status": "covered_by_opera_ord_connector",
+          "update_interval_minutes": null
+        },
+        {
+          "api_key_configured": null,
+          "api_key_env": null,
+          "evidence_level": "display_only",
+          "expected_format": "XYZ_tiles",
+          "id": "rainviewer_switzerland_display",
+          "license_note": null,
+          "machine_evidence": false,
+          "note": "Provider exists, but no public machine endpoint is configured in this registry.",
+          "provider": "RainViewer",
+          "public_reference": "https://www.rainviewer.com/api/weather-maps-api.html",
+          "role": "visual_radar_tiles",
+          "source_family": "display",
+          "status": "endpoint_not_configured",
           "update_interval_minutes": null
         }
       ],
-      "upstream_role": "flux alpins / convection d’altitude pouvant remonter vers est France et Allemagne"
+      "upstream_role": "convection alpine, flux Jura-Alpes et signaux pouvant remonter vers est France, Allemagne puis Belgique",
+      "watch_zones": [
+        "Jura",
+        "Plateau suisse",
+        "Alpes nord",
+        "région bâloise"
+      ]
     }
   ],
   "countries_requested": [
@@ -238,7 +482,7 @@
     "netherlands"
   ],
   "enabled": true,
-  "generated_at": "2026-06-17T22:36:22+00:00",
+  "generated_at": "2026-06-18T17:30:51+00:00",
   "limits": [
     "National radar interfaces are provider-specific and often require API keys, licences or STAC/WMS handling.",
     "MeteoVoid reports interface readiness separately from machine-readable radar evidence.",
@@ -286,10 +530,42 @@
         "status": "no_readable_country_files"
       }
     ],
-    "generated_at": "2026-06-17T22:36:22+00:00",
+    "generated_at": "2026-06-18T17:30:51+00:00",
     "machine_radar_available": false,
     "status": "no_country_machine_metrics"
   },
+  "pan_european_layers": [
+    {
+      "evidence_level": "display_only",
+      "expected_format": "XYZ_tiles_JSON_timeline",
+      "id": "rainviewer_display",
+      "note": "Immediate visual radar layer. Display only, not machine evidence.",
+      "provider": "RainViewer",
+      "public_reference": "https://www.rainviewer.com/api/weather-maps-api.html",
+      "role": "display_radar_tiles",
+      "update_interval_minutes": 10
+    },
+    {
+      "evidence_level": "machine_radar_optional",
+      "expected_format": "ODIM_HDF5_or_GeoTIFF",
+      "id": "opera_ord_composite",
+      "note": "Preferred unified machine radar path when enabled and files are available.",
+      "provider": "EUMETNET OPERA ORD / MeteoGate",
+      "public_reference": "https://eumetnet.github.io/openradardata-documentation/",
+      "role": "pan_european_machine_radar",
+      "update_interval_minutes": 5
+    },
+    {
+      "evidence_level": "model_fallback",
+      "expected_format": "JSON_hourly_model_fields",
+      "id": "openmeteo_fallback",
+      "note": "Fallback for flow, pressure levels and convective proxies. Not radar evidence.",
+      "provider": "Open-Meteo",
+      "public_reference": "https://open-meteo.com/",
+      "role": "model_fallback_flux_indices",
+      "update_interval_minutes": 60
+    }
+  ],
   "status": "interfaces_ready_no_machine_data",
   "summary": {
     "country_count": 4,
