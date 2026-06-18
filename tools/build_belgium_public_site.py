@@ -1085,7 +1085,6 @@ def _build_heat(report: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-
 _REGION_LABELS = {
     "belgium_coast": "Côte belge",
     "belgium_north": "Nord / Anvers",
@@ -1159,6 +1158,7 @@ def _weather_region_summary(report: dict[str, Any]) -> list[dict[str, Any]]:
         )
     rows.sort(key=lambda r: _num(r.get("temperature_c"), -99.0) or -99.0, reverse=True)
     return rows
+
 
 def _build_bulletin(vm: dict[str, Any]) -> dict[str, Any]:
     """Assemble a public, prose weather bulletin from the Belgium view-model.
@@ -2359,7 +2359,9 @@ def _write_country_pages(site_dir: Path) -> list[dict[str, str]]:
     api_dir = site_dir / "api"
     api_dir.mkdir(parents=True, exist_ok=True)
     try:
-        countries = build_all_countries(enable_live=os.environ.get("METEOVOID_COUNTRY_LIVE", "0") == "1")
+        countries = build_all_countries(
+            enable_live=os.environ.get("METEOVOID_COUNTRY_LIVE", "0") == "1"
+        )
     except Exception:
         countries = {}
 

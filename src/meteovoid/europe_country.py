@@ -382,7 +382,6 @@ def build_country_detection(
     }
 
 
-
 def _humidex_value(temp_c: float, dew_c: float) -> float:
     """Humidex-style apparent temperature in °C."""
     try:
@@ -430,6 +429,7 @@ def _country_weather(stations: list[dict[str, Any]]) -> dict[str, Any]:
         "stations": rows,
         "note": "Températures issues du même maillage Open‑Meteo / MeteoVoid que la détection pays.",
     }
+
 
 def _machine_radar_status(country_key: str, cfg: dict[str, Any]) -> dict[str, Any]:
     """Honest machine-radar state: 0 metrics until a real radar file is read."""
