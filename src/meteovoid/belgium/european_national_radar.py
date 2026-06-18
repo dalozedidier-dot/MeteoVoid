@@ -208,6 +208,8 @@ def _source_status(
         "api_key_configured": bool(api_key) if api_key_env else None,
         "public_reference": source.get("public_reference"),
         "license_note": source.get("license_note"),
+        "source_family": source.get("source_family"),
+        "note": source.get("note"),
         "status": "interface_only_unconfigured",
         "machine_evidence": False,
     }
@@ -277,6 +279,8 @@ def build_european_national_radar(
     timeout = float(timeout_s or runtime.get("default_timeout_seconds") or 8.0)
     countries_raw = config.get("countries")
     countries_cfg: dict[str, Any] = countries_raw if isinstance(countries_raw, dict) else {}
+    pan_layers_raw = config.get("pan_european_layers")
+    pan_layers = pan_layers_raw if isinstance(pan_layers_raw, list) else []
     supplied_files = country_files or {}
     countries: list[dict[str, Any]] = []
     metrics: list[dict[str, Any]] = []
@@ -314,7 +318,19 @@ def build_european_national_radar(
                 "iso2": raw_cfg.get("iso2"),
                 "bbox": raw_cfg.get("bbox"),
                 "upstream_role": raw_cfg.get("upstream_role"),
+                "belgium_relevance": raw_cfg.get("belgium_relevance"),
                 "priority_for_belgium": raw_cfg.get("priority_for_belgium"),
+                "corridor_family": raw_cfg.get("corridor_family"),
+                "watch_zones": (
+                    raw_cfg.get("watch_zones")
+                    if isinstance(raw_cfg.get("watch_zones"), list)
+                    else []
+                ),
+                "required_env": (
+                    raw_cfg.get("required_env")
+                    if isinstance(raw_cfg.get("required_env"), list)
+                    else []
+                ),
                 "source_count": len(sources),
                 "sources": sources,
                 "local_file_metrics": file_metrics,
@@ -331,6 +347,7 @@ def build_european_national_radar(
         "live_probe_enabled": bool(live),
         "status": status,
         "countries_requested": ["spain", "france", "switzerland", "netherlands"],
+        "pan_european_layers": [layer for layer in pan_layers if isinstance(layer, dict)],
         "countries": countries,
         "metrics": {
             "contract": "meteovoid_european_national_radar_metrics_v1",
@@ -377,6 +394,7 @@ def write_sources_csv(payload: dict[str, Any], path: str | Path) -> None:
                     "machine_evidence": source.get("machine_evidence"),
                     "expected_format": source.get("expected_format"),
                     "public_reference": source.get("public_reference"),
+                    "source_family": source.get("source_family"),
                 }
             )
     with Path(path).open("w", encoding="utf-8", newline="") as fh:
@@ -394,6 +412,7 @@ def write_sources_csv(payload: dict[str, Any], path: str | Path) -> None:
                 "machine_evidence",
                 "expected_format",
                 "public_reference",
+                "source_family",
             ],
         )
         writer.writeheader()

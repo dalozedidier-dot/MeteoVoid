@@ -349,10 +349,14 @@ def test_europe_page_is_dedicated_and_precise(tmp_path: Path) -> None:
 
     europe = json.loads((site_dir / "api" / "europe.json").read_text(encoding="utf-8"))
     assert europe["summary"]["country_count"] == 4
-    assert europe["page_contract"] == "meteovoid_europe_page_full_v2"
+    assert europe["page_contract"] == "meteovoid_europe_page_full_v3_same_design"
     assert "simple" in europe and "operational" in europe
-    assert "radar_layers" in europe and len(europe["radar_layers"]) == 3
+    assert "radar_layers" in europe and len(europe["radar_layers"]) >= 4
     assert "exports" in europe and len(europe["exports"]) >= 8
+    assert europe["summary"]["source_count"] >= 16
+    assert europe["summary"]["configured_source_count"] >= 10
+    assert len(europe["radar_layers"]) >= 4
+    assert {src["bucket"] for src in europe["sources"]} >= {"display", "national", "opera"}
     assert {c["country"] for c in europe["countries"]} == {
         "spain",
         "france",

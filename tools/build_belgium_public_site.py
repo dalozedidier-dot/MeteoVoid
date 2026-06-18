@@ -1321,7 +1321,7 @@ def _machine_label(available: Any) -> str:
     )
 
 
-def build_europe_model(report_dir: Path, vm: dict[str, Any]) -> dict[str, Any]:
+def _build_europe_model_legacy(report_dir: Path, vm: dict[str, Any]) -> dict[str, Any]:
     """Build a full Europe view-model, not just a radar link page.
 
     The model mirrors the public Belgium philosophy: a simple layer, an
@@ -2838,6 +2838,579 @@ paint();
 </body>
 </html>
 """
+
+
+# --- Europe public page v3 -------------------------------------------------------
+# Override the first Europe builder with a fuller page that reuses the same
+# MeteoVoid visual language as the Belgium dashboard. The Belgium page is left
+# untouched; this adds a richer Europe contract and page.
+
+
+def _source_bucket_v3(source: dict[str, Any]) -> str:
+    evidence = str(source.get("evidence_level") or "")
+    status = str(source.get("status") or "")
+    family = str(source.get("source_family") or "")
+    if source.get("machine_evidence"):
+        return "machine"
+    if evidence in {"display_only", "wms_open_data"} or family in {"display", "wms_display"}:
+        return "display"
+    if evidence in {"open_data_api", "stac_open_data", "api_required"}:
+        return "national"
+    if evidence in {"national_nowcast", "data_on_request"} or family == "forecast_nowcast":
+        return "nowcast"
+    if evidence == "opera_ord_fallback" or family == "opera_fallback":
+        return "opera"
+    if status in {"requires_api_key", "endpoint_not_configured"}:
+        return "blocked"
+    return "other"
+
+
+def _country_completeness(country: dict[str, Any]) -> float:
+    source_count = int(country.get("source_count") or 0)
+    configured = int(country.get("configured_source_count") or 0)
+    machine = 1 if country.get("machine_radar_available") else 0
+    corridors = int(country.get("linked_corridor_count") or 0)
+    required = int(country.get("required_key_count") or 0)
+    missing = int(country.get("missing_api_key_count") or 0)
+    source_score = min(1.0, source_count / 5.0)
+    configured_score = min(1.0, configured / max(1, source_count))
+    corridor_score = min(1.0, corridors / 2.0)
+    key_score = 1.0 if required == 0 else max(0.0, 1.0 - missing / max(1, required))
+    return round(
+        _clamp01(
+            0.28 * source_score
+            + 0.24 * configured_score
+            + 0.22 * corridor_score
+            + 0.16 * key_score
+            + 0.10 * machine
+        ),
+        3,
+    )
+
+
+def _load_europe_registry(report_dir: Path) -> dict[str, Any]:
+    for candidate in [
+        Path("config/european_national_radars.yaml"),
+        report_dir.parent.parent / "config" / "european_national_radars.yaml",
+    ]:
+        try:
+            if candidate.exists():
+                import yaml  # type: ignore[import-untyped]
+
+                payload = yaml.safe_load(candidate.read_text(encoding="utf-8"))
+                if isinstance(payload, dict):
+                    return payload
+        except (OSError, ImportError):
+            continue
+    return {}
+
+
+def build_europe_model(report_dir: Path, vm: dict[str, Any]) -> dict[str, Any]:
+    status = _load_json(report_dir / "european_national_radar_status.json")
+    metrics = _load_json(report_dir / "european_national_radar_metrics.json")
+    upstream = _load_json(report_dir / "upstream_watch.json")
+    radar_stack = _load_json(report_dir / "radar_stack.json")
+    rainviewer = _load_json(report_dir / "rainviewer_status.json")
+    opera_status = _load_json(report_dir / "opera_ord_status.json")
+    opera_inventory = _load_json(report_dir / "opera_ord_inventory.json")
+    opera_files = _load_json(report_dir / "opera_ord_files_manifest.json")
+    opera_metrics = _load_json(report_dir / "opera_radar_metrics.json")
+    registry = _load_europe_registry(report_dir)
+
+    metric_by_country = {
+        str(row.get("country")): row
+        for row in metrics.get("countries", [])
+        if isinstance(row, dict) and row.get("country")
+    }
+    registry_countries = (
+        registry.get("countries") if isinstance(registry.get("countries"), dict) else {}
+    )
+    status_countries = [row for row in status.get("countries", []) if isinstance(row, dict)]
+    row_by_country = {
+        str(row.get("country")): row for row in status_countries if row.get("country")
+    }
+
+    base_order = ["france", "netherlands", "spain", "switzerland"]
+    extra = sorted(
+        (
+            set(registry_countries.keys())
+            | set(row_by_country.keys())
+            | set(metric_by_country.keys())
+        )
+        - set(base_order)
+    )
+    country_keys = [*base_order, *extra]
+
+    corridors_raw = upstream.get("corridors") if isinstance(upstream.get("corridors"), list) else []
+    corridors = [row for row in corridors_raw if isinstance(row, dict)]
+
+    def _corridors_for_country(country: str) -> list[dict[str, Any]]:
+        prefixes = {
+            "france": ("FR_", "PARIS", "CHAMPAGNE", "ENGLISH_CHANNEL"),
+            "netherlands": ("NL_", "NETHER", "NORTH_SEA"),
+            "switzerland": ("CH_", "ALP", "JURA"),
+            "spain": ("ES_", "IBER", "BISCAY", "GASCOGNE"),
+        }.get(country, ())
+        found: list[dict[str, Any]] = []
+        for corridor in corridors:
+            text = " ".join(
+                str(corridor.get(key) or "")
+                for key in ["source_region", "corridor_id", "name", "target_region"]
+            ).upper()
+            if any(prefix.upper() in text for prefix in prefixes):
+                found.append(corridor)
+        return sorted(
+            found,
+            key=lambda item: _num(item.get("corridor_score"), 0.0) or 0.0,
+            reverse=True,
+        )
+
+    countries: list[dict[str, Any]] = []
+    flat_sources: list[dict[str, Any]] = []
+    source_families: dict[str, int] = {}
+
+    for country in country_keys:
+        cfg = registry_countries.get(country) if isinstance(registry_countries, dict) else {}
+        cfg = cfg if isinstance(cfg, dict) else {}
+        row = row_by_country.get(country, {})
+        metric = metric_by_country.get(country, {})
+        sources_from_status = row.get("sources") if isinstance(row.get("sources"), list) else []
+        sources_from_cfg = cfg.get("sources") if isinstance(cfg.get("sources"), list) else []
+        merged_sources: dict[str, dict[str, Any]] = {}
+        for item in sources_from_cfg:
+            if isinstance(item, dict):
+                merged_sources[str(item.get("id") or len(merged_sources))] = dict(item)
+        for item in sources_from_status:
+            if isinstance(item, dict):
+                key = str(item.get("id") or len(merged_sources))
+                base = merged_sources.get(key, {})
+                merged_sources[key] = {**base, **item}
+        raw_sources = list(merged_sources.values())
+        sources: list[dict[str, Any]] = []
+        for source in raw_sources:
+            if not isinstance(source, dict):
+                continue
+            normalized = dict(source)
+            if "status" not in normalized:
+                evidence = str(normalized.get("evidence_level") or "")
+                if evidence == "api_required" and normalized.get("api_key_env"):
+                    normalized["status"] = "requires_api_key"
+                elif evidence == "opera_ord_fallback":
+                    normalized["status"] = "covered_by_opera_ord_connector"
+                elif evidence in {
+                    "display_only",
+                    "stac_open_data",
+                    "wms_open_data",
+                    "data_on_request",
+                }:
+                    normalized["status"] = "interface_ready"
+                else:
+                    normalized["status"] = "interface_only_unconfigured"
+            normalized["bucket"] = _source_bucket_v3(normalized)
+            sources.append(normalized)
+            source_families[normalized["bucket"]] = source_families.get(normalized["bucket"], 0) + 1
+
+        required_env = cfg.get("required_env") if isinstance(cfg.get("required_env"), list) else []
+        missing_env = [
+            env
+            for env in required_env
+            if env
+            and not any(s.get("api_key_configured") for s in sources if s.get("api_key_env") == env)
+        ]
+        configured_sources = [
+            s
+            for s in sources
+            if str(s.get("status"))
+            not in {"endpoint_not_configured", "interface_only_unconfigured"}
+        ]
+        machine_sources = [s for s in sources if s.get("machine_evidence")]
+        display_sources = [s for s in sources if s.get("bucket") == "display"]
+        national_sources = [s for s in sources if s.get("bucket") == "national"]
+        nowcast_sources = [s for s in sources if s.get("bucket") == "nowcast"]
+        opera_sources = [s for s in sources if s.get("bucket") == "opera"]
+        linked_corridors = _corridors_for_country(country)
+        best_corridor_score = max(
+            (_num(c.get("corridor_score"), 0.0) or 0.0 for c in linked_corridors),
+            default=0.0,
+        )
+        priority_text = str(
+            row.get("priority_for_belgium") or cfg.get("priority_for_belgium") or "medium"
+        )
+        priority_score = {"high": 0.82, "medium": 0.55, "low": 0.30}.get(priority_text, 0.45)
+        machine_available = bool(
+            row.get("machine_radar_available") or metric.get("machine_radar_available")
+        )
+        readiness_score = round(
+            _clamp01(
+                0.28 * priority_score
+                + 0.23 * min(1.0, len(sources) / 5.0)
+                + 0.20 * min(1.0, len(configured_sources) / max(1, len(sources)))
+                + 0.17 * min(1.0, len(linked_corridors) / 2.0)
+                + 0.12 * (1.0 if machine_available else 0.0)
+            ),
+            3,
+        )
+        blockers: list[str] = []
+        if missing_env:
+            blockers.append("clé API manquante : " + ", ".join(str(env) for env in missing_env))
+        if not machine_available:
+            blockers.append("aucune trame radar nationale lisible dans ce run")
+        if opera_sources:
+            blockers.append("fallback OPERA ORD utilisable pour la couche paneuropéenne")
+        if not sources:
+            blockers.append("aucune source nationale référencée")
+
+        payload = {
+            "country": country,
+            "label": row.get("label")
+            or cfg.get("label")
+            or _EUROPE_COUNTRY_LABELS.get(country, country.title()),
+            "iso2": row.get("iso2") or cfg.get("iso2"),
+            "bbox": row.get("bbox") if isinstance(row.get("bbox"), dict) else cfg.get("bbox", {}),
+            "priority_for_belgium": priority_text,
+            "priority_score": priority_score,
+            "readiness_score": readiness_score,
+            "completeness_score": 0.0,
+            "upstream_role": row.get("upstream_role")
+            or cfg.get("upstream_role")
+            or _EUROPE_COUNTRY_CONTEXT.get(country, {}).get("role"),
+            "belgium_relevance": row.get("belgium_relevance") or cfg.get("belgium_relevance"),
+            "corridor_family": row.get("corridor_family")
+            or cfg.get("corridor_family")
+            or _EUROPE_COUNTRY_CONTEXT.get(country, {}).get("corridor"),
+            "watch_zones": (
+                cfg.get("watch_zones") if isinstance(cfg.get("watch_zones"), list) else []
+            ),
+            "required_env": required_env,
+            "required_key_count": len(required_env),
+            "missing_api_key_count": len(missing_env),
+            "source_count": len(sources),
+            "configured_source_count": len(configured_sources),
+            "display_source_count": len(display_sources),
+            "national_source_count": len(national_sources),
+            "nowcast_source_count": len(nowcast_sources),
+            "opera_fallback_count": len(opera_sources),
+            "machine_source_count": len(machine_sources),
+            "machine_radar_available": machine_available,
+            "radar_activity_score": _round(
+                (
+                    row.get("radar_activity_score")
+                    if row.get("radar_activity_score") is not None
+                    else metric.get("radar_activity_score")
+                ),
+                3,
+            ),
+            "status": metric.get("status")
+            or row.get("status")
+            or "interface_ready_no_machine_data",
+            "evidence_state": "machine_metrics" if machine_available else "interface_only",
+            "readable_file_count": metric.get("readable_file_count", 0),
+            "file_count": metric.get("file_count", 0),
+            "best_corridor_score": round(best_corridor_score, 3),
+            "linked_corridor_count": len(linked_corridors),
+            "blockers": blockers,
+            "next_steps": [
+                "configurer les clés API nationales quand elles sont requises",
+                "télécharger ou fournir au moins une trame radar lisible par pays",
+                "calculer des métriques radar et les relier aux corridors vers la Belgique",
+                "croiser la source nationale avec OPERA ORD et RainViewer",
+            ],
+            "corridors": [
+                {
+                    "id": c.get("corridor_id"),
+                    "name": c.get("name"),
+                    "score": _round(c.get("corridor_score"), 3),
+                    "confidence": c.get("confidence"),
+                    "source_region": c.get("source_region"),
+                    "target_region": c.get("target_region"),
+                    "target_zones": (
+                        c.get("target_zones") if isinstance(c.get("target_zones"), list) else []
+                    ),
+                    "estimated_arrival_hours": c.get("estimated_arrival_hours"),
+                    "interpretation": c.get("interpretation"),
+                }
+                for c in linked_corridors[:8]
+            ],
+            "sources": [
+                {
+                    "id": s.get("id"),
+                    "provider": s.get("provider"),
+                    "role": s.get("role"),
+                    "status": s.get("status"),
+                    "bucket": s.get("bucket"),
+                    "source_family": s.get("source_family"),
+                    "evidence_level": s.get("evidence_level"),
+                    "expected_format": s.get("expected_format"),
+                    "machine_evidence": bool(s.get("machine_evidence")),
+                    "api_key_env": s.get("api_key_env"),
+                    "api_key_configured": s.get("api_key_configured"),
+                    "update_interval_minutes": s.get("update_interval_minutes"),
+                    "public_reference": s.get("public_reference"),
+                    "license_note": s.get("license_note"),
+                    "note": s.get("note"),
+                }
+                for s in sources
+            ],
+        }
+        payload["completeness_score"] = _country_completeness(payload)
+        countries.append(payload)
+        for source in payload["sources"]:
+            flat_sources.append({"country": payload["label"], "country_key": country, **source})
+
+    countries.sort(
+        key=lambda item: (
+            str(item.get("priority_for_belgium")) != "high",
+            -float(item.get("readiness_score") or 0.0),
+            str(item.get("country")),
+        )
+    )
+    machine_count = sum(1 for item in countries if item.get("machine_radar_available"))
+    source_count = sum(int(item.get("source_count") or 0) for item in countries)
+    missing_keys = sum(int(item.get("missing_api_key_count") or 0) for item in countries)
+    corridor_count = sum(int(item.get("linked_corridor_count") or 0) for item in countries)
+    configured_count = sum(int(item.get("configured_source_count") or 0) for item in countries)
+    readiness_mean = round(
+        sum(float(item.get("readiness_score") or 0.0) for item in countries)
+        / max(1, len(countries)),
+        3,
+    )
+
+    pan_layers = (
+        registry.get("pan_european_layers")
+        if isinstance(registry.get("pan_european_layers"), list)
+        else []
+    )
+    radar_layers = [
+        {
+            "id": "rainviewer_display",
+            "label": "RainViewer",
+            "role": "affichage radar immédiat",
+            "status": rainviewer.get("status") or "display_layer_ready",
+            "evidence_level": "display_only",
+            "file": "reports/latest/rainviewer_radar_map.html",
+            "meaning": "montre le radar, ne produit pas de preuve machine",
+        },
+        {
+            "id": "opera_ord",
+            "label": "OPERA ORD",
+            "role": "mosaïque radar européenne exploitable si fichiers disponibles",
+            "status": opera_status.get("status") or "optional_connector",
+            "evidence_level": "machine_optional",
+            "file": "reports/latest/opera_ord_inventory.json",
+            "meaning": "voie paneuropéenne unifiée pour ODIM HDF5 ou GeoTIFF",
+        },
+        {
+            "id": "national_radars",
+            "label": "Radars nationaux",
+            "role": "Espagne, France, Suisse, Pays-Bas",
+            "status": status.get("status") or "interfaces_ready_no_machine_data",
+            "evidence_level": "country_specific_optional",
+            "file": "reports/latest/european_national_radar_map.html",
+            "meaning": "interfaces nationales séparées, promotion en preuve seulement si fichier lisible",
+        },
+        {
+            "id": "openmeteo_fallback",
+            "label": "Open-Meteo fallback",
+            "role": "flux et indices de modèle si radar absent",
+            "status": "fallback_available_if_enabled",
+            "evidence_level": "model_fallback",
+            "file": "api/upstream.json",
+            "meaning": "utile pour les flux, pas une preuve radar",
+        },
+    ]
+
+    simple = {
+        "headline": "Europe amont aussi lisible que la Belgique",
+        "status": status.get("status") or "interfaces_ready_no_machine_data",
+        "synthesis": (
+            f"{len(countries)} pays suivis, {source_count} sources référencées, "
+            f"{configured_count} interfaces prêtes, {machine_count} pays avec métriques machine."
+        ),
+        "readiness_score": readiness_mean,
+        "country_count": len(countries),
+        "source_count": source_count,
+        "configured_source_count": configured_count,
+        "machine_country_count": machine_count,
+        "missing_api_key_count": missing_keys,
+        "corridor_count": corridor_count,
+        "non_official": True,
+        "data_honesty": "Une carte ou une interface prête ne devient pas une preuve radar machine sans fichier lu et métriques calculées.",
+    }
+
+    operational = {
+        "chain": [
+            {
+                "step": "Source",
+                "text": "registre national et paneuropéen",
+                "score": min(1.0, source_count / 20.0),
+            },
+            {
+                "step": "Accès",
+                "text": "clé API, STAC, WMS, OPERA ou affichage",
+                "score": min(1.0, configured_count / max(1, source_count)),
+            },
+            {
+                "step": "Fichier",
+                "text": "trame locale téléchargée ou fournie",
+                "score": min(1.0, machine_count / max(1, len(countries))),
+            },
+            {
+                "step": "Décodage",
+                "text": "GeoTIFF, HDF5, ODIM ou tableau numérique",
+                "score": min(1.0, machine_count / max(1, len(countries))),
+            },
+            {
+                "step": "Métriques",
+                "text": "activité radar et couverture par pays",
+                "score": min(1.0, machine_count / max(1, len(countries))),
+            },
+            {
+                "step": "Corridor",
+                "text": "rattachement aux trajectoires vers Belgique",
+                "score": min(1.0, corridor_count / max(1, len(countries))),
+            },
+            {
+                "step": "Lecture",
+                "text": "signal amont, confirmation et limites",
+                "score": readiness_mean,
+            },
+        ],
+        "why_it_matters": [
+            "France et Pays-Bas sont les couloirs les plus directs vers la Belgique.",
+            "Espagne aide à lire les remontées chaudes et humides qui préparent l'instabilité en France.",
+            "Suisse aide à suivre la dynamique alpine et l'est de la France.",
+            "OPERA ORD reste la voie radar paneuropéenne la plus cohérente lorsque les fichiers sont disponibles.",
+        ],
+        "limits": status.get("limits") or [],
+    }
+
+    exports = [
+        {"label": "API Europe", "href": "api/europe.json"},
+        {"label": "API radar", "href": "api/radar.json"},
+        {
+            "label": "Carte radars nationaux",
+            "href": "reports/latest/european_national_radar_map.html",
+        },
+        {
+            "label": "Rapport radars nationaux",
+            "href": "reports/latest/european_national_radar_report.md",
+        },
+        {
+            "label": "Sources radars CSV",
+            "href": "reports/latest/european_national_radar_sources.csv",
+        },
+        {
+            "label": "Statut radars JSON",
+            "href": "reports/latest/european_national_radar_status.json",
+        },
+        {
+            "label": "Métriques radars JSON",
+            "href": "reports/latest/european_national_radar_metrics.json",
+        },
+        {"label": "Carte Europe amont", "href": "reports/latest/european_upstream_map.html"},
+        {"label": "Rapport Europe amont", "href": "reports/latest/upstream_watch_report.md"},
+        {"label": "RainViewer", "href": "reports/latest/rainviewer_radar_map.html"},
+        {"label": "OPERA inventory", "href": "reports/latest/opera_ord_inventory.json"},
+        {"label": "Métriques OPERA", "href": "reports/latest/opera_radar_metrics.json"},
+    ]
+
+    return {
+        "page_contract": "meteovoid_europe_page_full_v3_same_design",
+        "generated_at": vm.get("meta", {}).get("generated_at"),
+        "run_id": vm.get("meta", {}).get("run_id"),
+        "data_mode": vm.get("meta", {}).get("data_mode"),
+        "disclaimer": vm.get("meta", {}).get("disclaimer"),
+        "simple": simple,
+        "summary": simple,
+        "operational": operational,
+        "countries": countries,
+        "sources": flat_sources,
+        "source_families": source_families,
+        "radar_layers": radar_layers,
+        "pan_european_layers": [layer for layer in pan_layers if isinstance(layer, dict)],
+        "corridors": [
+            {
+                "id": c.get("corridor_id"),
+                "name": c.get("name"),
+                "score": _round(c.get("corridor_score"), 3),
+                "confidence": c.get("confidence"),
+                "source_region": c.get("source_region"),
+                "target_region": c.get("target_region"),
+                "target_zones": (
+                    c.get("target_zones") if isinstance(c.get("target_zones"), list) else []
+                ),
+                "estimated_arrival_hours": c.get("estimated_arrival_hours"),
+                "interpretation": c.get("interpretation"),
+            }
+            for c in corridors
+        ],
+        "linked_outputs": {
+            "belgium": "index.html",
+            "methodology": "methodology.html",
+            "radar_api": "api/radar.json",
+            "upstream_api": "api/upstream.json",
+            "europe_api": "api/europe.json",
+            "national_map": "reports/latest/european_national_radar_map.html",
+            "rainviewer": "reports/latest/rainviewer_radar_map.html",
+            "upstream_map": "reports/latest/european_upstream_map.html",
+        },
+        "raw": {
+            "national_status": status,
+            "national_metrics": metrics,
+            "radar_stack": radar_stack,
+            "rainviewer": rainviewer,
+            "opera_status": opera_status,
+            "opera_inventory": opera_inventory,
+            "opera_files": opera_files,
+            "opera_metrics": opera_metrics,
+        },
+        "exports": exports,
+        "links": {"belgium": "index.html", "methodology": "methodology.html"},
+    }
+
+
+EUROPE_MAX_TEMPLATE = r"""<!doctype html>
+<html lang="fr" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MeteoVoid Europe · Veille radar amont</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#e9edf3;--bg-2:#eef2f7;--panel:#ffffff;--panel-2:#f4f7fb;--inset:#eef3f9;--ink:#0a1322;--ink-2:#43546b;--muted:#82909f;--line:#e1e8f0;--accent:#2f49d8;--accent-soft:#eaedfb;--shadow:0 2px 4px rgba(13,28,55,.05),0 12px 30px rgba(13,28,55,.07);--r:14px;--r-lg:20px;--f-display:'Space Grotesk',ui-sans-serif,system-ui,Segoe UI,sans-serif;--f-body:'Inter',ui-sans-serif,system-ui,Segoe UI,Roboto,Arial,sans-serif;--f-mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;--c-calm:#16a075;--c-info:#3a7ec4;--c-watch:#cf9a1f;--c-elevated:#dd7634;--c-high:#d65238;--c-danger:#cf2e39}
+[data-theme="dark"]{--bg:#070b13;--bg-2:#0a101b;--panel:#111826;--panel-2:#0d141f;--inset:#0c121d;--ink:#e9f0fa;--ink-2:#9fb1c8;--muted:#697a92;--line:#1e293b;--accent:#6f84ff;--accent-soft:#1a2240;--shadow:0 2px 6px rgba(0,0,0,.45),0 18px 40px rgba(0,0,0,.5);--c-calm:#1cb98a;--c-info:#5298e0;--c-watch:#e3b13b;--c-elevated:#ef8a4c;--c-high:#ec6a50;--c-danger:#e74752}
+*{box-sizing:border-box}html,body{margin:0}body{font-family:var(--f-body);color:var(--ink);line-height:1.5;background:var(--bg);background-image:radial-gradient(1200px 480px at 84% -10%,color-mix(in srgb,var(--accent) 7%,transparent),transparent),linear-gradient(rgba(20,40,80,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(20,40,80,.035) 1px,transparent 1px);background-size:auto,34px 34px,34px 34px;background-attachment:fixed}a{color:var(--accent);text-decoration:none;font-weight:700}a:hover{text-decoration:underline}.cmd{position:sticky;top:0;z-index:20;background:color-mix(in srgb,var(--panel) 86%,transparent);backdrop-filter:blur(14px) saturate(1.3);border-bottom:1px solid var(--line)}.cmd-wrap{max-width:1240px;margin:0 auto;display:flex;align-items:center;gap:18px;padding:12px 24px}.brand{display:flex;align-items:center;gap:12px;min-width:0}.mark{width:40px;height:40px;border-radius:12px;background:linear-gradient(140deg,#1c9f9c,#2f49d8);display:grid;place-items:center;color:#fff;box-shadow:0 6px 18px color-mix(in srgb,var(--accent) 40%,transparent)}.brand h1{font-family:var(--f-display);font-size:17px;font-weight:600;margin:0;letter-spacing:-.02em;line-height:1.1}.brand p{margin:1px 0 0;font-size:11.5px;color:var(--muted)}.cmd-right{margin-left:auto;display:flex;align-items:center;gap:14px}.status-chip{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:999px;padding:6px 12px;background:var(--panel-2)}.live-dot{width:8px;height:8px;border-radius:50%;background:var(--c-calm)}.st-k{font-family:var(--f-mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em}.st-v{font-family:var(--f-mono);font-size:12px;font-weight:700}.tgl{width:38px;height:38px;border-radius:11px;border:1px solid var(--line);background:var(--panel-2);color:var(--ink-2);cursor:pointer}.tabs{max-width:1240px;margin:0 auto;display:flex;gap:2px;padding:0 24px;overflow-x:auto}.tab{position:relative;border:0;background:transparent;color:var(--muted);padding:12px 15px 13px;font-weight:700;cursor:pointer;font-size:13.5px;white-space:nowrap}.tab:after{content:"";position:absolute;left:12px;right:12px;bottom:0;height:2px;background:var(--accent);transform:scaleX(0);transition:.2s}.tab:hover,.tab.active{color:var(--ink)}.tab.active:after{transform:scaleX(1)}main{max-width:1240px;margin:0 auto;padding:26px 24px 16px}.disclaimer{display:flex;gap:10px;border:1px solid color-mix(in srgb,var(--c-watch) 32%,var(--line));border-left:3px solid var(--c-watch);border-radius:10px;padding:11px 14px;font-size:12.5px;color:var(--ink-2);margin-bottom:22px;background:color-mix(in srgb,var(--c-watch) 8%,var(--panel))}.view{display:none}.view.active{display:block}.hero{position:relative;border:1px solid var(--line);border-radius:var(--r-lg);background:var(--panel);box-shadow:var(--shadow);overflow:hidden;padding:28px}.hero:before{content:"";position:absolute;inset:0;background:radial-gradient(620px 280px at 90% -40%,color-mix(in srgb,var(--accent) 12%,transparent),transparent);pointer-events:none}.hero>*{position:relative}.hero-grid{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(290px,.6fr);gap:26px;align-items:center}.eyebrow{font-family:var(--f-mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.14em;color:var(--muted);font-weight:700}.hero h2{font-family:var(--f-display);font-size:clamp(32px,5vw,52px);line-height:1;margin:7px 0 10px;letter-spacing:-.04em}.lead{font-size:15px;color:var(--ink-2);margin:0;max-width:70ch}.hero-tags,.links{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.pill,.links a{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;background:var(--panel-2);padding:7px 11px;font-size:12.5px;color:var(--ink-2)}.links a{color:var(--accent)}.grid{display:grid;gap:14px}.cards2{grid-template-columns:repeat(2,minmax(0,1fr))}.cards3{grid-template-columns:repeat(3,minmax(0,1fr))}.cards4{grid-template-columns:repeat(4,minmax(0,1fr))}.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:18px}.card h3,.card h2{font-family:var(--f-display);margin:4px 0 8px}.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin:18px 0}.kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;box-shadow:var(--shadow)}.kpi .v{font-family:var(--f-display);font-size:30px;font-weight:700;letter-spacing:-.03em}.kpi .k{font-family:var(--f-mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.12em}.section-title{font-family:var(--f-mono);font-size:11px;text-transform:uppercase;letter-spacing:.13em;color:var(--muted);font-weight:700;margin:30px 0 13px;display:flex;align-items:center;gap:10px}.section-title:before{content:"";width:5px;height:5px;border-radius:50%;background:var(--accent)}.muted{color:var(--muted);font-size:13px}.small{font-size:12px}.score{font-family:var(--f-display);font-size:42px;font-weight:700;letter-spacing:-.04em}.ok{color:var(--c-calm)}.watch{color:var(--c-watch)}.danger{color:var(--c-danger)}.bar{height:8px;background:var(--inset);border-radius:999px;overflow:hidden}.bar span{display:block;height:100%;background:linear-gradient(90deg,var(--c-info),var(--c-calm));border-radius:999px}.chain{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px}.step{position:relative}.step:after{content:"";position:absolute;top:24px;right:-10px;width:10px;height:1px;background:var(--line)}.step:last-child:after{display:none}.step .n{width:46px;height:46px;border-radius:14px;background:var(--panel-2);border:1px solid var(--line);display:grid;place-items:center;font-family:var(--f-display);font-weight:700}.step h3{font-size:14px}.country-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.country-card{padding:0;overflow:hidden}.country-head{padding:18px;border-bottom:1px solid var(--line);background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 10%,var(--panel)),var(--panel))}.country-body{padding:18px}.country-title{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.badge{font-family:var(--f-mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;border:1px solid var(--line);border-radius:999px;padding:5px 8px;background:var(--panel-2);color:var(--ink-2)}.badge.ok{border-color:color-mix(in srgb,var(--c-calm) 35%,var(--line));background:color-mix(in srgb,var(--c-calm) 10%,var(--panel));color:var(--c-calm)}.badge.watch{border-color:color-mix(in srgb,var(--c-watch) 35%,var(--line));background:color-mix(in srgb,var(--c-watch) 10%,var(--panel));color:var(--c-watch)}.badge.info{border-color:color-mix(in srgb,var(--c-info) 35%,var(--line));background:color-mix(in srgb,var(--c-info) 10%,var(--panel));color:var(--c-info)}.dl{display:grid;grid-template-columns:1fr auto;gap:12px;border-top:1px solid var(--line);padding:8px 0;font-size:13px}.dl:first-child{border-top:0}.src-list{display:grid;gap:8px;margin-top:10px}.src{border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--panel-2)}.src-top{display:flex;justify-content:space-between;gap:8px}.src b{font-size:13px}.iframe-card{padding:0;overflow:hidden}.iframe-card iframe,.frame{width:100%;height:540px;border:0;background:var(--inset)}table{width:100%;border-collapse:collapse;font-size:13px}th,td{border-bottom:1px solid var(--line);padding:10px;text-align:left;vertical-align:top}th{font-family:var(--f-mono);font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em;background:var(--panel-2)}pre{max-height:520px;overflow:auto;background:var(--panel-2);border:1px solid var(--line);border-radius:14px;padding:14px;font-size:12px;color:var(--ink-2)}footer{max-width:1240px;margin:0 auto 20px;padding:0 24px;color:var(--muted);font-size:12px}@media(max-width:980px){.hero-grid,.cards2,.cards3,.cards4,.country-grid,.chain,.kpis{grid-template-columns:1fr}.cmd-wrap{padding:10px 14px}.tabs{padding:0 14px}main{padding:18px 14px}.iframe-card iframe,.frame{height:420px}}
+</style>
+</head>
+<body>
+<header class="cmd"><div class="cmd-wrap"><div class="brand"><div class="mark">EU</div><div><h1>MeteoVoid Europe</h1><p>Page Europe complète · Espagne · France · Suisse · Pays-Bas · même design que Belgique</p></div></div><div class="cmd-right"><div class="status-chip"><span class="live-dot"></span><div><div class="st-k">run</div><div class="st-v" id="stamp"></div></div></div><button class="tgl" id="theme">◐</button></div></div><nav class="tabs"><button class="tab active" data-view="simple">Vue simple</button><button class="tab" data-view="operational">Opérationnel</button><button class="tab" data-view="radar">Carte Europe</button><button class="tab" data-view="countries">Pays</button><button class="tab" data-view="corridors">Corridors</button><button class="tab" data-view="sources">Sources</button><button class="tab" data-view="expert">Expert</button><a class="tab" href="index.html">Belgique</a><a class="tab" href="methodology.html">Méthodologie</a></nav></header>
+<main><div class="disclaimer"><b>Prototype non officiel.</b> Page Europe amont. Les cartes et interfaces ne remplacent pas les services météorologiques nationaux.</div><section class="view active" id="view-simple"></section><section class="view" id="view-operational"></section><section class="view" id="view-radar"></section><section class="view" id="view-countries"></section><section class="view" id="view-corridors"></section><section class="view" id="view-sources"></section><section class="view" id="view-expert"></section></main><footer id="foot"></footer>
+<script id="europe-bootstrap" type="application/json">__EUROPE_BOOTSTRAP__</script>
+<script>
+const M=JSON.parse(document.getElementById('europe-bootstrap').textContent);const esc=s=>String(s==null?'':s).replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}[c]));const pct=v=>v==null?'n/a':Math.round(Math.max(0,Math.min(1,Number(v)||0))*100)+'%';const num=v=>v==null?'n/a':(typeof v==='number'?v.toFixed(2):v);const bar=v=>`<div class="bar"><span style="width:${Math.round(Math.max(0,Math.min(1,Number(v)||0))*100)}%"></span></div>`;function badge(txt,kind){return `<span class="badge ${kind||'info'}">${esc(txt)}</span>`}
+function kpis(){const s=M.summary||{};return `<div class="kpis"><div class="kpi"><div class="k">Pays suivis</div><div class="v">${esc(s.country_count||0)}</div></div><div class="kpi"><div class="k">Sources radar</div><div class="v">${esc(s.source_count||0)}</div></div><div class="kpi"><div class="k">Interfaces prêtes</div><div class="v">${esc(s.configured_source_count||0)}</div></div><div class="kpi"><div class="k">Preuve machine</div><div class="v">${esc(s.machine_country_count||0)}</div></div><div class="kpi"><div class="k">Clés manquantes</div><div class="v">${esc(s.missing_api_key_count||0)}</div></div></div>`}
+function renderSimple(){const s=M.simple||{};return `<div class="hero"><div class="hero-grid"><div><div class="eyebrow">Vue simple Europe</div><h2>Europe amont</h2><p class="eyebrow">Source → radar → métrique → corridor</p><p class="lead">${esc(s.synthesis)}</p><div class="hero-tags"><span class="pill">Espagne</span><span class="pill">France</span><span class="pill">Suisse</span><span class="pill">Pays-Bas</span><span class="pill">RainViewer</span><span class="pill">OPERA ORD</span></div></div><div class="card"><div class="eyebrow">Disponibilité radar</div><div class="score ${s.machine_country_count?'ok':'watch'}">${esc(s.machine_country_count||0)}/${esc(s.country_count||0)}</div><p class="muted">Pays avec métriques machine. Les autres restent en interface prête ou affichage.</p>${bar(s.readiness_score)}</div></div></div>${kpis()}<div class="grid cards3"><div class="card"><h3>Ce que la page Europe ajoute</h3><p class="muted">Une lecture amont par pays, par source radar, par corridor, et par niveau de preuve.</p></div><div class="card"><h3>Ce que cela ne dit pas</h3><p class="muted">Une carte affichée ou un endpoint référencé ne suffit pas. Il faut une trame radar lue pour obtenir une preuve machine.</p></div><div class="card"><h3>Lien Belgique</h3><p class="muted">France et Pays-Bas sont les couloirs les plus directs. Espagne et Suisse enrichissent la lecture dynamique.</p></div></div>`}
+function renderOperational(){const chain=(M.operational&&M.operational.chain)||[];return `<div class="section-title">Chaîne de preuve radar</div><div class="chain">${chain.map((x,i)=>`<div class="card step"><div class="n">${i+1}</div><h3>${esc(x.step)}</h3><p class="muted">${esc(x.text)}</p>${bar(x.score)}</div>`).join('')}</div><div class="section-title">Pourquoi ces pays</div><div class="grid cards2">${((M.operational&&M.operational.why_it_matters)||[]).map(x=>`<div class="card"><p>${esc(x)}</p></div>`).join('')}</div>`}
+function layerCard(x){return `<div class="card"><div class="eyebrow">${esc(x.evidence_level)}</div><h3>${esc(x.label)}</h3><p class="muted">${esc(x.role)}</p><div class="dl"><span>Statut</span><b>${esc(x.status)}</b></div><div class="dl"><span>Lecture</span><b>${esc(x.meaning)}</b></div><div class="links"><a href="${esc(x.file)}">Ouvrir</a></div></div>`}
+function renderRadar(){return `<div class="section-title">Carte Europe</div><div class="grid cards2"><div class="card iframe-card"><iframe src="reports/latest/european_national_radar_map.html" title="Carte radars nationaux Europe"></iframe></div><div class="card"><div class="eyebrow">Carte Europe</div><h2>Radars et couches amont</h2><p class="muted">Cette carte affiche les pays et zones radar surveillés. Elle est liée aux sources et aux corridors, pas seulement posée comme image isolée.</p><div class="links"><a href="reports/latest/european_national_radar_map.html">Carte nationale Europe</a><a href="reports/latest/rainviewer_radar_map.html">RainViewer</a><a href="reports/latest/european_upstream_map.html">Europe amont</a><a href="reports/latest/european_national_radar_report.md">Rapport</a></div></div></div><div class="section-title">Couches radar et fallback</div><div class="grid cards4">${(M.radar_layers||[]).map(layerCard).join('')}</div>`}
+function countryCard(c){const status=c.machine_radar_available?badge('preuve machine','ok'):badge('interface prête','watch');return `<article class="card country-card"><div class="country-head"><div class="country-title"><div><div class="eyebrow">${esc(c.iso2||'')}</div><h2>${esc(c.label)}</h2></div>${status}</div><p class="muted">${esc(c.belgium_relevance||c.upstream_role||'')}</p></div><div class="country-body"><div class="grid cards2"><div>${bar(c.completeness_score)}<p class="muted">Complétude ${pct(c.completeness_score)}</p></div><div>${bar(c.readiness_score)}<p class="muted">Préparation ${pct(c.readiness_score)}</p></div></div><div class="dl"><span>Sources</span><b>${esc(c.source_count)} dont ${esc(c.configured_source_count)} prêtes</b></div><div class="dl"><span>National / display / nowcast / OPERA</span><b>${esc(c.national_source_count)} / ${esc(c.display_source_count)} / ${esc(c.nowcast_source_count)} / ${esc(c.opera_fallback_count)}</b></div><div class="dl"><span>Fichiers lisibles</span><b>${esc(c.readable_file_count)} / ${esc(c.file_count)}</b></div><div class="dl"><span>Corridor</span><b>${esc(c.corridor_family||'')}</b></div><div class="section-title">Zones à suivre</div><div class="hero-tags">${(c.watch_zones||[]).map(z=>`<span class="pill">${esc(z)}</span>`).join('')}</div><div class="section-title">Sources</div><div class="src-list">${(c.sources||[]).map(s=>`<div class="src"><div class="src-top"><b>${esc(s.provider)}</b>${badge(s.bucket||s.evidence_level,s.bucket==='machine'?'ok':(s.bucket==='blocked'?'watch':'info'))}</div><p class="muted small">${esc(s.role)} · ${esc(s.status)} · ${esc(s.expected_format||'')}</p>${s.api_key_env?`<p class="muted small">Clé : ${esc(s.api_key_env)} ${s.api_key_configured?'configurée':'manquante'}</p>`:''}</div>`).join('')}</div><div class="section-title">Blocages</div><ul>${(c.blockers||[]).map(b=>`<li>${esc(b)}</li>`).join('')}</ul></div></article>`}
+function renderCountries(){return `<div class="section-title">Pays au même niveau de lecture</div><div class="country-grid">${(M.countries||[]).map(countryCard).join('')}</div>`}
+function renderCorridors(){const rows=M.corridors||[];return `<div class="card"><h2>Corridors amont vers la Belgique</h2><p class="muted">Le but n'est pas de surveiller l'Europe pour elle-même, mais de relier les zones radar aux trajectoires possibles vers la Belgique.</p></div><div class="card" style="overflow:auto;margin-top:14px"><table><thead><tr><th>Corridor</th><th>Score</th><th>Source</th><th>Cibles</th><th>Fenêtre</th><th>Lecture</th></tr></thead><tbody>${rows.map(c=>`<tr><td><b>${esc(c.name||c.id)}</b><p class="muted small">${esc(c.id||'')}</p></td><td>${num(c.score)}</td><td>${esc(c.source_region||'')}</td><td>${esc((c.target_zones||[]).join(', '))}</td><td>${esc((c.estimated_arrival_hours||[]).join(' à '))}</td><td>${esc(c.interpretation||'')}</td></tr>`).join('')}</tbody></table></div>`}
+function renderSources(){const rows=M.sources||[];return `<div class="section-title">Registre radar complet</div><div class="card" style="overflow:auto"><table><thead><tr><th>Pays</th><th>Fournisseur</th><th>Rôle</th><th>Statut</th><th>Preuve</th><th>Format</th><th>Clé</th><th>Référence</th></tr></thead><tbody>${rows.map(s=>`<tr><td><b>${esc(s.country)}</b></td><td>${esc(s.provider)}</td><td>${esc(s.role||'')}</td><td>${esc(s.status||'')}</td><td>${esc(s.evidence_level||'')}</td><td>${esc(s.expected_format||'')}</td><td>${s.api_key_env?esc(s.api_key_env)+(s.api_key_configured?' configurée':' manquante'):'aucune'}</td><td>${s.public_reference?`<a href="${esc(s.public_reference)}">source</a>`:'-'}</td></tr>`).join('')}</tbody></table></div>`}
+function renderExpert(){return `<div class="grid cards2"><div class="card"><h2>Exports Europe</h2><div class="links">${(M.exports||[]).map(x=>`<a href="${esc(x.href)}">${esc(x.label)}</a>`).join('')}</div></div><div class="card"><h2>Contrat</h2><p class="muted">${esc(M.page_contract)}</p><p class="muted">Run ${esc(M.run_id)} · ${esc(M.generated_at)} · mode ${esc(M.data_mode)}</p></div></div><div class="section-title">JSON brut</div><pre>${esc(JSON.stringify(M,null,2))}</pre>`}
+function paint(){document.getElementById('stamp').textContent=M.generated_at||'n/a';document.getElementById('view-simple').innerHTML=renderSimple();document.getElementById('view-operational').innerHTML=renderOperational();document.getElementById('view-radar').innerHTML=renderRadar();document.getElementById('view-countries').innerHTML=renderCountries();document.getElementById('view-corridors').innerHTML=renderCorridors();document.getElementById('view-sources').innerHTML=renderSources();document.getElementById('view-expert').innerHTML=renderExpert();document.getElementById('foot').innerHTML=`MeteoVoid Europe · ${esc(M.generated_at||'')} · <a href="index.html">Belgique</a> · <a href="api/europe.json">API Europe</a>`}
+document.querySelectorAll('.tab[data-view]').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.view').forEach(v=>v.classList.toggle('active',v.id==='view-'+b.dataset.view));scrollTo({top:0,behavior:'smooth'})}));document.getElementById('theme').onclick=()=>{document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark'};paint();
+</script>
+</body>
+</html>"""
+
+
+def _write_europe_page_legacy(site_dir: Path, model: dict[str, Any]) -> None:
+    bootstrap = json.dumps(model, ensure_ascii=False).replace("</", "<\\/")
+    page = EUROPE_MAX_TEMPLATE.replace("__EUROPE_BOOTSTRAP__", bootstrap)
+    (site_dir / "europe.html").write_text(page, encoding="utf-8")
 
 
 def main() -> None:
