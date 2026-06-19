@@ -32,6 +32,7 @@ def test_stormscope_is_global_public_interface(tmp_path: Path) -> None:
         assert "Storm-scope · veille de bascule" in html
         assert '<script src="assets/app.js"></script>' in html
         assert '<script src="assets/site-api-adapter.js"></script>' in html
+        assert '<script src="assets/alert-watch-panels.js"></script>' in html
         assert "Interface classique" not in html
 
     europe_html = (site_dir / "europe.html").read_text(encoding="utf-8")
@@ -47,5 +48,8 @@ def test_stormscope_is_global_public_interface(tmp_path: Path) -> None:
     assert (site_dir / "config" / "belgium_provinces_simplified.geojson").exists()
     assert (site_dir / "assets" / "app.css").exists()
     assert (site_dir / "assets" / "app.js").exists()
+    assert (site_dir / "assets" / "alert-watch-panels.js").exists()
+    assert (site_dir / "api" / "watch.json").exists()
+    assert "meteovoid_belgium_alert_watch_public_v1" in (site_dir / "api" / "watch.json").read_text(encoding="utf-8")
     assert "Royaume-Uni" in (site_dir / "uk.html").read_text(encoding="utf-8")
     assert "Italie" in (site_dir / "italy.html").read_text(encoding="utf-8")

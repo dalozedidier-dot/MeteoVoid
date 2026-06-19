@@ -127,3 +127,10 @@ footer{color:var(--faint);font-size:11.5px;padding:32px 0 48px;border-top:1px so
 .zones a.active{color:var(--bolt)}
 .subbar{border-top:1px solid var(--line);background:rgba(9,13,23,.55);backdrop-filter:blur(14px)}
 .in2{max-width:1180px;margin:0 auto;padding:5px 22px}
+.watch-block{margin-top:26px}
+.watch-links{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+.watch-links a{display:block;border:1px solid var(--line);border-radius:14px;background:rgba(17,26,44,.72);padding:12px 13px;color:var(--ink);text-decoration:none}
+.watch-links a:hover{border-color:var(--bolt);background:rgba(116,180,255,.08)}
+.watch-links span{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin-bottom:3px}
+.watch-links b{display:block;font-size:13px;font-weight:600;color:var(--ink)}
+.note ul{margin:8px 0 0 18px;padding:0}.note li{margin:3px 0}

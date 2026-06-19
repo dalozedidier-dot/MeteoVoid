@@ -1758,6 +1758,117 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     )
 
 
+def _build_alert_watch_api(vm: dict[str, Any]) -> dict[str, Any]:
+    """Build a compact public API exposing the whole Belgium Alert Watch state.
+
+    Storm-scope is intentionally a public page, not only a visual shell.  This
+    payload gathers the status blocks that Belgium Alert Watch already produces
+    so the interface can display them without scraping the raw reports.
+    """
+    meta = vm.get("meta", {}) if isinstance(vm.get("meta"), dict) else {}
+    simple = vm.get("simple", {}) if isinstance(vm.get("simple"), dict) else {}
+    operational = vm.get("operational", {}) if isinstance(vm.get("operational"), dict) else {}
+    heat = vm.get("heat", {}) if isinstance(vm.get("heat"), dict) else {}
+    expert = vm.get("expert", {}) if isinstance(vm.get("expert"), dict) else {}
+    validation_history = (
+        expert.get("validation_history") if isinstance(expert.get("validation_history"), dict) else {}
+    )
+    weather_5days = expert.get("weather_5days") if isinstance(expert.get("weather_5days"), dict) else {}
+    convective_live = (
+        expert.get("convective_live_inputs")
+        if isinstance(expert.get("convective_live_inputs"), dict)
+        else {}
+    )
+    sources = expert.get("sources") if isinstance(expert.get("sources"), dict) else {}
+    radar_stack = expert.get("radar_stack") if isinstance(expert.get("radar_stack"), dict) else {}
+    upstream_watch = (
+        expert.get("upstream_watch") if isinstance(expert.get("upstream_watch"), dict) else {}
+    )
+    validation = expert.get("validation") if isinstance(expert.get("validation"), dict) else {}
+
+    artefacts: list[dict[str, str]] = []
+    for frame in expert.get("frames", []):
+        if isinstance(frame, dict) and frame.get("file"):
+            artefacts.append(
+                {
+                    "group": str(frame.get("group") or "Analyse"),
+                    "label": str(frame.get("label") or frame.get("file")),
+                    "href": str(frame.get("file")),
+                }
+            )
+    for export in expert.get("exports", []):
+        if isinstance(export, dict) and export.get("file"):
+            artefacts.append(
+                {
+                    "group": "Exports",
+                    "label": str(export.get("label") or export.get("file")),
+                    "href": str(export.get("file")),
+                }
+            )
+    for label, href in (
+        ("Statut OPERA ORD", "reports/latest/opera_ord_status.json"),
+        ("Pile radar complète", "reports/latest/radar_stack.json"),
+        ("Statut pySTEPS / nowcast", "reports/latest/pysteps_nowcast_status.json"),
+        ("Statut RainViewer", "reports/latest/rainviewer_status.json"),
+        ("Rapport radars nationaux", "reports/latest/european_national_radar_report.md"),
+    ):
+        artefacts.append({"group": "Radar", "label": label, "href": href})
+
+    return {
+        "contract": "meteovoid_belgium_alert_watch_public_v1",
+        "generated_at": meta.get("generated_at"),
+        "run_id": meta.get("run_id"),
+        "timezone": meta.get("timezone"),
+        "data_mode": meta.get("data_mode"),
+        "disclaimer": meta.get("disclaimer"),
+        "latest": {
+            "operational_level": simple.get("operational_level"),
+            "severity": simple.get("severity"),
+            "model_score": simple.get("model_score"),
+            "score_layers": simple.get("score_layers"),
+            "confidence": simple.get("confidence"),
+            "critical_window": simple.get("critical_window"),
+            "main_zone": simple.get("main_zone"),
+            "synthesis": simple.get("synthesis"),
+            "public_wording": simple.get("public_wording"),
+            "official_alert": simple.get("official_alert"),
+            "public_alert_allowed": simple.get("public_alert_allowed"),
+            "strong_external_confirmation": simple.get("strong_external_confirmation"),
+            "transition_level": operational.get("transition_level"),
+            "void_collapse_signal": operational.get("void_collapse_signal"),
+            "alert_explanation": operational.get("alert_explanation"),
+        },
+        "heat": heat,
+        "convective_live_inputs": convective_live,
+        "sources": sources,
+        "observation": expert.get("observation"),
+        "watchdog": expert.get("watchdog"),
+        "early_warning": expert.get("early_warning"),
+        "information_graph": expert.get("information_graph"),
+        "upstream_watch": upstream_watch,
+        "radar_stack": radar_stack,
+        "radar": {
+            "radar_stack": radar_stack,
+            "opera_radar_metrics": expert.get("opera_radar_metrics"),
+            "opera_ord_inventory": expert.get("opera_ord_inventory"),
+            "european_national_radar": expert.get("european_national_radar"),
+            "european_national_radar_metrics": expert.get("european_national_radar_metrics"),
+        },
+        "validation": validation,
+        "validation_history": validation_history,
+        "weather_5days": {
+            "summary": weather_5days.get("summary"),
+            "model": weather_5days.get("model"),
+            "source": weather_5days.get("source"),
+            "national_days": weather_5days.get("national_days"),
+            "zones_count": weather_5days.get("zones_count"),
+            "errors": weather_5days.get("errors"),
+        },
+        "official_geodata": expert.get("official_geodata"),
+        "artefacts": artefacts,
+    }
+
+
 _EUROPE_COUNTRY_LABELS = {
     "spain": "Espagne",
     "france": "France",
@@ -2382,6 +2493,7 @@ def build_api(vm: dict[str, Any], site_dir: Path) -> None:
             **(vm["expert"].get("convective_live_inputs") or {}),
         },
     )
+    _write_json(api_dir / "watch.json", _build_alert_watch_api(vm))
     _write_json(
         api_dir / "europe.json",
         build_europe_model(site_dir / "reports" / "latest", vm),
@@ -2401,6 +2513,7 @@ def build_api(vm: dict[str, Any], site_dir: Path) -> None:
                 "validation_history": "api/validation_history.json",
                 "official_geodata": "api/official_geodata.json",
                 "convective_live": "api/convective_live.json",
+                "watch": "api/watch.json",
                 "europe": "api/europe.json",
             },
             "disclaimer": meta.get("disclaimer"),
@@ -2708,8 +2821,8 @@ def _prepare_stormscope_html(html: str, *, default_view: str = "veille") -> str:
     if _STORMSCOPE_COMPATIBILITY_MARKER not in html:
         html = html.replace("</head>", f"{_STORMSCOPE_COMPATIBILITY_MARKER}</head>")
     adapter = '<script src="assets/site-api-adapter.js"></script>'
+    app_script = '<script src="assets/app.js"></script>'
     if adapter not in html:
-        app_script = '<script src="assets/app.js"></script>'
         if app_script in html:
             html = html.replace(app_script, adapter + "\n" + app_script)
         else:
@@ -2717,6 +2830,9 @@ def _prepare_stormscope_html(html: str, *, default_view: str = "veille") -> str:
                 "<script>\nconst reduce=",
                 adapter + "\n<script>\nconst reduce=",
             )
+    watch_script = '<script src="assets/alert-watch-panels.js"></script>'
+    if watch_script not in html and app_script in html:
+        html = html.replace(app_script, app_script + "\n" + watch_script)
     if default_view and default_view != "veille" and "METEOVOID_DEFAULT_VIEW" not in html:
         safe_view = default_view.replace("'", "")
         jump = (
