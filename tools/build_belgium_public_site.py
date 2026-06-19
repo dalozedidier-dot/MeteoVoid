@@ -2674,6 +2674,51 @@ def _load_belgium_provinces_geojson(report_dir: Path | None = None) -> dict[str,
     return {"type": "FeatureCollection", "features": []}
 
 
+def _prepare_stormscope_html(html: str) -> str:
+    """Return the Storm-scope shell prepared for publication under GitHub Pages."""
+    if '<script src="assets/site-api-adapter.js"></script>' not in html:
+        html = html.replace(
+            "<script>\nconst reduce=",
+            '<script src="assets/site-api-adapter.js"></script>\n<script>\nconst reduce=',
+        )
+    if 'href="europe.html"' not in html:
+        html = html.replace(
+            "</footer>",
+            ' · <a href="europe.html">Europe classique</a></footer>',
+        )
+    if "classic.html" not in html:
+        html = html.replace(
+            "</footer>",
+            ' · <a href="classic.html">Interface classique</a></footer>',
+        )
+    if not html.endswith("\n"):
+        html += "\n"
+    return html
+
+
+def _write_stormscope_public_home(site_dir: Path, pkg_web: Path | None = None) -> bool:
+    """Install Storm-scope as the public home while keeping the old page as classic.html."""
+    if pkg_web is None:
+        pkg_web = Path(__file__).resolve().parents[1] / "stormscope" / "web"
+    index_src = pkg_web / "index.html"
+    if not index_src.exists():
+        return False
+
+    classic = site_dir / "classic.html"
+    current_index = site_dir / "index.html"
+    if current_index.exists() and not classic.exists():
+        shutil.copy2(current_index, classic)
+
+    html = _prepare_stormscope_html(index_src.read_text(encoding="utf-8"))
+    current_index.write_text(html, encoding="utf-8")
+
+    for subdir in ("assets", "config"):
+        src = pkg_web / subdir
+        if src.exists():
+            shutil.copytree(src, site_dir / subdir, dirs_exist_ok=True)
+    return True
+
+
 def build_index(report_dir: Path, site_dir: Path) -> dict[str, Any]:
     site_dir.mkdir(parents=True, exist_ok=True)
     _copy_outputs(report_dir, site_dir)
@@ -2690,6 +2735,7 @@ def build_index(report_dir: Path, site_dir: Path) -> dict[str, Any]:
         .replace("__GENERATED_AT__", str(vm["meta"].get("generated_at") or ""))
     )
     (site_dir / "index.html").write_text(page, encoding="utf-8")
+    stormscope_installed = _write_stormscope_public_home(site_dir)
 
     country_links = _write_country_pages(site_dir)
     try:
@@ -2705,12 +2751,18 @@ def build_index(report_dir: Path, site_dir: Path) -> dict[str, Any]:
     _write_europe_page(site_dir, europe_model)
 
     _write_methodology_page(site_dir)
-    (site_dir / "README.md").write_text(
+    readme_body = (
         "# MeteoVoid Belgique\n\nSite statique généré automatiquement.\n"
-        "Lecture en trois niveaux (simple, opérationnel, expert), page Europe, "
-        "pages pays, page méthodologie et API JSON dans `api/`.\n",
-        encoding="utf-8",
+        "Interface publique Storm-scope installée en `index.html`. "
+        "L’ancienne interface reste disponible en `classic.html`. "
+        "Lecture en trois niveaux, page Europe, pages pays, page méthodologie "
+        "et API JSON dans `api/`.\n"
     )
+    if stormscope_installed:
+        readme_body += "Storm-scope actif.\n"
+    else:
+        readme_body += "Storm-scope non trouvé, interface classique active.\n"
+    (site_dir / "README.md").write_text(readme_body, encoding="utf-8")
     return vm
 
 
