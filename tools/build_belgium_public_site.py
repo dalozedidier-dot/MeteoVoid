@@ -2284,7 +2284,7 @@ COUNTRY_TEMPLATE = r"""<!doctype html>
 :root{--bg:#eef3f9;--card:#fff;--ink:#132033;--muted:#65738a;--line:#d9e3f0;--accent:#2f7cc0;--ok:#1d9a63;--watch:#d28a19;--danger:#c74242;--soft:#f7fafc;--shadow:0 14px 34px rgba(18,34,58,.08)}
 [data-theme=dark]{--bg:#0d1625;--card:#142237;--ink:#e7eef8;--muted:#a7b5c9;--line:#293b57;--accent:#71b8ff;--soft:#101b2d;--shadow:0 14px 34px rgba(0,0,0,.22)}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,Segoe UI,Arial,sans-serif;line-height:1.5}.top{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.85);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}[data-theme=dark] .top{background:rgba(13,22,37,.86)}.topin{max-width:1240px;margin:auto;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:16px}.brand h1{margin:0;font-size:22px}.brand p{margin:2px 0 0;color:var(--muted);font-size:13px}.nav{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.nav a,.nav button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:999px;padding:8px 12px;text-decoration:none;cursor:pointer}.nav a.active{background:var(--accent);color:#fff;border-color:var(--accent)}.hero{max-width:1240px;margin:22px auto 0;padding:0 18px}.hero-card{background:linear-gradient(135deg,rgba(47,124,192,.16),rgba(29,154,99,.09)),var(--card);border:1px solid var(--line);border-radius:28px;padding:26px;box-shadow:var(--shadow)}.eyebrow{text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-size:12px;font-weight:700}.title{font-size:42px;line-height:1.05;margin:8px 0 12px}.lead{max-width:900px;color:var(--muted);font-size:16px}.tabs{max-width:1240px;margin:18px auto 0;padding:0 18px;display:flex;gap:8px;flex-wrap:wrap}.tab{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:14px;padding:10px 13px;cursor:pointer}.tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}main{max-width:1240px;margin:18px auto 56px;padding:0 18px}.view{display:none}.view.active{display:block}.grid{display:grid;gap:14px}.kpis{grid-template-columns:repeat(6,minmax(120px,1fr))}.cards2{grid-template-columns:1.15fr .85fr}.cards3{grid-template-columns:repeat(3,minmax(0,1fr))}.cards4{grid-template-columns:repeat(4,minmax(0,1fr))}.card{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:18px;box-shadow:var(--shadow)}.kpi span{display:block;color:var(--muted);font-size:13px}.kpi b{font-size:26px}.notice{border:1px solid var(--line);background:var(--card);border-radius:18px;padding:14px 16px;margin-bottom:14px;color:var(--muted)}.section-title{margin:26px 0 10px;font-weight:800;font-size:18px}.pill,.badge{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:999px;padding:5px 10px;background:var(--soft);font-size:13px}.dot{width:9px;height:9px;border-radius:99px;display:inline-block}.ok{color:var(--ok)}.watch{color:var(--watch)}.danger{color:var(--danger)}.muted{color:var(--muted)}.score{font-size:30px;font-weight:800}.bar{height:9px;background:var(--soft);border:1px solid var(--line);border-radius:99px;overflow:hidden}.bar i{display:block;height:100%;background:var(--accent);width:0}.head{display:flex;justify-content:space-between;gap:12px;align-items:start}.dl{display:flex;justify-content:space-between;gap:14px;border-top:1px solid var(--line);padding:9px 0}.dl span{color:var(--muted)}table{width:100%;border-collapse:collapse}th,td{border-bottom:1px solid var(--line);padding:10px;text-align:left;vertical-align:top}th{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.06em}.links{display:flex;gap:8px;flex-wrap:wrap}.links a{border:1px solid var(--line);border-radius:999px;padding:7px 10px;color:var(--ink);text-decoration:none;background:var(--soft)}pre{white-space:pre-wrap;background:var(--soft);border:1px solid var(--line);border-radius:16px;padding:14px;max-height:420px;overflow:auto}.small{font-size:13px}.footer{max-width:1240px;margin:0 auto 40px;padding:0 18px;color:var(--muted)}
-.map-bar{display:flex;flex-wrap:wrap;gap:11px;align-items:center;margin:4px 0 14px}.map-toggle{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px;box-shadow:var(--shadow);cursor:pointer}.map-frame{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:80px}.map-legend{display:flex;gap:13px;flex-wrap:wrap;margin-left:auto;font-size:12px;color:var(--muted)}.map-legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.map-bar{display:flex;flex-wrap:wrap;gap:11px;align-items:center;margin:4px 0 14px}.map-toggle{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px;box-shadow:var(--shadow);cursor:pointer}.model-select{font-size:13px;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 12px;box-shadow:var(--shadow);min-width:160px}.map-frame{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:80px}.map-legend{display:flex;gap:13px;flex-wrap:wrap;margin-left:auto;font-size:12px;color:var(--muted)}.map-legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:middle}
 .map-wrap{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:14px}.mvmap{height:66vh;min-height:440px;border-radius:20px;overflow:hidden;border:1px solid var(--line);box-shadow:var(--shadow);z-index:0;background:var(--soft)}.map-detail{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px;box-shadow:var(--shadow);max-height:66vh;overflow:auto}.map-fallback{display:grid;place-items:center;height:100%;color:var(--muted);padding:24px;text-align:center}
 .md-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;border-left:3px solid var(--ac,var(--accent));padding-left:12px;margin-bottom:12px}.md-head h3{margin:2px 0 0;font-size:20px}.md-score{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:4px 0 12px}
 .leaflet-container{font:inherit;background:var(--soft)}.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--card);color:var(--ink)}[data-theme=dark] .leaflet-tile{filter:brightness(.78) contrast(1.05) hue-rotate(178deg) invert(.92)}
@@ -2331,24 +2331,45 @@ function renderCarte(){const rn=M.radar_network||{};const leg=[['calm','faible']
   <div class="map-bar">
     <label class="map-toggle"><input type="checkbox" id="c-radartog" checked> Radar pluie (RainViewer)</label>
     <label class="map-toggle"><input type="checkbox" id="c-sitetog" checked> Sites radar ${esc(rn.operator||'')}</label>
+    <button class="map-toggle" id="c-modeltog" type="button" aria-pressed="false">Modèle NWP</button>
+    <select class="model-select" id="c-modelsrc" aria-label="Modèle météo"><option value="best">Best match</option><option value="ecmwf">ECMWF IFS</option><option value="icon">DWD ICON</option><option value="arome">Météo-France AROME/ARPEGE</option></select>
+    <select class="model-select" id="c-modellayer" aria-label="Couche météo"><option value="precipitation">Précipitation</option><option value="wind_speed_10m">Vent 10 m</option><option value="wind_gusts_10m">Rafales</option><option value="temperature_2m">Température 2 m</option><option value="dew_point_2m">Point de rosée</option><option value="pressure_msl">Pression</option><option value="cape">CAPE</option><option value="convective_inhibition">CIN</option><option value="tcwv">PWAT</option><option value="temperature_850hPa">Température 850 hPa</option><option value="temperature_700hPa">Température 700 hPa</option><option value="temperature_500hPa">Température 500 hPa</option><option value="shear_0_6km">Cisaillement 0–6 km</option></select>
+    <span class="map-frame" id="c-model-frame">modèle masqué</span>
     <button class="map-toggle" id="c-playtog" type="button">⏸ Animation</button>
     <span class="map-frame" id="c-frame"></span>
-    <div class="map-legend">${leg.map(x=>`<span><i style="background:${sevColor(x[0])}"></i>${x[1]}</span>`).join('')}<span><i style="background:#fff;border:2px solid var(--accent)"></i>radar</span></div>
+    <div class="map-legend">${leg.map(x=>`<span><i style="background:${sevColor(x[0])}"></i>${x[1]}</span>`).join('')}<span><i style="background:#fff;border:2px solid var(--accent)"></i>radar</span><span><i style="background:#C13A8A"></i>modèle</span></div>
   </div>
   <div class="map-wrap"><div id="cmap" class="mvmap"></div><aside id="c-detail" class="map-detail"><p class="muted">Clique une station pour son détail de détection, ou un point radar pour le site. Active RainViewer pour suivre la pluie en direct.</p></aside></div>`;}
 function stationDetail(s){const k=(s.severity||{}).key,d=s.drivers||{};return `<div class="md-head" style="--ac:${sevColor(k)}"><div><div class="eyebrow">${esc(M.label)} · ${esc(s.worst_time)}</div><h3>${esc(s.name)}</h3></div><span class="badge"><span class="dot" style="background:${sevColor(k)}"></span>${esc((s.severity||{}).label)}</span></div><div class="md-score"><div><div class="eyebrow">Score MeteoVoid</div><div class="score" style="color:${sevColor(k)}">${pct(s.score)}</div></div>${spark(s.hourly)}</div><div class="dl"><span>Temp / rosée</span><strong>${num(d.temperature_c,1)} / ${num(d.dew_point_c,1)} °C</strong></div><div class="dl"><span>Proba pluie</span><strong>${num(d.precip_prob_pct,0)} %</strong></div><div class="dl"><span>Chute pression</span><strong>${num(d.pressure_drop_hpa,1)} hPa</strong></div><div class="dl"><span>Rafales</span><strong>${num(d.wind_gust_ms,1)} m/s</strong></div>${convRows(s.convective)}${(s.signals&&s.signals.length)?'<div class="section-title">Signaux</div><ul class="small">'+s.signals.map(x=>`<li>${esc(x)}</li>`).join('')+'</ul>':''}`;}
-let CMAP={inst:null,booted:false,radar:null,host:'',frames:[],pastCount:0,idx:0,timer:null,playing:true,markers:{},radarSites:[]};
+let CMAP={inst:null,booted:false,radar:null,host:'',frames:[],pastCount:0,idx:0,timer:null,playing:true,markers:{},radarSites:[],modelLayer:null,modelVisible:false,modelBusy:false};
+const C_NWP_MODELS={best:{label:'Best match',endpoint:'https://api.open-meteo.com/v1/forecast'},ecmwf:{label:'ECMWF IFS',endpoint:'https://api.open-meteo.com/v1/ecmwf'},icon:{label:'DWD ICON',endpoint:'https://api.open-meteo.com/v1/dwd-icon'},arome:{label:'Météo-France AROME/ARPEGE',endpoint:'https://api.open-meteo.com/v1/meteofrance'}};
+const C_NWP_LAYERS={precipitation:{label:'Précipitation',unit:'mm',fields:['precipitation'],range:[0,12]},wind_speed_10m:{label:'Vent 10 m',unit:'km/h',fields:['wind_speed_10m'],range:[0,90]},wind_gusts_10m:{label:'Rafales',unit:'km/h',fields:['wind_gusts_10m'],range:[0,120]},temperature_2m:{label:'Température 2 m',unit:'°C',fields:['temperature_2m'],range:[-5,42]},dew_point_2m:{label:'Point de rosée',unit:'°C',fields:['dew_point_2m'],range:[0,26]},pressure_msl:{label:'Pression',unit:'hPa',fields:['pressure_msl'],range:[990,1030]},cape:{label:'CAPE',unit:'J/kg',fields:['cape'],range:[0,4000]},convective_inhibition:{label:'CIN',unit:'J/kg',fields:['convective_inhibition'],range:[-250,0]},tcwv:{label:'PWAT',unit:'mm',fields:['total_column_integrated_water_vapour'],range:[10,55],alias:'total_column_integrated_water_vapour'},temperature_850hPa:{label:'Température 850 hPa',unit:'°C',fields:['temperature_850hPa'],range:[-10,28]},temperature_700hPa:{label:'Température 700 hPa',unit:'°C',fields:['temperature_700hPa'],range:[-20,18]},temperature_500hPa:{label:'Température 500 hPa',unit:'°C',fields:['temperature_500hPa'],range:[-35,0]},shear_0_6km:{label:'Cisaillement 0–6 km',unit:'m/s',fields:['wind_speed_10m','wind_direction_10m','wind_speed_500hPa','wind_direction_500hPa'],range:[0,35],derived:true}};
 function cSelect(id){const s=(M.stations||[]).find(x=>x.station_id===id);if(!s)return;const det=document.getElementById('c-detail');if(det)det.innerHTML=stationDetail(s);if(CMAP.inst&&s.lat!=null&&s.lon!=null)CMAP.inst.flyTo([s.lat,s.lon],8,{duration:.6});const m=CMAP.markers[id];if(m&&m.openTooltip)m.openTooltip();}
 function cRadarStop(){if(CMAP.timer){clearInterval(CMAP.timer);CMAP.timer=null;}}
 function cRadarShow(idx){if(!CMAP.inst||!window.L||!CMAP.frames.length)return;idx=(idx+CMAP.frames.length)%CMAP.frames.length;CMAP.idx=idx;const f=CMAP.frames[idx],next=L.tileLayer(CMAP.host+f.path+'/256/{z}/{x}/{y}/4/1_1.png',{opacity:.62,attribution:'RainViewer',zIndex:400});next.addTo(CMAP.inst);const prev=CMAP.radar;CMAP.radar=next;if(prev)setTimeout(()=>{try{CMAP.inst.removeLayer(prev);}catch(e){}},230);const fr=document.getElementById('c-frame');if(fr){const dt=new Date((f.time||0)*1000);fr.textContent=dt.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})+(idx>=CMAP.pastCount?' · prévision':'');}}
 function cRadarPlay(){cRadarStop();if(!CMAP.playing||CMAP.frames.length<2)return;CMAP.timer=setInterval(()=>cRadarShow(CMAP.idx+1),700);}
 function cToggleRadar(on){if(!CMAP.inst||!window.L)return;if(!on){cRadarStop();if(CMAP.radar){CMAP.inst.removeLayer(CMAP.radar);CMAP.radar=null;}const fr=document.getElementById('c-frame');if(fr)fr.textContent='';return;}if(CMAP.frames.length){cRadarShow(CMAP.idx);cRadarPlay();return;}fetch('https://api.rainviewer.com/public/weather-maps.json',{cache:'no-store'}).then(r=>r.json()).then(d=>{CMAP.host=d.host||'https://tilecache.rainviewer.com';const past=(d.radar&&d.radar.past)||[],now=(d.radar&&d.radar.nowcast)||[];CMAP.pastCount=past.length;CMAP.frames=past.concat(now);if(!CMAP.frames.length)return;CMAP.idx=Math.max(0,past.length-1);cRadarShow(CMAP.idx);cRadarPlay();}).catch(()=>{const t=document.getElementById('c-radartog');if(t)t.checked=false;const fr=document.getElementById('c-frame');if(fr)fr.textContent='radar indisponible (réseau)';});}
+function cNwpPoints(){return (M.stations||[]).filter(s=>s.lat!=null&&s.lon!=null).slice(0,24).map(s=>({name:s.name||s.station_id,lat:Number(s.lat),lon:Number(s.lon)}));}
+function cNwpField(k){const l=C_NWP_LAYERS[k]||C_NWP_LAYERS.precipitation;return l.alias||k;}
+function cNwpVal(hourly,field,idx){const v=hourly&&hourly[field];if(!Array.isArray(v)||idx<0||idx>=v.length)return null;const n=Number(v[idx]);return Number.isFinite(n)?n:null;}
+function cNwpIdx(hourly){const t=(hourly&&hourly.time)||[];if(!Array.isArray(t)||!t.length)return 0;const now=Date.now();let bi=0,bd=Infinity;t.forEach((x,i)=>{const d=Math.abs(new Date(x).getTime()-now);if(d<bd){bd=d;bi=i;}});return bi;}
+function cWindVec(spd,dir){const s=Number(spd)/3.6,d=Number(dir)*Math.PI/180;if(!Number.isFinite(s)||!Number.isFinite(d))return null;return {u:-s*Math.sin(d),v:-s*Math.cos(d)};}
+function cNwpDerived(hourly,k,idx){if(k!=='shear_0_6km')return cNwpVal(hourly,cNwpField(k),idx);const low=cWindVec(cNwpVal(hourly,'wind_speed_10m',idx),cNwpVal(hourly,'wind_direction_10m',idx));const high=cWindVec(cNwpVal(hourly,'wind_speed_500hPa',idx),cNwpVal(hourly,'wind_direction_500hPa',idx));if(!low||!high)return null;return Math.sqrt((high.u-low.u)**2+(high.v-low.v)**2);}
+function cNwpColor(v,k){const l=C_NWP_LAYERS[k]||C_NWP_LAYERS.precipitation;let lo=l.range[0],hi=l.range[1],t=(Number(v)-lo)/((hi-lo)||1);if(k==='convective_inhibition')t=1-t;t=Math.max(0,Math.min(1,t));return t<.2?'#5BC8E8':t<.4?'#7FD08C':t<.6?'#E2C84C':t<.8?'#E8943A':'#C13A8A';}
+function cNwpFmt(v,k){const l=C_NWP_LAYERS[k]||C_NWP_LAYERS.precipitation;if(v==null)return '—';const a=Math.abs(Number(v)),d=a>=100?0:(a>=10?1:2);return Number(v).toFixed(d)+' '+l.unit;}
+function cNwpUrl(points,modelKey,layerKey){const m=C_NWP_MODELS[modelKey]||C_NWP_MODELS.best,l=C_NWP_LAYERS[layerKey]||C_NWP_LAYERS.precipitation,u=new URL(m.endpoint);u.searchParams.set('latitude',points.map(p=>p.lat.toFixed(4)).join(','));u.searchParams.set('longitude',points.map(p=>p.lon.toFixed(4)).join(','));u.searchParams.set('hourly',Array.from(new Set(l.fields)).join(','));u.searchParams.set('forecast_hours','8');u.searchParams.set('past_hours','1');u.searchParams.set('timezone','Europe/Brussels');u.searchParams.set('wind_speed_unit','kmh');u.searchParams.set('precipitation_unit','mm');return u.toString();}
+function cClearNwp(){if(CMAP.modelLayer&&CMAP.inst){CMAP.inst.removeLayer(CMAP.modelLayer);}CMAP.modelLayer=null;}
+function cRenderNwp(){if(!CMAP.inst||!window.L||!CMAP.modelVisible||CMAP.modelBusy)return;const ms=document.getElementById('c-modelsrc'),ls=document.getElementById('c-modellayer'),mf=document.getElementById('c-model-frame');const mk=(ms&&ms.value)||'best',lk=(ls&&ls.value)||'precipitation';const m=C_NWP_MODELS[mk]||C_NWP_MODELS.best,l=C_NWP_LAYERS[lk]||C_NWP_LAYERS.precipitation,pts=cNwpPoints();if(!pts.length){if(mf)mf.textContent='aucun point';return;}CMAP.modelBusy=true;if(mf)mf.textContent=m.label+' · chargement';fetch(cNwpUrl(pts,mk,lk),{cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject(new Error('nwp_http'))).then(data=>{const rows=Array.isArray(data)?data:[data],g=L.layerGroup();let count=0,tf='';rows.forEach((row,i)=>{const p=pts[i]||pts[0];if(!row||!row.hourly)return;const idx=cNwpIdx(row.hourly),val=cNwpDerived(row.hourly,lk,idx);if(val==null)return;const color=cNwpColor(val,lk),time=(row.hourly.time||[])[idx]||'';tf=tf||time;const mm=L.circleMarker([p.lat,p.lon],{radius:13,color:'rgba(255,255,255,.75)',weight:1,fillColor:color,fillOpacity:.56});mm.bindPopup('<b>'+esc(p.name)+'</b><br>'+esc(m.label)+'<br>'+esc(l.label)+' : <b>'+esc(cNwpFmt(val,lk))+'</b><br><span class="muted">'+esc(time.replace('T',' '))+'</span>');mm.addTo(g);count++;});cClearNwp();CMAP.modelLayer=g;if(CMAP.modelVisible)g.addTo(CMAP.inst);if(mf)mf.textContent=count?(m.label+' · '+l.label+' · '+tf.replace('T',' ')):(m.label+' · champ indisponible');}).catch(()=>{cClearNwp();if(mf)mf.textContent=m.label+' · champ indisponible';}).finally(()=>{CMAP.modelBusy=false;});}
+function cToggleNwp(){CMAP.modelVisible=!CMAP.modelVisible;const b=document.getElementById('c-modeltog');if(b)b.setAttribute('aria-pressed',String(CMAP.modelVisible));if(!CMAP.modelVisible){cClearNwp();const mf=document.getElementById('c-model-frame');if(mf)mf.textContent='modèle masqué';return;}cRenderNwp();}
 function initCountryMap(){const host=document.getElementById('cmap');if(!host)return;if(!window.L){host.innerHTML='<div class="map-fallback">Fond de carte indisponible (réseau). La détection et le réseau radar restent lisibles dans les autres onglets.</div>';return;}if(CMAP.booted){if(CMAP.inst)CMAP.inst.invalidateSize();return;}CMAP.booted=true;const ctr=M.center||{};const map=L.map(host,{zoomControl:true,scrollWheelZoom:true}).setView([ctr.lat!=null?ctr.lat:47,ctr.lon!=null?ctr.lon:5],M.zoom||6);CMAP.inst=map;
   L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,attribution:'&copy; OpenStreetMap, &copy; CARTO'}).addTo(map);
   const rn=M.radar_network||{};(rn.sites||[]).forEach(rs=>{if(rs.lat==null||rs.lon==null)return;const m=L.circleMarker([rs.lat,rs.lon],{radius:5,color:getCss('--accent'),weight:2,fillColor:'#fff',fillOpacity:.92});m.bindTooltip('📡 '+esc(rs.name)+(rs.band?(' · '+esc(rs.band)+'-band'):''),{direction:'top'});CMAP.radarSites.push(m);m.addTo(map);});
   (M.stations||[]).forEach(s=>{if(s.lat==null||s.lon==null)return;const k=(s.severity||{}).key,col=sevColor(k),r=7+Math.round((s.score||0)*13);const m=L.circleMarker([s.lat,s.lon],{radius:r,color:'#fff',weight:1.5,fillColor:col,fillOpacity:.85});m.on('click',()=>cSelect(s.station_id));m.bindTooltip(esc(s.name)+' · '+pct(s.score),{direction:'top'});m.addTo(map);CMAP.markers[s.station_id]=m;});
   const rt=document.getElementById('c-radartog');if(rt)rt.addEventListener('change',()=>cToggleRadar(rt.checked));
   const sit=document.getElementById('c-sitetog');if(sit)sit.addEventListener('change',()=>{CMAP.radarSites.forEach(m=>{if(sit.checked)m.addTo(CMAP.inst);else CMAP.inst.removeLayer(m);});});
+  const mt=document.getElementById('c-modeltog');if(mt)mt.addEventListener('click',()=>cToggleNwp());
+  const ms=document.getElementById('c-modelsrc');if(ms)ms.addEventListener('change',()=>{if(CMAP.modelVisible)cRenderNwp();});
+  const ml=document.getElementById('c-modellayer');if(ml)ml.addEventListener('change',()=>{if(CMAP.modelVisible)cRenderNwp();});
   const pt=document.getElementById('c-playtog');if(pt)pt.addEventListener('click',()=>{CMAP.playing=!CMAP.playing;pt.textContent=(CMAP.playing?'⏸':'▶')+' Animation';if(CMAP.playing)cRadarPlay();else cRadarStop();});
   if(rt&&rt.checked)cToggleRadar(true);
   const first=(M.stations||[])[0];if(first)cSelect(first.station_id);
@@ -2663,7 +2684,12 @@ td.n{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
 #leafletMap{height:560px;width:100%;background:var(--void-900)}
 .map-toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:14px}
 .map-toolbar select{min-width:220px;font-family:var(--body);font-size:.8rem;border:1px solid var(--line);background:var(--panel-2);color:var(--ink);border-radius:9px;padding:8px 10px}
+.map-toolbar .model-select{min-width:170px}
 .map-status{font-family:var(--mono);font-size:.7rem;color:var(--ink-dim);border:1px solid var(--line);background:var(--void-800);border-radius:9px;padding:7px 10px;margin-left:auto}
+.model-dot{width:18px;height:18px;border-radius:50%;border:1px solid rgba(255,255,255,.35);box-shadow:0 0 18px currentColor;background:currentColor;opacity:.86}
+.model-popup-title{font-weight:700;font-size:.95rem;margin-bottom:6px}
+.model-popup-row{display:flex;justify-content:space-between;gap:14px;border-top:1px solid var(--line-soft);padding:5px 0;color:var(--ink-dim)}
+.model-popup-row b{color:var(--ink);font-family:var(--mono)}
 .leaflet-container{font-family:var(--body);background:var(--void-900);color:var(--ink)}
 .leaflet-control-attribution{background:rgba(8,11,17,.72)!important;color:var(--ink-dim)!important;border-top-left-radius:8px}
 .leaflet-control-attribution a{color:var(--accent)!important}
@@ -2889,10 +2915,33 @@ button:focus-visible,.tab:focus-visible,a:focus-visible{outline:2px solid var(--
         <select id="locsel" aria-label="Sélectionner une station"><option value="">Belgique · toutes les stations</option></select>
         <button class="btn" id="fitBelgium" type="button">Recentrer Belgique</button>
         <button class="btn" id="toggleRain" type="button" aria-pressed="true">Radar RainViewer</button>
+        <button class="btn" id="toggleModel" type="button" aria-pressed="false">Modèle NWP</button>
+        <select class="model-select" id="modelSource" aria-label="Modèle météo">
+          <option value="best">Best match</option>
+          <option value="ecmwf">ECMWF IFS</option>
+          <option value="icon">DWD ICON</option>
+          <option value="arome">Météo-France AROME/ARPEGE</option>
+        </select>
+        <select class="model-select" id="modelLayer" aria-label="Couche météo modèle">
+          <option value="precipitation">Précipitation</option>
+          <option value="wind_speed_10m">Vent 10 m</option>
+          <option value="wind_gusts_10m">Rafales</option>
+          <option value="temperature_2m">Température 2 m</option>
+          <option value="dew_point_2m">Point de rosée</option>
+          <option value="pressure_msl">Pression MSL</option>
+          <option value="cape">CAPE</option>
+          <option value="convective_inhibition">CIN</option>
+          <option value="tcwv">PWAT</option>
+          <option value="temperature_850hPa">Température 850 hPa</option>
+          <option value="temperature_700hPa">Température 700 hPa</option>
+          <option value="temperature_500hPa">Température 500 hPa</option>
+          <option value="shear_0_6km">Cisaillement 0–6 km</option>
+        </select>
+        <span class="map-status" id="modelStatus">Modèle NWP · masqué</span>
         <span class="map-status" id="mapStatus">Leaflet · initialisation</span>
       </div>
       <div class="legend"><span><i style="background:var(--calm)"></i>stable</span><span><i style="background:var(--watch)"></i>tension</span><span><i style="background:var(--alert)"></i>bascule / score fort</span></div>
-      <p class="map-note">Fond sombre interactif, couche radar RainViewer chargée en direct, provinces belges issues de <span class="mono">config/belgium_provinces_simplified.geojson</span> et stations cliquables. La couche radar visuelle ne vaut pas preuve machine : MeteoVoid garde la distinction avec <span class="mono">no_machine_radar_data</span> quand aucun fichier radar lisible n'est intégré.</p>
+      <p class="map-note">Fond sombre interactif, couche radar RainViewer chargée en direct, provinces belges issues de <span class="mono">config/belgium_provinces_simplified.geojson</span>, stations cliquables et couche modèle NWP optionnelle. Les modèles ECMWF/ICON/AROME sont interrogés comme prévisions opérationnelles réelles ; si un champ n'est pas disponible, MeteoVoid l'indique au lieu de l'inventer.</p>
     </div>
   </section>
 
@@ -3209,6 +3258,31 @@ let MV_RAIN_LAYER=null;
 let MV_PROVINCE_LAYER=null;
 let MV_RAIN_VISIBLE=true;
 let MV_RAIN_REFRESH=null;
+let MV_MODEL_LAYER=null;
+let MV_MODEL_VISIBLE=false;
+let MV_MODEL_BUSY=false;
+
+const NWP_MODELS={
+  best:{label:"Best match",endpoint:"https://api.open-meteo.com/v1/forecast"},
+  ecmwf:{label:"ECMWF IFS",endpoint:"https://api.open-meteo.com/v1/ecmwf"},
+  icon:{label:"DWD ICON",endpoint:"https://api.open-meteo.com/v1/dwd-icon"},
+  arome:{label:"Météo-France AROME/ARPEGE",endpoint:"https://api.open-meteo.com/v1/meteofrance"}
+};
+const NWP_LAYERS={
+  precipitation:{label:"Précipitation",unit:"mm",fields:["precipitation"],range:[0,12]},
+  wind_speed_10m:{label:"Vent 10 m",unit:"km/h",fields:["wind_speed_10m"],range:[0,90]},
+  wind_gusts_10m:{label:"Rafales",unit:"km/h",fields:["wind_gusts_10m"],range:[0,120]},
+  temperature_2m:{label:"Température 2 m",unit:"°C",fields:["temperature_2m"],range:[-5,42]},
+  dew_point_2m:{label:"Point de rosée",unit:"°C",fields:["dew_point_2m"],range:[0,26]},
+  pressure_msl:{label:"Pression MSL",unit:"hPa",fields:["pressure_msl"],range:[990,1030]},
+  cape:{label:"CAPE",unit:"J/kg",fields:["cape"],range:[0,4000]},
+  convective_inhibition:{label:"CIN",unit:"J/kg",fields:["convective_inhibition"],range:[-250,0]},
+  tcwv:{label:"PWAT",unit:"mm",fields:["total_column_integrated_water_vapour"],range:[10,55],alias:"total_column_integrated_water_vapour"},
+  temperature_850hPa:{label:"Température 850 hPa",unit:"°C",fields:["temperature_850hPa"],range:[-10,28]},
+  temperature_700hPa:{label:"Température 700 hPa",unit:"°C",fields:["temperature_700hPa"],range:[-20,18]},
+  temperature_500hPa:{label:"Température 500 hPa",unit:"°C",fields:["temperature_500hPa"],range:[-35,0]},
+  shear_0_6km:{label:"Cisaillement 0–6 km",unit:"m/s",fields:["wind_speed_10m","wind_direction_10m","wind_speed_500hPa","wind_direction_500hPa"],range:[0,35],derived:true}
+};
 
 function cssVar(name){return getComputedStyle(document.documentElement).getPropertyValue(name).trim()||name;}
 function normName(v){return String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"");}
@@ -3242,6 +3316,15 @@ function popupHtml(record){return `<div class="mv-popup-title">${escTxt(record.n
   <div class="mv-popup-row"><span>Signaux</span><b>${escTxt(record.signals)}</b></div>`;}
 function stationRecords(){
   return (STATIONS_GEO||[]).map(([name,lat,lon])=>({ ...stationDataFor(name), lat:numVal(lat), lon:numVal(lon)})).filter(x=>Number.isFinite(x.lat)&&Number.isFinite(x.lon));
+}
+function nwpSamplingPoints(){
+  const seen=new Set();
+  const base=stationRecords().map(s=>({name:s.name,lat:s.lat,lon:s.lon}));
+  const extra=[
+    ["Bruges",51.21,3.22],["Courtrai",50.83,3.26],["Mons",50.45,3.95],["Tournai",50.61,3.39],
+    ["Louvain",50.88,4.70],["Wavre",50.72,4.61],["Bastogne",50.00,5.72],["Arlon",49.68,5.82]
+  ].map(([name,lat,lon])=>({name,lat,lon}));
+  return base.concat(extra).filter(p=>{const k=`${p.name}-${p.lat.toFixed(2)}-${p.lon.toFixed(2)}`;if(seen.has(k))return false;seen.add(k);return true;}).slice(0,24);
 }
 function renderLocSelector(){
   const sel=document.getElementById("locsel"); if(!sel)return;
@@ -3298,6 +3381,115 @@ function addRainViewerLayer(){
       const radarBadge=document.getElementById("radarLiveState"); if(radarBadge)radarBadge.textContent="radar direct indisponible";
     });
 }
+function setModelStatus(text){const e=document.getElementById("modelStatus"); if(e)e.textContent=text;}
+function nwpFieldName(layerKey){const layer=NWP_LAYERS[layerKey]||NWP_LAYERS.precipitation;return layer.alias||layerKey;}
+function nwpValueAt(hourly,field,idx){
+  const values=hourly&&hourly[field];
+  if(!Array.isArray(values)||idx<0||idx>=values.length)return null;
+  const v=Number(values[idx]);
+  return Number.isFinite(v)?v:null;
+}
+function nwpTimeIndex(hourly){
+  const times=(hourly&&hourly.time)||[];
+  if(!Array.isArray(times)||!times.length)return 0;
+  const now=Date.now();
+  let best=0,dist=Infinity;
+  times.forEach((t,i)=>{const d=Math.abs(new Date(t).getTime()-now);if(d<dist){dist=d;best=i;}});
+  return best;
+}
+function windVector(speedKmh,dirDeg){
+  const s=Number(speedKmh)/3.6,dir=Number(dirDeg)*Math.PI/180;
+  if(!Number.isFinite(s)||!Number.isFinite(dir))return null;
+  return {u:-s*Math.sin(dir),v:-s*Math.cos(dir)};
+}
+function nwpDerivedValue(hourly,layerKey,idx){
+  if(layerKey!=="shear_0_6km")return nwpValueAt(hourly,nwpFieldName(layerKey),idx);
+  const low=windVector(nwpValueAt(hourly,"wind_speed_10m",idx),nwpValueAt(hourly,"wind_direction_10m",idx));
+  const high=windVector(nwpValueAt(hourly,"wind_speed_500hPa",idx),nwpValueAt(hourly,"wind_direction_500hPa",idx));
+  if(!low||!high)return null;
+  return Math.sqrt((high.u-low.u)**2+(high.v-low.v)**2);
+}
+function nwpColor(value,layerKey){
+  const layer=NWP_LAYERS[layerKey]||NWP_LAYERS.precipitation;
+  let [lo,hi]=layer.range||[0,1];
+  let t=(Number(value)-lo)/((hi-lo)||1);
+  if(layerKey==="convective_inhibition")t=1-t;
+  t=clamp(t,0,1);
+  if(t<.20)return "#5BC8E8";
+  if(t<.40)return "#7FD08C";
+  if(t<.60)return "#E2C84C";
+  if(t<.80)return "#E8943A";
+  return "#C13A8A";
+}
+function nwpFormatValue(value,layerKey){
+  const layer=NWP_LAYERS[layerKey]||NWP_LAYERS.precipitation;
+  if(value==null)return "—";
+  const abs=Math.abs(Number(value));
+  const decimals=abs>=100?0:(abs>=10?1:2);
+  return `${Number(value).toFixed(decimals)} ${layer.unit}`;
+}
+function nwpBuildUrl(points,modelKey,layerKey){
+  const model=NWP_MODELS[modelKey]||NWP_MODELS.best;
+  const layer=NWP_LAYERS[layerKey]||NWP_LAYERS.precipitation;
+  const url=new URL(model.endpoint);
+  url.searchParams.set("latitude",points.map(p=>p.lat.toFixed(4)).join(","));
+  url.searchParams.set("longitude",points.map(p=>p.lon.toFixed(4)).join(","));
+  url.searchParams.set("hourly",Array.from(new Set(layer.fields)).join(","));
+  url.searchParams.set("forecast_hours","8");
+  url.searchParams.set("past_hours","1");
+  url.searchParams.set("timezone","Europe/Brussels");
+  url.searchParams.set("wind_speed_unit","kmh");
+  url.searchParams.set("precipitation_unit","mm");
+  return url.toString();
+}
+function clearModelLayer(){if(MV_MODEL_LAYER&&MV_MAP){MV_MAP.removeLayer(MV_MODEL_LAYER);}MV_MODEL_LAYER=null;}
+function renderModelLayer(){
+  if(!MV_MODEL_VISIBLE||!MV_MAP||typeof L==="undefined")return;
+  if(MV_MODEL_BUSY)return;
+  const sourceSel=document.getElementById("modelSource"),layerSel=document.getElementById("modelLayer");
+  const modelKey=(sourceSel&&sourceSel.value)||"best",layerKey=(layerSel&&layerSel.value)||"precipitation";
+  const model=NWP_MODELS[modelKey]||NWP_MODELS.best,layer=NWP_LAYERS[layerKey]||NWP_LAYERS.precipitation;
+  const points=nwpSamplingPoints();
+  if(!points.length){setModelStatus("Modèle NWP · aucun point");return;}
+  MV_MODEL_BUSY=true;
+  setModelStatus(`${model.label} · ${layer.label} · chargement`);
+  fetch(nwpBuildUrl(points,modelKey,layerKey),{cache:"no-store"})
+    .then(r=>r.ok?r.json():r.text().then(t=>Promise.reject(new Error(t||"nwp_http"))))
+    .then(data=>{
+      const rows=Array.isArray(data)?data:[data];
+      const group=L.layerGroup();
+      let count=0,frameText="";
+      rows.forEach((row,i)=>{
+        const p=points[i]||points[0];
+        if(!row||!row.hourly)return;
+        const idx=nwpTimeIndex(row.hourly);
+        const value=nwpDerivedValue(row.hourly,layerKey,idx);
+        if(value==null)return;
+        const color=nwpColor(value,layerKey);
+        const marker=L.circleMarker([p.lat,p.lon],{radius:14,color:"rgba(255,255,255,.78)",weight:1.1,fillColor:color,fillOpacity:.58,pane:"overlayPane"});
+        const time=(row.hourly.time||[])[idx]||"";
+        frameText=frameText||time;
+        marker.bindPopup(`<div class="model-popup-title">${escTxt(p.name)}</div><div class="model-popup-row"><span>Modèle</span><b>${escTxt(model.label)}</b></div><div class="model-popup-row"><span>Couche</span><b>${escTxt(layer.label)}</b></div><div class="model-popup-row"><span>Valeur</span><b>${escTxt(nwpFormatValue(value,layerKey))}</b></div><div class="model-popup-row"><span>Échéance</span><b>${escTxt(time.replace("T"," "))}</b></div>`);
+        marker.addTo(group);count++;
+      });
+      clearModelLayer();
+      MV_MODEL_LAYER=group;
+      if(MV_MODEL_VISIBLE)group.addTo(MV_MAP);
+      const stamp=frameText?frameText.replace("T"," "):"échéance proche";
+      setModelStatus(count?`${model.label} · ${layer.label} · ${stamp}`:`${model.label} · ${layer.label} indisponible`);
+    })
+    .catch(()=>{
+      clearModelLayer();
+      setModelStatus(`${model.label} · ${layer.label} indisponible`);
+    })
+    .finally(()=>{MV_MODEL_BUSY=false;});
+}
+function toggleModelLayer(force){
+  MV_MODEL_VISIBLE=typeof force==="boolean"?force:!MV_MODEL_VISIBLE;
+  const btn=document.getElementById("toggleModel");if(btn)btn.setAttribute("aria-pressed",String(MV_MODEL_VISIBLE));
+  if(!MV_MODEL_VISIBLE){clearModelLayer();setModelStatus("Modèle NWP · masqué");return;}
+  renderModelLayer();
+}
 function initMap(){
   const target=document.getElementById("leafletMap"); if(!target)return;
   if(typeof L==="undefined"){setMapStatus("Leaflet indisponible · vérifier le chargement CDN");return;}
@@ -3314,6 +3506,9 @@ function initMap(){
   if(bounds.isValid())MV_MAP.fitBounds(bounds.pad(.18));
   const fit=document.getElementById("fitBelgium"); if(fit)fit.onclick=()=>{const b=MV_PROVINCE_LAYER?MV_PROVINCE_LAYER.getBounds():bounds;if(b&&b.isValid())MV_MAP.fitBounds(b.pad(.08));};
   const toggle=document.getElementById("toggleRain"); if(toggle)toggle.onclick=()=>{MV_RAIN_VISIBLE=!MV_RAIN_VISIBLE;toggle.setAttribute("aria-pressed",String(MV_RAIN_VISIBLE));if(MV_RAIN_LAYER){MV_RAIN_VISIBLE?MV_RAIN_LAYER.addTo(MV_MAP):MV_MAP.removeLayer(MV_RAIN_LAYER);}setMapStatus(MV_RAIN_VISIBLE?"RainViewer · actif":"RainViewer · masqué");};
+  const modelToggle=document.getElementById("toggleModel"); if(modelToggle)modelToggle.onclick=()=>toggleModelLayer();
+  const modelSource=document.getElementById("modelSource"); if(modelSource)modelSource.onchange=()=>{if(MV_MODEL_VISIBLE)renderModelLayer();};
+  const modelLayer=document.getElementById("modelLayer"); if(modelLayer)modelLayer.onchange=()=>{if(MV_MODEL_VISIBLE)renderModelLayer();};
   const sel=document.getElementById("locsel"); if(sel)sel.onchange=()=>{const records=stationRecords();const rec=records[Number(sel.value)];if(rec){MV_MAP.setView([rec.lat,rec.lon],10,{animate:true});setTimeout(()=>{MV_STATION_LAYER&&MV_STATION_LAYER.eachLayer(m=>{if(m.mvIndex===Number(sel.value))m.openPopup();});},220);}else if(bounds.isValid())MV_MAP.fitBounds(bounds.pad(.18));};
   setTimeout(()=>MV_MAP.invalidateSize(),120);
 }
