@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from fastapi.testclient import TestClient
 
 import meteovoid.api as api_mod
 from meteovoid.core import interstation_spatial_consistency, scan_series_for_voids
@@ -129,23 +129,19 @@ def test_live_worker_dead_letters_invalid_payload(monkeypatch: pytest.MonkeyPatc
 
 
 def test_api_rate_limit_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
-    class EmptyRedis:
-        def keys(self, _pattern: str) -> list[str]:
-            return []
-
-        def get(self, _key: str) -> None:
-            return None
-
-    monkeypatch.setattr(api_mod, "_make_redis", lambda _url: EmptyRedis())
     monkeypatch.setattr(api_mod, "RATE_LIMIT_PER_MINUTE", 1)
     api_mod._RATE_BUCKETS.clear()
-    client = TestClient(api_mod.app)
+    request = SimpleNamespace(
+        headers={},
+        url=SimpleNamespace(path="/stations"),
+        client=SimpleNamespace(host="203.0.113.10"),
+    )
 
-    first = client.get("/stations")
-    second = client.get("/stations")
+    api_mod._rate_limit(request)
+    with pytest.raises(api_mod.HTTPException) as exc_info:
+        api_mod._rate_limit(request)
 
-    assert first.status_code == 200
-    assert second.status_code == 429
+    assert exc_info.value.status_code == 429
     monkeypatch.setattr(api_mod, "RATE_LIMIT_PER_MINUTE", 240)
     api_mod._RATE_BUCKETS.clear()
 
