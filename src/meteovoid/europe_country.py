@@ -91,6 +91,14 @@ def _series_to_hourly(series: dict[str, list[float]]) -> dict[str, list[float]]:
     return {target: values for source, target in mapping.items() if (values := series.get(source))}
 
 
+def _optional_series_value(series: dict[str, list[float]], key: str, idx: int) -> float | None:
+    """Return one optional numeric series value without polluting list types with None."""
+    values = series.get(key)
+    if not values or idx >= len(values):
+        return None
+    return values[idx]
+
+
 def _seed(*parts: str) -> int:
     return int(hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:12], 16)
 
@@ -302,16 +310,16 @@ def _detect_station(
             "cin_jkg": conv.get("cin_jkg"),
             "lifted_index": conv.get("lifted_index"),
             "bulk_shear_ms": conv.get("bulk_shear_ms"),
-            "pwat_mm": (series.get("pwat_mm") or [None] * (peak_idx + 1))[peak_idx],
-            "temperature_850hpa_c": (series.get("temperature_850hpa_c") or [None] * (peak_idx + 1))[
-                peak_idx
-            ],
-            "temperature_700hpa_c": (series.get("temperature_700hpa_c") or [None] * (peak_idx + 1))[
-                peak_idx
-            ],
-            "temperature_500hpa_c": (series.get("temperature_500hpa_c") or [None] * (peak_idx + 1))[
-                peak_idx
-            ],
+            "pwat_mm": _optional_series_value(series, "pwat_mm", peak_idx),
+            "temperature_850hpa_c": _optional_series_value(
+                series, "temperature_850hpa_c", peak_idx
+            ),
+            "temperature_700hpa_c": _optional_series_value(
+                series, "temperature_700hpa_c", peak_idx
+            ),
+            "temperature_500hpa_c": _optional_series_value(
+                series, "temperature_500hpa_c", peak_idx
+            ),
         },
         "hourly": hourly,
         "signals": signals[:4],
