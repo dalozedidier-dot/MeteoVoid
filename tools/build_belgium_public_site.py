@@ -1235,9 +1235,7 @@ def _build_bulletin(vm: dict[str, Any]) -> dict[str, Any]:
         else {}
     )
     convective_fields = (
-        convective_inputs.get("fields")
-        if isinstance(convective_inputs.get("fields"), dict)
-        else {}
+        convective_inputs.get("fields") if isinstance(convective_inputs.get("fields"), dict) else {}
     )
 
     def _live_field_value(key: str) -> float | None:
@@ -1305,9 +1303,7 @@ def _build_bulletin(vm: dict[str, Any]) -> dict[str, Any]:
         body = "Bulletin classique du dernier run : " + "; ".join(classic_bits) + "."
         if convective_bits:
             body += (
-                " Ingrédients convectifs réels disponibles : "
-                + "; ".join(convective_bits)
-                + "."
+                " Ingrédients convectifs réels disponibles : " + "; ".join(convective_bits) + "."
             )
         sections.append(
             {
