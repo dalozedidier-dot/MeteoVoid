@@ -1,5 +1,5 @@
-"""Belgium-specific helpers for MeteoVoid."""
+"""Belgium-specific public weather helpers for MeteoVoid."""
 
-from .contracts import ContractError, validate_output_directory
+from __future__ import annotations
 
-__all__ = ["ContractError", "validate_output_directory"]
+__all__ = ["bulletin_5days", "official_geodata", "validation_history"]

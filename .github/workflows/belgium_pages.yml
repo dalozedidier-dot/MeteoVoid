@@ -84,6 +84,17 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e ".[live,viz]"
 
+      - name: Prepare Belgium geodata
+        run: |
+          set -euo pipefail
+          mkdir -p _ci_out/belgium_alert
+          OFFLINE_DEMO="${{ inputs.offline_demo || 'false' }}"
+          cmd=(python tools/prepare_belgium_geodata.py --out-dir _ci_out/belgium_alert)
+          if [ "$OFFLINE_DEMO" = "true" ]; then
+            cmd+=(--offline)
+          fi
+          "${cmd[@]}"
+
       - name: Generate Belgium report
         run: |
           set -euo pipefail
@@ -106,7 +117,7 @@ jobs:
             --external-note "$EXTERNAL_NOTE"
             --external-sources-config config/external_sources_belgium.yaml
             --calibration-config config/belgium_scoring_calibration.yaml
-            --province-geojson config/belgium_provinces_simplified.geojson
+            --province-geojson _ci_out/belgium_alert/belgium_boundaries_provinces.geojson
             --replay-events config/belgium_replay_events.example.csv
           )
 
@@ -126,6 +137,24 @@ jobs:
             cmd+=(--heat-warning-active)
           fi
           "${cmd[@]}"
+
+      - name: Generate public 5-day bulletin and validation history
+        if: always()
+        run: |
+          set -euo pipefail
+          OFFLINE_DEMO="${{ inputs.offline_demo || 'false' }}"
+          bulletin_cmd=(python tools/generate_belgium_5day_bulletin.py --out-dir _ci_out/belgium_alert --days 5)
+          if [ "$OFFLINE_DEMO" = "true" ]; then
+            bulletin_cmd+=(--offline-demo)
+          fi
+          "${bulletin_cmd[@]}"
+          if [ -f _ci_out/belgium_alert/belgium_alert_report.json ]; then
+            python tools/update_belgium_validation_history.py \
+              --report _ci_out/belgium_alert/belgium_alert_report.json \
+              --history-dir "$METEOVOID_HISTORY_DIR/validation" \
+              --verified-events config/belgium_verified_storm_events.csv \
+              --out-dir _ci_out/belgium_alert
+          fi
 
       - name: Build static public site
         run: |

@@ -1,0 +1,43 @@
+# Public 5-day Belgium bulletin zones.
+# Coordinates are representative points, not official warning zones.
+zones:
+  - key: coast
+    label: Côte belge
+    lat: 51.23
+    lon: 2.92
+    province_group: Côte
+  - key: flanders_west
+    label: Flandre occidentale
+    lat: 51.21
+    lon: 3.22
+    province_group: Flandre
+  - key: flanders_east
+    label: Flandre orientale
+    lat: 51.05
+    lon: 3.73
+    province_group: Flandre
+  - key: brussels_brabant
+    label: Bruxelles / Brabant
+    lat: 50.85
+    lon: 4.35
+    province_group: Centre
+  - key: hainaut
+    label: Hainaut
+    lat: 50.45
+    lon: 3.95
+    province_group: Wallonie
+  - key: namur
+    label: Namur
+    lat: 50.47
+    lon: 4.87
+    province_group: Wallonie
+  - key: liege
+    label: Liège
+    lat: 50.63
+    lon: 5.57
+    province_group: Wallonie
+  - key: luxembourg
+    label: Luxembourg / Ardenne
+    lat: 49.92
+    lon: 5.38
+    province_group: Ardenne

@@ -45,3 +45,6 @@ PATCH_NOTES*.md
 *_patch/
 patch_*/
 PATCH_NOTES*.txt
+# Downloaded geodata / generated public site layers
+config/geodata/cache/
+reports/latest/

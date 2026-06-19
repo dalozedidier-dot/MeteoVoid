@@ -77,6 +77,13 @@ PUBLIC_FILES = [
     "information_graph_edges.csv",
     "validation_metrics.json",
     "validation_report.md",
+    "validation_history.json",
+    "forecast_history.csv",
+    "weather_5days.json",
+    "weather_5days.md",
+    "official_geodata_status.json",
+    "belgium_boundaries_provinces.geojson",
+    "belgium_boundaries_municipalities.geojson",
     "self_watchdog.json",
     "observation_gap_status.json",
     "nowcast_status.json",
@@ -150,6 +157,9 @@ EXPORTS = [
     ("API transition JSON", "../api/transition.json"),
     ("API sources JSON", "../api/sources.json"),
     ("API validation JSON", "../api/validation.json"),
+    ("API bulletin 5 jours", "../api/weather_5days.json"),
+    ("Bulletin 5 jours Markdown", "weather_5days.md"),
+    ("Validation historique", "validation_history.json"),
     ("API upstream JSON", "../api/upstream.json"),
     ("API radar JSON", "../api/radar.json"),
     ("Rapport Europe amont", "upstream_watch_report.md"),
@@ -1344,6 +1354,78 @@ def _build_bulletin(vm: dict[str, Any]) -> dict[str, Any]:
             }
         )
 
+    weather_5days = vm.get("weather_5days") if isinstance(vm.get("weather_5days"), dict) else {}
+    national_days = (
+        weather_5days.get("national_days")
+        if isinstance(weather_5days.get("national_days"), list)
+        else []
+    )
+    if national_days:
+        day_items = []
+        for day in national_days[:5]:
+            if not isinstance(day, dict):
+                continue
+            day_items.append(
+                f"{day.get('date') or '—'} · {day.get('weather_label') or 'temps variable'} · "
+                f"{day.get('temperature_min_c')} / {day.get('temperature_max_c')} °C · "
+                f"pluie max {day.get('precipitation_probability_max_pct')} % · "
+                f"rafales {day.get('wind_gust_max_kmh')} km/h · {day.get('risk_note') or ''}"
+            )
+        sections.append(
+            {
+                "title": "Prévision classique à 5 jours",
+                "body": str(weather_5days.get("summary") or ""),
+                "items": day_items,
+                "note": str(weather_5days.get("disclaimer") or "Bulletin automatique non officiel."),
+            }
+        )
+
+    zone_forecasts = weather_5days.get("zones") if isinstance(weather_5days.get("zones"), list) else []
+    if zone_forecasts:
+        zone_items = []
+        for zone_item in zone_forecasts[:8]:
+            if not isinstance(zone_item, dict):
+                continue
+            days = zone_item.get("days") if isinstance(zone_item.get("days"), list) else []
+            first = days[0] if days and isinstance(days[0], dict) else {}
+            zone_items.append(
+                f"{zone_item.get('label') or zone_item.get('key') or 'Zone'} · "
+                f"{first.get('weather_label') or 'temps variable'} · "
+                f"max {first.get('temperature_2m_max', '—')} °C · "
+                f"pluie {first.get('precipitation_probability_max', '—')} % · "
+                f"rafales {first.get('wind_gusts_10m_max', '—')} km/h"
+            )
+        sections.append(
+            {
+                "title": "Bulletin 5 jours par zone",
+                "items": zone_items,
+                "note": "Zones représentatives : elles ne remplacent pas les zones d’avertissement officielles IRM/KMI.",
+            }
+        )
+
+    validation_history = (
+        vm.get("validation_history") if isinstance(vm.get("validation_history"), dict) else {}
+    )
+    if validation_history:
+        scores = (
+            validation_history.get("scores")
+            if isinstance(validation_history.get("scores"), dict)
+            else {}
+        )
+        sections.append(
+            {
+                "title": "Validation historique",
+                "body": (
+                    f"Statut : {validation_history.get('status') or 'non renseigné'}. "
+                    f"Runs stockés : {validation_history.get('stored_run_count', 0)} ; "
+                    f"runs évalués : {validation_history.get('evaluated_run_count', 0)}. "
+                    f"Brier : {scores.get('brier_score') if scores else 'n/a'}, "
+                    f"CSI : {scores.get('csi') if scores else 'n/a'}."
+                ),
+                "note": str(validation_history.get("note") or "Les scores exigent des événements vérifiés."),
+            }
+        )
+
     provinces = expert.get("provinces") if isinstance(expert.get("provinces"), list) else []
     real_zones = [
         p
@@ -1401,6 +1483,9 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
     early_warning = _load_json(report_dir / "early_warning_signals.json")
     info_graph = _load_json(report_dir / "information_graph_summary.json")
     validation = _load_json(report_dir / "validation_metrics.json")
+    validation_history = _load_json(report_dir / "validation_history.json")
+    weather_5days = _load_json(report_dir / "weather_5days.json")
+    geodata_status = _load_json(report_dir / "official_geodata_status.json")
     watchdog = _load_json(report_dir / "self_watchdog.json")
     source_status = _load_json(report_dir / "source_status.json")
     obs_gap = _load_json(report_dir / "observation_gap_status.json")
@@ -1521,6 +1606,9 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
             if isinstance(p, dict)
         ],
         "validation": _validation(validation),
+        "validation_history": validation_history,
+        "weather_5days": weather_5days,
+        "official_geodata": geodata_status,
         "observation": _observation(obs_gap, nowcast),
         "sources": _sources(source_status, report),
         "watchdog": {
@@ -1580,6 +1668,8 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
                 "operational": operational_view,
                 "heat": _build_heat(report),
                 "expert": expert,
+                "weather_5days": weather_5days,
+                "validation_history": validation_history,
             }
         ),
     }
@@ -2233,6 +2323,18 @@ def build_api(vm: dict[str, Any], site_dir: Path) -> None:
         {"generated_at": generated_at, **vm["expert"]["validation"]},
     )
     _write_json(
+        api_dir / "validation_history.json",
+        {"generated_at": generated_at, **(vm["expert"].get("validation_history") or {})},
+    )
+    _write_json(
+        api_dir / "weather_5days.json",
+        {"generated_at": generated_at, **(vm["expert"].get("weather_5days") or {})},
+    )
+    _write_json(
+        api_dir / "official_geodata.json",
+        {"generated_at": generated_at, **(vm["expert"].get("official_geodata") or {})},
+    )
+    _write_json(
         api_dir / "upstream.json",
         {"generated_at": generated_at, **vm["expert"].get("upstream_watch", {})},
     )
@@ -2289,6 +2391,9 @@ def build_api(vm: dict[str, Any], site_dir: Path) -> None:
                 "radar": "api/radar.json",
                 "heat": "api/heat.json",
                 "weather_belgium": "api/weather_belgium.json",
+                "weather_5days": "api/weather_5days.json",
+                "validation_history": "api/validation_history.json",
+                "official_geodata": "api/official_geodata.json",
                 "convective_live": "api/convective_live.json",
                 "europe": "api/europe.json",
             },
@@ -2542,11 +2647,17 @@ body{margin:0;font-family:Inter,Segoe UI,Arial,sans-serif;background:#f5f7fb;col
     (site_dir / "methodology.html").write_text(html_page, encoding="utf-8")
 
 
-def _load_belgium_provinces_geojson() -> dict[str, Any]:
-    for candidate in [
-        Path("config/belgium_provinces_simplified.geojson"),
-        Path(__file__).resolve().parents[1] / "config" / "belgium_provinces_simplified.geojson",
-    ]:
+def _load_belgium_provinces_geojson(report_dir: Path | None = None) -> dict[str, Any]:
+    candidates = []
+    if report_dir is not None:
+        candidates.append(report_dir / "belgium_boundaries_provinces.geojson")
+    candidates.extend(
+        [
+            Path("config/belgium_provinces_simplified.geojson"),
+            Path(__file__).resolve().parents[1] / "config" / "belgium_provinces_simplified.geojson",
+        ]
+    )
+    for candidate in candidates:
         try:
             if candidate.exists():
                 payload = json.loads(candidate.read_text(encoding="utf-8"))
@@ -2564,7 +2675,7 @@ def build_index(report_dir: Path, site_dir: Path) -> dict[str, Any]:
     build_api(vm, site_dir)
 
     bootstrap = json.dumps(vm, ensure_ascii=False).replace("</", "<\\/")
-    provinces = json.dumps(_load_belgium_provinces_geojson(), ensure_ascii=False).replace(
+    provinces = json.dumps(_load_belgium_provinces_geojson(report_dir), ensure_ascii=False).replace(
         "</", "<\\/"
     )
     page = (
