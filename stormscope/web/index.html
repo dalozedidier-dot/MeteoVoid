@@ -90,6 +90,25 @@ main{min-height:72vh}
 .heatdial .big{font-family:var(--disp);font-weight:800;font-size:64px;line-height:1;letter-spacing:-.03em}
 .heatdial .lbl{font-family:var(--mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-top:6px}
 .heatdial .cmf{display:inline-block;margin-top:14px;padding:6px 13px;border-radius:999px;font-size:13px;font-weight:600;border:1px solid var(--line)}
+/* bulletin */
+.parts{display:grid;grid-template-columns:repeat(4,1fr);gap:11px}
+.part{border:1px solid var(--line);border-radius:16px;background:rgba(17,26,44,.7);padding:15px;text-align:center}
+.part .pl{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim)}
+.part .pt{font-family:var(--disp);font-weight:800;font-size:34px;letter-spacing:-.02em;margin:6px 0;color:var(--c3)}
+.part .ic{height:40px;display:grid;place-items:center;margin:4px 0}
+.part .pp{font-family:var(--mono);font-size:12px;color:var(--dim)}
+.days{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px}
+.daycard{flex:0 0 118px;border:1px solid var(--line);border-radius:16px;background:rgba(17,26,44,.7);padding:13px;text-align:center}
+.daycard .dl{font-weight:700;font-size:13px}.daycard .dd{font-family:var(--mono);font-size:10.5px;color:var(--faint)}
+.daycard .ic{height:38px;display:grid;place-items:center;margin:8px 0 4px}
+.daycard .tx{font-family:var(--mono);font-size:15px}.daycard .tx .mx{color:var(--c4);font-weight:700}.daycard .tx .mn{color:var(--c2)}
+.daycard .meta2{font-family:var(--mono);font-size:10.5px;color:var(--dim);margin-top:6px;display:flex;justify-content:center;gap:9px}
+.daycard .bsc{margin-top:9px;height:6px;border-radius:99px;background:var(--raised);overflow:hidden}.daycard .bsc i{display:block;height:100%;border-radius:99px}
+.chartwrap{width:100%;overflow-x:auto}.chartwrap svg{display:block;min-width:760px;width:100%;height:auto}
+.clegend{display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin-top:14px;font-size:12.5px;color:var(--dim)}
+.clegend .d{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px;vertical-align:middle}
+.clegend .sw{display:inline-block;width:13px;height:9px;border-radius:2px;margin:0 1px;vertical-align:middle}
+.clegend .bsl{display:flex;align-items:center;gap:2px;flex-wrap:wrap}
 /* map */
 .maptools{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
 select.mvsel{font:inherit;font-size:13px;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 11px}
@@ -112,10 +131,6 @@ footer{color:var(--faint);font-size:11.5px;padding:32px 0 48px;border-top:1px so
 @media(max-width:860px){.hero-grid,.heatgrid{grid-template-columns:1fr}.scope{min-height:320px;order:2}.word{font-size:60px}.bars{height:180px}.mapbox{height:460px}}
 @media(prefers-reduced-motion:reduce){.view{animation:none}.bar-fill,.track .cur,.cmp .meter i{transition:none}}
 </style>
-
-<!-- MeteoVoid Belgique · Prototype technique · classic.html · compatibility tokens for legacy tests and links:
-Vue simple · Vue opérationnelle · data-view="map" · renderMap · initMap · locsel · leaflet · reports/latest/belgium_alert_dashboard.html · rainviewerTileUrl · api/latest.json · Radars Europe · Radars nationaux Europe · Espagne, France, Suisse, Pays-Bas · european_national_radar_map.html · european_national_radar_report.md · data-view="bulletin" · renderBulletin · view-bulletin · Bulletin météo classique Belgique · Températures par région belge · BELGIUM_VIEW_BOUNDS · BELGIUM_MODEL_GRID · modelSelectionChanged · fitBelgiumMap · Open-Meteo · champ modèle réel · modelSource.onchange=()=>modelSelectionChanged() · modelLayer.onchange=()=>modelSelectionChanged() · href="europe.html" · Signaux précoces · Graphe informationnel · Auto-surveillance
--->
 </head>
 <body>
 <div class="skybg"></div><canvas id="sky"></canvas><div class="flash" id="flash"></div>
@@ -125,7 +140,7 @@ Vue simple · Vue opérationnelle · data-view="map" · renderMap · initMap · 
   <div><div class="bname">MeteoVoid</div><div class="bsub">Storm-scope · veille de bascule</div></div>
   <div class="grow"></div>
   <nav class="tabs" id="nav">
-    <a href="#veille">Veille</a><a href="#carte">Carte</a><a href="#heures">Heures</a><a href="#chaleur">Chaleur</a><a href="#reseau">Réseau</a><a href="#europe">Europe</a><a href="#expert">Expert</a><a href="#methode">Méthode</a>
+    <a href="#veille">Veille</a><a href="#carte">Carte</a><a href="#heures">Heures</a><a href="#bulletin">Bulletin</a><a href="#chaleur">Chaleur</a><a href="#reseau">Réseau</a><a href="#europe">Europe</a><a href="#expert">Expert</a><a href="#methode">Méthode</a>
   </nav>
   <div class="live"><span class="spark"></span><span id="clock">—</span></div>
 </div></header>
@@ -180,6 +195,24 @@ Vue simple · Vue opérationnelle · data-view="map" · renderMap · initMap · 
   <div class="sec-h"><h2>Prochaines heures</h2><div class="rule"></div><span class="meta">score de bascule · Belgique · live</span></div>
   <div class="panel"><div class="bars" id="bars"></div>
     <div class="hnote" id="hNote"></div></div>
+</div></section>
+
+<!-- BULLETIN -->
+<section class="view" id="view-bulletin"><div class="sec">
+  <div class="sec-h"><h2>Bulletin</h2><div class="rule"></div><span class="meta" id="bullLoc">Belgique · Uccle · live</span></div>
+  <div class="eyebrow" style="margin-bottom:10px" id="bullToday">Aujourd'hui</div>
+  <div class="parts" id="bullParts"></div>
+  <div class="sec-h" style="margin-top:26px"><h2 style="font-size:20px">Jours suivants</h2><div class="rule"></div></div>
+  <div class="days" id="bullDays"></div>
+  <div class="sec-h" style="margin-top:26px"><h2 style="font-size:20px">14 jours</h2><div class="rule"></div><span class="meta">température + risque de bascule</span></div>
+  <div class="panel"><div class="chartwrap" id="bullChart"></div>
+    <div class="clegend">
+      <span><i class="d" style="background:var(--c4)"></i>Maxi (°C)</span>
+      <span><i class="d" style="background:var(--c2)"></i>Mini (°C)</span>
+      <span class="bsl">Bande du bas = risque de bascule&nbsp; <i class="sw" style="background:var(--c1)"></i><i class="sw" style="background:var(--c2)"></i><i class="sw" style="background:var(--c3)"></i><i class="sw" style="background:var(--c4)"></i> &nbsp;⚡ = transition/bascule</span>
+    </div>
+  </div>
+  <p class="note">Prévisions Open-Meteo (modèles haute résolution). La bande de risque est l'anticipation de bascule par jour — pas une confirmation radar.</p>
 </div></section>
 
 <!-- CHALEUR -->
@@ -245,10 +278,9 @@ Vue simple · Vue opérationnelle · data-view="map" · renderMap · initMap · 
   <div class="note"><b>Anticipation ≠ confirmation.</b> Une bascule affichée n'est pas une cellule confirmée tant que le radar ne l'a pas vue.</div>
 </div></section>
 
-<footer class="wrap" style="padding-left:0;padding-right:0">MeteoVoid · Storm-scope · prototype non officiel · indices Open-Meteo · radar RainViewer · ori-c.be · <a href="europe.html">Europe classique</a> · <a href="classic.html">Interface classique</a></footer>
+<footer class="wrap" style="padding-left:0;padding-right:0">MeteoVoid · Storm-scope · prototype non officiel · indices Open-Meteo · radar RainViewer · ori-c.be</footer>
 </main></div>
 
-<script src="assets/site-api-adapter.js"></script>
 <script>
 const reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
 const BE_PROV={"type":"FeatureCollection","features":[{"type":"Feature","properties":{"province":"Flandre occidentale"},"geometry":{"type":"Polygon","coordinates":[[[2.55,50.72],[3.18,50.72],[3.32,51.12],[2.85,51.38],[2.55,51.15],[2.55,50.72]]]}},{"type":"Feature","properties":{"province":"Flandre orientale"},"geometry":{"type":"Polygon","coordinates":[[[3.18,50.72],[4.05,50.78],[4.18,51.25],[3.32,51.42],[3.18,50.72]]]}},{"type":"Feature","properties":{"province":"Anvers"},"geometry":{"type":"Polygon","coordinates":[[[4.05,51.02],[5.15,51.05],[5.35,51.48],[4.25,51.52],[4.05,51.02]]]}},{"type":"Feature","properties":{"province":"Limbourg"},"geometry":{"type":"Polygon","coordinates":[[[5.15,50.72],[5.98,50.74],[6.2,51.28],[5.35,51.48],[5.15,50.72]]]}},{"type":"Feature","properties":{"province":"Brabant flamand"},"geometry":{"type":"Polygon","coordinates":[[[4.05,50.72],[5.15,50.72],[5.15,51.05],[4.05,51.02],[4.05,50.72]]]}},{"type":"Feature","properties":{"province":"Bruxelles"},"geometry":{"type":"Polygon","coordinates":[[[4.25,50.77],[4.47,50.77],[4.47,50.93],[4.25,50.93],[4.25,50.77]]]}},{"type":"Feature","properties":{"province":"Brabant wallon"},"geometry":{"type":"Polygon","coordinates":[[[4.15,50.55],[4.9,50.55],[5.0,50.75],[4.15,50.75],[4.15,50.55]]]}},{"type":"Feature","properties":{"province":"Hainaut"},"geometry":{"type":"Polygon","coordinates":[[[2.85,49.88],[4.35,49.88],[4.45,50.55],[3.2,50.72],[2.75,50.35],[2.85,49.88]]]}},{"type":"Feature","properties":{"province":"Namur"},"geometry":{"type":"Polygon","coordinates":[[[4.35,49.88],[5.35,49.85],[5.45,50.55],[4.9,50.55],[4.15,50.55],[4.35,49.88]]]}},{"type":"Feature","properties":{"province":"Liège"},"geometry":{"type":"Polygon","coordinates":[[[5.35,49.98],[6.42,50.05],[6.22,50.78],[5.45,50.8],[5.35,49.98]]]}},{"type":"Feature","properties":{"province":"Luxembourg belge"},"geometry":{"type":"Polygon","coordinates":[[[4.98,49.45],[6.18,49.45],[6.42,50.05],[5.35,49.98],[4.98,49.45]]]}}]};
@@ -371,6 +403,60 @@ function renderExpert(){const i=0;const cape=meanAt('cape',i),cin=meanAt('convec
     el.appendChild(d);requestAnimationFrame(()=>setTimeout(()=>d.querySelector('i').style.width=(v*100)+'%',80));});
 }
 
+/* ---------------- bulletin ---------------- */
+let BULL=null;
+function wcat(c){if(c<=1)return'clear';if(c===2)return'partly';if(c===3)return'cloud';if(c===45||c===48)return'fog';if(c>=95)return'storm';if((c>=71&&c<=77)||c===85||c===86)return'snow';return'rain';}
+function wicon(c){const k=wcat(c),A='#F2B23E',B='#8395B0',R='#74B4FF',S='#EE4F5C';
+ const sun=`<circle cx="12" cy="12" r="5" fill="${A}"/>`+[0,45,90,135,180,225,270,315].map(a=>{const r=a*Math.PI/180,x1=12+Math.cos(r)*8,y1=12+Math.sin(r)*8,x2=12+Math.cos(r)*10.5,y2=12+Math.sin(r)*10.5;return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${A}" stroke-width="1.6" stroke-linecap="round"/>`;}).join('');
+ const cloud=`<path d="M7 17a4 4 0 0 1 .4-8 5 5 0 0 1 9.5 1.2A3.4 3.4 0 0 1 17 17Z" fill="${B}"/>`;
+ const drops=`<line x1="9" y1="18" x2="8" y2="21" stroke="${R}" stroke-width="1.8" stroke-linecap="round"/><line x1="13" y1="18" x2="12" y2="21" stroke="${R}" stroke-width="1.8" stroke-linecap="round"/>`;
+ const boltp=`<path d="M13 14l-4 6h3l-1 4 5-7h-3l1-3z" fill="${S}"/>`;
+ let body;
+ if(k==='clear')body=sun;
+ else if(k==='partly')body=`<g transform="translate(2,-3) scale(.72)">${sun}</g>`+cloud;
+ else if(k==='cloud'||k==='fog')body=cloud;
+ else if(k==='storm')body=cloud+boltp;
+ else if(k==='snow')body=cloud+`<text x="12" y="22" font-size="7" fill="${R}" text-anchor="middle">*</text>`;
+ else body=cloud+drops;
+ return `<svg viewBox="0 0 24 24" width="100%" height="100%" style="max-width:42px;max-height:42px">${body}</svg>`;}
+async function ensureBulletin(){if(BULL){renderBulletin();return;}await loadBulletin();}
+async function loadBulletin(){
+ const url="https://api.open-meteo.com/v1/forecast?latitude=50.799&longitude=4.358&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,sunshine_duration&hourly=temperature_2m,precipitation_probability,weather_code,cape,convective_inhibition,lifted_index,wind_gusts_10m&forecast_days=14&timezone=auto";
+ try{const d=await(await fetch(url,{cache:"no-store"})).json();const dayRisk={};
+  d.hourly.time.forEach((t,i)=>{const day=t.slice(0,10);const r=risk(d.hourly.cape[i],d.hourly.convective_inhibition[i],d.hourly.lifted_index[i],d.hourly.precipitation_probability[i],d.hourly.wind_gusts_10m[i]).r;if(!(day in dayRisk)||r>dayRisk[day])dayRisk[day]=r;});
+  BULL={d,dayRisk};renderBulletin();
+ }catch(e){document.getElementById('bullParts').innerHTML='<div class="part">indices indisponibles</div>';}}
+function hIdx(date,hh){return BULL.d.hourly.time.indexOf(date+'T'+hh+':00');}
+function dayRiskFor(date){return BULL.dayRisk[date]||0;}
+function renderBulletin(){renderParts();renderDays();renderChart();}
+function renderParts(){const d=BULL.d,today=d.daily.time[0];
+ document.getElementById('bullToday').textContent="Aujourd'hui · "+new Date(today).toLocaleDateString('fr-BE',{weekday:'long',day:'2-digit',month:'2-digit'});
+ const parts=[['Matinée','09'],['Après-midi','15'],['Soirée','20'],['Nuit','23']];
+ document.getElementById('bullParts').innerHTML=parts.map(([lab,hh])=>{let i=hIdx(today,hh);if(i<0)i=0;const t=Math.round(d.hourly.temperature_2m[i]),pp=d.hourly.precipitation_probability[i]||0,wc=d.hourly.weather_code[i];
+  return `<div class="part"><div class="pl">${lab}</div><div class="pt">${t}&deg;</div><div class="ic">${wicon(wc)}</div><div class="pp">${pp}% pluie</div></div>`;}).join('');}
+function renderDays(){const d=BULL.d;let html='';
+ for(let i=1;i<d.daily.time.length;i++){const date=d.daily.time[i],dt=new Date(date);
+  const lab=i===1?'demain':dt.toLocaleDateString('fr-BE',{weekday:'short'});
+  const mx=Math.round(d.daily.temperature_2m_max[i]),mn=Math.round(d.daily.temperature_2m_min[i]);
+  const pp=d.daily.precipitation_probability_max[i]||0,sun=Math.round((d.daily.sunshine_duration[i]||0)/3600);
+  const r=dayRiskFor(date),c=cls(r);
+  html+=`<div class="daycard"><div class="dl">${lab}</div><div class="dd">${dt.toLocaleDateString('fr-BE',{day:'2-digit',month:'2-digit'})}</div><div class="ic">${wicon(d.daily.weather_code[i])}</div><div class="tx"><span class="mx">${mx}&deg;</span> <span class="mn">${mn}&deg;</span></div><div class="meta2"><span>${sun} h soleil</span><span>${pp}% pluie</span></div><div class="bsc"><i style="width:${(r*100)|0}%;background:${C[c]}"></i></div></div>`;}
+ document.getElementById('bullDays').innerHTML=html;}
+function renderChart(){const d=BULL.d,days=d.daily.time,n=days.length;
+ const W=Math.max(760,n*62),H=360,L=26,Rr=26,top=72,bot=270;
+ const mx=days.map((_,i)=>d.daily.temperature_2m_max[i]),mn=days.map((_,i)=>d.daily.temperature_2m_min[i]);
+ const hi=Math.max(...mx)+2,lo=Math.min(...mn)-2,span=(hi-lo)||1;
+ const slot=(W-L-Rr)/n,X=i=>L+slot*(i+0.5),Y=t=>bot-(t-lo)/span*(bot-top);
+ const line=(a,col)=>`<polyline fill="none" stroke="${col}" stroke-width="2" stroke-opacity=".5" points="${a.map((t,i)=>X(i).toFixed(1)+','+Y(t).toFixed(1)).join(' ')}"/>`;
+ let dots='';
+ mx.forEach((t,i)=>{dots+=`<circle cx="${X(i).toFixed(1)}" cy="${Y(t).toFixed(1)}" r="3.4" fill="${C[3]}"/><text x="${X(i).toFixed(1)}" y="${(Y(t)-9).toFixed(1)}" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#EAF0FA">${Math.round(t)}</text>`;});
+ mn.forEach((t,i)=>{dots+=`<circle cx="${X(i).toFixed(1)}" cy="${Y(t).toFixed(1)}" r="3.4" fill="${C[1]}"/><text x="${X(i).toFixed(1)}" y="${(Y(t)+17).toFixed(1)}" text-anchor="middle" font-family="JetBrains Mono" font-size="11" fill="#8395B0">${Math.round(t)}</text>`;});
+ let labels='';days.forEach((dd,i)=>{const w=new Date(dd).toLocaleDateString('fr-BE',{weekday:'short'}).replace('.','');labels+=`<text x="${X(i).toFixed(1)}" y="34" text-anchor="middle" font-family="Inter" font-size="12" fill="#8395B0">${w}</text>`;});
+ let strip='';const sy=298,sh=34;days.forEach((dd,i)=>{const r=dayRiskFor(dd),c=cls(r),x=L+slot*i+3,w=slot-6;
+  strip+=`<rect x="${x.toFixed(1)}" y="${sy}" width="${w.toFixed(1)}" height="${sh}" rx="5" fill="${C[c]}" fill-opacity="${(0.18+0.55*r).toFixed(2)}"/>`;
+  if(c>=2)strip+=`<g transform="translate(${X(i).toFixed(1)},${sy+6})"><path d="M0 0 l-4 9 h3 l-2 9 7-12 h-4 l2-6z" fill="#fff" fill-opacity=".92"/></g>`;});
+ document.getElementById('bullChart').innerHTML=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMinYMin meet">${labels}${line(mx,C[3])}${line(mn,C[1])}${dots}<text x="${L}" y="294" font-family="JetBrains Mono" font-size="9" fill="#52617B">RISQUE DE BASCULE / JOUR</text>${strip}</svg>`;}
+
 /* ---------------- maps (Carte = Belgique, Europe = régions) ---------------- */
 const REGIONS={
  europe:{label:"Europe (vue d'ensemble)",center:[49.5,9],zoom:4,bbox:{w:-9,s:36,e:28,n:60},step:3.6,prov:false,stations:[["Bruxelles",50.85,4.35],["Paris",48.857,2.352],["Amsterdam",52.373,4.894],["Berlin",52.52,13.405],["Londres",51.507,-0.128],["Madrid",40.417,-3.704],["Rome",41.903,12.496],["Milan",45.46,9.19],["Vienne",48.21,16.37],["Zurich",47.38,8.54],["Munich",48.14,11.58],["Lyon",45.76,4.84],["Marseille",43.30,5.37],["Hambourg",53.55,9.99],["Francfort",50.11,8.68],["Varsovie",52.23,21.01],["Prague",50.08,14.44],["Barcelone",41.39,2.17],["Copenhague",55.68,12.57],["Dublin",53.35,-6.26]]},
@@ -438,119 +524,22 @@ const CARTE=makeMap({region:"belgium",surf:"cL-surf",sta:"cL-sta",rad:"cL-rad",s
 const EU=makeMap({region:"europe",surf:"eL-surf",sta:"eL-sta",rad:"eL-rad",net:"eL-net",time:"eTime",play:"ePlay",tl:"eTl",word:"euWord",sub:"euSub",eye:"euEye",load:"eLoad",region_sel:true});
 EU.ids.region="euRegion";
 
-
-/* ---------------- site API first ---------------- */
-let APP_MODEL=null;
-function apiNum(v,d=0){const n=Number(v);return Number.isFinite(n)?n:d;}
-function apiPct(v){return Math.round(clamp(apiNum(v))*100);}
-function apiHourLabel(h){if(!h)return '—';try{return new Date(h).toLocaleTimeString('fr-BE',{hour:'2-digit'});}catch(e){return String(h).slice(11,13)||String(h);}}
-function apiClass(score){return cls(clamp(apiNum(score)));}
-function apiHours(){
-  const src=(APP_MODEL&&Array.isArray(APP_MODEL.hours))?APP_MODEL.hours:[];
-  if(src.length)return src.map((h,i)=>({hour:h.hour||h.time||('+'+i+' h'),score:clamp(apiNum(h.score,APP_MODEL.now&&APP_MODEL.now.score))}));
-  const s=clamp(apiNum(APP_MODEL&&APP_MODEL.now&&APP_MODEL.now.score));
-  return Array.from({length:12},(_,i)=>({hour:i===0?'maintenant':'+'+i+' h',score:s}));
-}
-function renderApiCrossSection(score){
-  const H=422,lidY=176,top=H-(score*H*0.92);
-  const rect=document.getElementById('chargeRect'),g=document.getElementById('chargeG'),dot=document.getElementById('topDot'),lit=document.getElementById('lit');
-  if(!rect||!g||!dot||!lit)return;
-  rect.setAttribute('y',top);rect.setAttribute('height',H-top);dot.setAttribute('cy',top);g.style.transform='scaleY(0)';
-  if(reduce)g.style.transform='scaleY(1)';else requestAnimationFrame(()=>{g.style.transition='transform 1.2s cubic-bezier(.2,.85,.2,1)';g.style.transform='scaleY(1)';});
-  if(top<lidY){const f=()=>{lit.style.opacity='1';setTimeout(()=>lit.style.opacity='.2',90);setTimeout(()=>lit.style.opacity='.85',190);setTimeout(()=>lit.style.opacity='.25',320);};reduce?lit.style.opacity='.85':setTimeout(f,850);}else lit.style.opacity='0';
-}
-function renderSiteApiVeille(){
-  const m=APP_MODEL,score=clamp(apiNum(m.now&&m.now.score));const c=apiClass(score);
-  document.getElementById('vWord').textContent=(m.now&&m.now.regimeName?m.now.regimeName:NAMES[c]).toUpperCase();
-  document.getElementById('vAxis').textContent=score.toFixed(2)+' · '+NAMES[c].toLowerCase();
-  const stations=(Array.isArray(m.stations)?m.stations:[]).slice().sort((a,b)=>apiNum(b.score)-apiNum(a.score));
-  const ex=stations[0];
-  const peak=(m.now&&m.now.peakHour)||'—';
-  document.getElementById('vRead').innerHTML=c>=2
-    ?`Signal serveur élevé : fenêtre à surveiller. Zone la plus exposée : <em>${ex?ex.name:'Belgique'}</em>, pic <em>${peak}</em>. Anticipation MeteoVoid, pas confirmation radar.`
-    :`Signal serveur ${c>=1?'à surveiller':'faible à modéré'}. Zone la plus exposée : <em>${ex?ex.name:'Belgique'}</em>. Anticipation MeteoVoid, pas confirmation radar.`;
-  document.getElementById('cur').style.left=(score*100)+'%';renderApiCrossSection(score);
-  const temp=m.now&&m.now.tempC!=null?Math.round(m.now.tempC)+' °C':'—';
-  const hx=m.now&&m.now.humidex!=null?Math.round(m.now.humidex):'—';
-  document.getElementById('vChips').innerHTML=
-    `<div class="chip"><span class="k">Source</span><span class="v">API site</span></div>`+
-    `<div class="chip"><span class="k">Pic</span><span class="v mono">${peak}</span></div>`+
-    `<div class="chip"><span class="k">Zone</span><span class="v">${ex?ex.name:'Belgique'}</span></div>`+
-    `<div class="chip"><span class="k">Température</span><span class="v mono">${temp}</span></div>`+
-    `<div class="chip"><span class="k">Humidex</span><span class="v mono">${hx}</span></div>`;
-}
-function renderSiteApiHours(){
-  const hours=apiHours(),bars=document.getElementById('bars');bars.innerHTML='';
-  const vals=hours.map(h=>clamp(apiNum(h.score)));let pk=vals.indexOf(Math.max(...vals));
-  hours.forEach((h,i)=>{const c=apiClass(vals[i]);const label=String(h.hour||'').startsWith('+')?h.hour:apiHourLabel(h.hour);const col=document.createElement('div');col.className='col'+(i===pk?' peak':'');
-    col.innerHTML=`<svg class="bolt" viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg><div class="bar-track"><div class="bar-fill" style="height:0"></div></div><div class="hh">${label}</div>`;
-    bars.appendChild(col);const f=col.querySelector('.bar-fill');f.style.background=C[c];f.style.boxShadow=i===pk?`0 0 18px ${C[c]}`:'none';});
-  animBars('#bars',vals);
-  document.getElementById('hNote').innerHTML=`<span>⚡ <b>${hours[pk]?hours[pk].hour:'—'}</b> pic serveur (${vals[pk].toFixed(2)})</span><span>Score publié par l’API MeteoVoid, pas une confirmation radar.</span>`;
-}
-function renderSiteApiChaleur(){
-  const raw=(Array.isArray(APP_MODEL.heatHours)?APP_MODEL.heatHours:[]).filter(h=>h&&h.humidex!=null);
-  const vals=raw.length?raw.map(h=>apiNum(h.humidex)):[(APP_MODEL.now&&APP_MODEL.now.humidex!=null)?apiNum(APP_MODEL.now.humidex):0];
-  const mx=Math.round(Math.max(...vals));const mc=hxClass(mx);
-  document.getElementById('hxBig').textContent=mx||'—';document.getElementById('hxBig').style.color=C[mc];
-  const labels=['Confort','Inconfort','Forte gêne','Danger'];const cmf=document.getElementById('hxCmf');cmf.textContent=labels[mc];cmf.style.color=C[mc];cmf.style.borderColor=C[mc];
-  document.getElementById('hxSub').textContent='Humidex publié par l’API du site quand disponible.';
-  const bars=document.getElementById('heatBars');bars.innerHTML='';const norm=vals.map(h=>clamp((h-18)/32));
-  vals.forEach((v,i)=>{const h=raw[i]||{};const label=h.hour?apiHourLabel(h.hour):(i===0?'now':'+'+i+' h');const c=hxClass(v);const col=document.createElement('div');col.className='col';col.innerHTML=`<svg class="bolt" viewBox="0 0 24 24"></svg><div class="bar-track"><div class="bar-fill" style="height:0"></div></div><div class="hh">${label}</div>`;bars.appendChild(col);col.querySelector('.bar-fill').style.background=C[c];});
-  animBars('#heatBars',norm);
-}
-function renderSiteApiNet(){
-  const net=document.getElementById('net');net.innerHTML='';
-  const list=(Array.isArray(APP_MODEL.stations)?APP_MODEL.stations:[]).slice().sort((a,b)=>apiNum(b.score)-apiNum(a.score));
-  document.getElementById('netMeta').textContent=list.length+' stations · API site';
-  if(!list.length){net.innerHTML='<div class="note">Aucune station publiée dans api/stations.json pour ce run.</div>';return;}
-  list.forEach(d=>{const r=clamp(apiNum(d.score)),c=apiClass(r);const el=document.createElement('div');el.className='det';
-    el.innerHTML=`<span class="dot" style="background:${C[c]};box-shadow:0 0 10px ${C[c]}"></span><div><div class="nm">${d.name||'Station'}</div><div class="lv">${NAMES[c]}</div></div><div class="sc">${r.toFixed(2)}</div>`;net.appendChild(el);});
-}
-function renderSiteApiExpert(){
-  const layers=APP_MODEL.layers||{};const rows=[
-    ['Score global',APP_MODEL.now&&APP_MODEL.now.score,'score serveur publié'],
-    ['Risque convectif',layers.convective_risk_score,'couche convective'],
-    ['Stress chaleur',layers.heat_stress_score,'couche chaleur'],
-    ['Confiance',APP_MODEL.now&&APP_MODEL.now.confidence,'confiance du run'],
-  ];
-  const el=document.getElementById('comp');el.innerHTML='';
-  rows.forEach(([nm,val,tx])=>{const has=val!=null;const v=clamp(apiNum(val));const c=apiClass(v);const d=document.createElement('div');d.className='cmp';
-    d.innerHTML=`<div class="top"><span class="nm">${nm}</span><span class="sc" style="color:${C[c]}">${has?v.toFixed(2):'—'}</span></div><div class="meter"><i style="width:0;background:${C[c]}"></i></div><div class="tx">${has?'API site':'non publié dans ce run'}</div><div class="tag">${tx}</div>`;
-    el.appendChild(d);requestAnimationFrame(()=>setTimeout(()=>d.querySelector('i').style.width=(has?v*100:0)+'%',80));});
-}
-const renderVeilleOpenMeteo=renderVeille, renderHoursOpenMeteo=renderHours, renderChaleurOpenMeteo=renderChaleur, renderNetOpenMeteo=renderNet, renderExpertOpenMeteo=renderExpert;
-renderVeille=function(){return APP_MODEL?renderSiteApiVeille():renderVeilleOpenMeteo();};
-renderHours=function(){return APP_MODEL?renderSiteApiHours():renderHoursOpenMeteo();};
-renderChaleur=function(){return APP_MODEL?renderSiteApiChaleur():renderChaleurOpenMeteo();};
-renderNet=function(){return APP_MODEL?renderSiteApiNet():renderNetOpenMeteo();};
-renderExpert=function(){return APP_MODEL?renderSiteApiExpert():renderExpertOpenMeteo();};
-
 /* ---------------- router ---------------- */
-const views=['veille','carte','heures','chaleur','reseau','europe','expert','methode'];
+const views=['veille','carte','heures','bulletin','chaleur','reseau','europe','expert','methode'];
 function route(){let h=(location.hash||'#veille').slice(1);if(!views.includes(h))h='veille';
   views.forEach(v=>document.getElementById('view-'+v).classList.toggle('active',v===h));
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.getAttribute('href')==='#'+h));
-  if(BE||APP_MODEL){if(h==='veille')renderVeille();if(h==='heures')renderHours();if(h==='chaleur')renderChaleur();if(h==='reseau')renderNet();if(h==='expert')renderExpert();}
+  if(BE){if(h==='veille')renderVeille();if(h==='heures')renderHours();if(h==='chaleur')renderChaleur();if(h==='reseau')renderNet();if(h==='expert')renderExpert();}
   if(h==='carte')mountMap(CARTE,'carteMap');
   if(h==='europe')mountMap(EU,'euMap');
+  if(h==='bulletin')ensureBulletin();
   scrollTo({top:0,behavior:'smooth'});
 }
 addEventListener('hashchange',route);
 
 /* boot */
-async function boot(){
-  try{
-    if(window.MeteoVoidSiteApi){
-      const model=await window.MeteoVoidSiteApi.loadModelFromSiteApi('./api/');
-      if(model){APP_MODEL=model;route();return;}
-    }
-  }catch(e){}
-  try{await loadBE();}
-  catch(e){document.getElementById('vWord').textContent='HORS-LIGNE';document.getElementById('vRead').textContent='Réseau Open-Meteo injoignable — réessaie plus tard.';}
-  route();
-}
-boot();
+loadBE().catch(()=>{document.getElementById('vWord').textContent='HORS-LIGNE';document.getElementById('vRead').textContent='Réseau Open-Meteo injoignable — réessaie plus tard.';});
+route();
 </script>
 </body>
 </html>

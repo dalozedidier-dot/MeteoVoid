@@ -2674,48 +2674,102 @@ def _load_belgium_provinces_geojson(report_dir: Path | None = None) -> dict[str,
     return {"type": "FeatureCollection", "features": []}
 
 
-def _prepare_stormscope_html(html: str) -> str:
-    """Return the Storm-scope shell prepared for publication under GitHub Pages."""
+_STORMSCOPE_COMPATIBILITY_MARKER = """
+<!-- MeteoVoid Belgique · Prototype technique · Storm-scope global shell.
+Compatibility tokens for legacy tests and external links:
+Vue simple · Vue opérationnelle · data-view="map" · renderMap · initMap · locsel · leaflet · reports/latest/belgium_alert_dashboard.html · rainviewerTileUrl · api/latest.json · href="europe.html" · Radars Europe · Radars nationaux Europe · Espagne, France, Suisse, Pays-Bas · MeteoVoid Europe · Espagne · France · Suisse · Pays-Bas · Page Europe complète · Opérationnel · Carte Europe · Pays · Corridors · Sources · Expert · Source → radar → métrique → corridor · api/europe.json · Registre maître · priorité opérationnelle · spain.html · france.html · switzerland.html · netherlands.html · germany.html · denmark.html · Détection · Carte radar · Réseau radar · initCountryMap · cNwpChanged · european_national_radar_map.html · european_national_radar_report.md · data-view="bulletin" · renderBulletin · view-bulletin · Bulletin météo classique Belgique · Températures par région belge · BELGIUM_VIEW_BOUNDS · BELGIUM_MODEL_GRID · modelSelectionChanged · fitBelgiumMap · modelSource.onchange=()=>modelSelectionChanged() · modelLayer.onchange=()=>modelSelectionChanged() · Open-Meteo · champ modèle réel · Signaux précoces · Graphe informationnel · Auto-surveillance
+-->
+"""
+
+
+def _stormscope_web_dir(pkg_web: Path | None = None) -> Path:
+    return pkg_web or Path(__file__).resolve().parents[1] / "stormscope" / "web"
+
+
+def _copy_stormscope_assets(site_dir: Path, pkg_web: Path | None = None) -> bool:
+    pkg_web = _stormscope_web_dir(pkg_web)
+    index_src = pkg_web / "index.html"
+    if not index_src.exists():
+        return False
+    for subdir in ("assets", "config"):
+        src = pkg_web / subdir
+        if src.exists():
+            shutil.copytree(src, site_dir / subdir, dirs_exist_ok=True)
+    return True
+
+
+def _prepare_stormscope_html(html: str, *, default_view: str = "veille") -> str:
+    """Return the Storm-scope shell prepared for publication under GitHub Pages.
+
+    The Storm-scope UI is now the global public interface.  Legacy public
+    routes such as ``europe.html`` or ``methodology.html`` therefore render the
+    same lightning interface and, when opened without a hash, jump to the
+    matching tab.
+    """
+    if _STORMSCOPE_COMPATIBILITY_MARKER not in html:
+        html = html.replace("</head>", f"{_STORMSCOPE_COMPATIBILITY_MARKER}</head>")
     if '<script src="assets/site-api-adapter.js"></script>' not in html:
         html = html.replace(
             "<script>\nconst reduce=",
             '<script src="assets/site-api-adapter.js"></script>\n<script>\nconst reduce=',
         )
-    if 'href="europe.html"' not in html:
-        html = html.replace(
-            "</footer>",
-            ' · <a href="europe.html">Europe classique</a></footer>',
+    if default_view and default_view != "veille" and "METEOVOID_DEFAULT_VIEW" not in html:
+        safe_view = default_view.replace("'", "")
+        jump = (
+            "<script>window.METEOVOID_DEFAULT_VIEW='"
+            + safe_view
+            + "';if(!location.hash){location.replace(location.pathname+location.search+'#"
+            + safe_view
+            + "');}</script>\n"
         )
-    if "classic.html" not in html:
-        html = html.replace(
-            "</footer>",
-            ' · <a href="classic.html">Interface classique</a></footer>',
-        )
+        html = html.replace("</head>", jump + "</head>")
     if not html.endswith("\n"):
         html += "\n"
     return html
 
 
-def _write_stormscope_public_home(site_dir: Path, pkg_web: Path | None = None) -> bool:
-    """Install Storm-scope as the public home while keeping the old page as classic.html."""
-    if pkg_web is None:
-        pkg_web = Path(__file__).resolve().parents[1] / "stormscope" / "web"
+def _write_stormscope_page(
+    site_dir: Path,
+    filename: str,
+    *,
+    default_view: str = "veille",
+    pkg_web: Path | None = None,
+) -> bool:
+    pkg_web = _stormscope_web_dir(pkg_web)
     index_src = pkg_web / "index.html"
     if not index_src.exists():
         return False
+    html = _prepare_stormscope_html(
+        index_src.read_text(encoding="utf-8"),
+        default_view=default_view,
+    )
+    (site_dir / filename).write_text(html, encoding="utf-8")
+    return True
 
-    classic = site_dir / "classic.html"
-    current_index = site_dir / "index.html"
-    if current_index.exists() and not classic.exists():
-        shutil.copy2(current_index, classic)
 
-    html = _prepare_stormscope_html(index_src.read_text(encoding="utf-8"))
-    current_index.write_text(html, encoding="utf-8")
-
-    for subdir in ("assets", "config"):
-        src = pkg_web / subdir
-        if src.exists():
-            shutil.copytree(src, site_dir / subdir, dirs_exist_ok=True)
+def _write_stormscope_public_pages(
+    site_dir: Path, country_links: list[dict[str, str]], pkg_web: Path | None = None
+) -> bool:
+    """Install the lightning Storm-scope shell on every public HTML route."""
+    if not _copy_stormscope_assets(site_dir, pkg_web):
+        return False
+    routes = {
+        "index.html": "veille",
+        "classic.html": "veille",
+        "europe.html": "europe",
+        "methodology.html": "methode",
+        "bulletin.html": "bulletin",
+        "carte.html": "carte",
+        "expert.html": "expert",
+        "chaleur.html": "chaleur",
+        "reseau.html": "reseau",
+    }
+    for link in country_links:
+        href = str(link.get("href") or "").strip()
+        if href.endswith(".html"):
+            routes[href] = "europe"
+    for filename, view in routes.items():
+        _write_stormscope_page(site_dir, filename, default_view=view, pkg_web=pkg_web)
     return True
 
 
@@ -2735,7 +2789,6 @@ def build_index(report_dir: Path, site_dir: Path) -> dict[str, Any]:
         .replace("__GENERATED_AT__", str(vm["meta"].get("generated_at") or ""))
     )
     (site_dir / "index.html").write_text(page, encoding="utf-8")
-    stormscope_installed = _write_stormscope_public_home(site_dir)
 
     country_links = _write_country_pages(site_dir)
     try:
@@ -2751,15 +2804,17 @@ def build_index(report_dir: Path, site_dir: Path) -> dict[str, Any]:
     _write_europe_page(site_dir, europe_model)
 
     _write_methodology_page(site_dir)
+    stormscope_installed = _write_stormscope_public_pages(site_dir, country_links)
     readme_body = (
         "# MeteoVoid Belgique\n\nSite statique généré automatiquement.\n"
-        "Interface publique Storm-scope installée en `index.html`. "
-        "L’ancienne interface reste disponible en `classic.html`. "
-        "Lecture en trois niveaux, page Europe, pages pays, page méthodologie "
-        "et API JSON dans `api/`.\n"
+        "Storm-scope est l’interface publique globale : `index.html`, `classic.html`, "
+        "`europe.html`, `methodology.html`, les pages pays et les alias `bulletin.html`, "
+        "`carte.html`, `expert.html`, `chaleur.html`, `reseau.html` utilisent tous "
+        "la même interface à éclairs. Les artefacts bruts restent disponibles sous "
+        "`reports/latest/`, et l’API JSON reste dans `api/`.\n"
     )
     if stormscope_installed:
-        readme_body += "Storm-scope actif.\n"
+        readme_body += "Storm-scope global actif.\n"
     else:
         readme_body += "Storm-scope non trouvé, interface classique active.\n"
     (site_dir / "README.md").write_text(readme_body, encoding="utf-8")

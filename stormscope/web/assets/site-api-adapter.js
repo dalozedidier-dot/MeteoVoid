@@ -90,8 +90,6 @@ async function loadModelFromSiteApi(base='api/'){
       confidence: latest.confidence && latest.confidence.score
     },
     hours, stations: sta, heatHours,
-    layers: latest.score_layers || {},
-    raw: { latest, timeline, stations, heat },
     disclaimer: latest.disclaimer
   };
 }
