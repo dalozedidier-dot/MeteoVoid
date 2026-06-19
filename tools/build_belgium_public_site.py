@@ -1171,6 +1171,68 @@ def _weather_region_summary(report: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
+def _data_quality_summary(report: dict[str, Any]) -> dict[str, Any]:
+    """Expose data-quality signals already present in Belgium Alert Watch."""
+    stations = _stations(report)
+    rows: list[dict[str, Any]] = []
+    flatline_count = 0
+    spatial_count = 0
+    source_error_count = 0
+    missing_native_count = 0
+
+    for station in stations:
+        signals = [str(x).lower() for x in (station.get("signals") or [])]
+        joined = " ".join(signals)
+        source_ok = bool(station.get("source_ok", True))
+        native = bool(station.get("native_convective_available", False))
+        flatline = any(word in joined for word in ("flatline", "plateau", "stagne", "bloqué"))
+        spatial = any(word in joined for word in ("spatial", "voisine", "cohérence"))
+        if flatline:
+            flatline_count += 1
+        if spatial:
+            spatial_count += 1
+        if not source_ok:
+            source_error_count += 1
+        if not native:
+            missing_native_count += 1
+        if flatline or spatial or not source_ok or not native:
+            rows.append(
+                {
+                    "station_id": station.get("station_id"),
+                    "name": station.get("name"),
+                    "region": station.get("region"),
+                    "score": _round(station.get("score"), 3),
+                    "flatline_suspected": flatline,
+                    "spatial_incoherence_suspected": spatial,
+                    "source_ok": source_ok,
+                    "native_convective_available": native,
+                    "signals": station.get("signals") or [],
+                }
+            )
+
+    return {
+        "contract": "meteovoid_data_quality_summary_v1",
+        "station_count": len(stations),
+        "flatline_station_count": flatline_count,
+        "spatial_incoherence_station_count": spatial_count,
+        "source_error_station_count": source_error_count,
+        "missing_native_convective_station_count": missing_native_count,
+        "flagged_stations": rows[:30],
+        "implemented_checks": [
+            "void_gap_detection",
+            "flatline_detection_core_and_live_signal",
+            "interstation_spatial_std_context_live",
+            "source_status_consistency",
+            "native_convective_availability",
+        ],
+        "note": (
+            "Flatline/spatial counts are exact when live reports expose those signals; "
+            "for static Belgium Alert Watch runs, they are derived from station signal text "
+            "and source availability rather than invented measurements."
+        ),
+    }
+
+
 def _build_bulletin(vm: dict[str, Any]) -> dict[str, Any]:
     """Assemble a public, prose weather bulletin from the Belgium view-model.
 
@@ -1509,6 +1571,7 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
             if isinstance(report.get("convective_live_inputs"), dict)
             else {}
         )
+    data_quality = _data_quality_summary(report)
 
     operational = report.get("operational_state")
     operational = operational if isinstance(operational, dict) else alert_state
@@ -1613,6 +1676,7 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
         ],
         "validation": _validation(validation),
         "validation_history": validation_history,
+        "data_quality": data_quality,
         "weather_5days": weather_5days,
         "official_geodata": geodata_status,
         "observation": _observation(obs_gap, nowcast),
@@ -1771,9 +1835,13 @@ def _build_alert_watch_api(vm: dict[str, Any]) -> dict[str, Any]:
     heat = vm.get("heat", {}) if isinstance(vm.get("heat"), dict) else {}
     expert = vm.get("expert", {}) if isinstance(vm.get("expert"), dict) else {}
     validation_history = (
-        expert.get("validation_history") if isinstance(expert.get("validation_history"), dict) else {}
+        expert.get("validation_history")
+        if isinstance(expert.get("validation_history"), dict)
+        else {}
     )
-    weather_5days = expert.get("weather_5days") if isinstance(expert.get("weather_5days"), dict) else {}
+    weather_5days = (
+        expert.get("weather_5days") if isinstance(expert.get("weather_5days"), dict) else {}
+    )
     convective_live = (
         expert.get("convective_live_inputs")
         if isinstance(expert.get("convective_live_inputs"), dict)
@@ -1856,6 +1924,7 @@ def _build_alert_watch_api(vm: dict[str, Any]) -> dict[str, Any]:
         },
         "validation": validation,
         "validation_history": validation_history,
+        "data_quality": expert.get("data_quality"),
         "weather_5days": {
             "summary": weather_5days.get("summary"),
             "model": weather_5days.get("model"),
@@ -2495,6 +2564,10 @@ def build_api(vm: dict[str, Any], site_dir: Path) -> None:
     )
     _write_json(api_dir / "watch.json", _build_alert_watch_api(vm))
     _write_json(
+        api_dir / "data_quality.json",
+        {"generated_at": generated_at, **(vm["expert"].get("data_quality") or {})},
+    )
+    _write_json(
         api_dir / "europe.json",
         build_europe_model(site_dir / "reports" / "latest", vm),
     )
@@ -2514,6 +2587,7 @@ def build_api(vm: dict[str, Any], site_dir: Path) -> None:
                 "official_geodata": "api/official_geodata.json",
                 "convective_live": "api/convective_live.json",
                 "watch": "api/watch.json",
+                "data_quality": "api/data_quality.json",
                 "europe": "api/europe.json",
             },
             "disclaimer": meta.get("disclaimer"),
@@ -2808,6 +2882,9 @@ def _copy_stormscope_assets(site_dir: Path, pkg_web: Path | None = None) -> bool
         src = pkg_web / subdir
         if src.exists():
             shutil.copytree(src, site_dir / subdir, dirs_exist_ok=True)
+    sw = pkg_web / "sw.js"
+    if sw.exists():
+        shutil.copy2(sw, site_dir / "sw.js")
     return True
 
 

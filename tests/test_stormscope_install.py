@@ -50,6 +50,8 @@ def test_stormscope_is_global_public_interface(tmp_path: Path) -> None:
     assert (site_dir / "assets" / "app.js").exists()
     assert (site_dir / "assets" / "alert-watch-panels.js").exists()
     assert (site_dir / "api" / "watch.json").exists()
-    assert "meteovoid_belgium_alert_watch_public_v1" in (site_dir / "api" / "watch.json").read_text(encoding="utf-8")
+    assert "meteovoid_belgium_alert_watch_public_v1" in (site_dir / "api" / "watch.json").read_text(
+        encoding="utf-8"
+    )
     assert "Royaume-Uni" in (site_dir / "uk.html").read_text(encoding="utf-8")
     assert "Italie" in (site_dir / "italy.html").read_text(encoding="utf-8")

@@ -251,3 +251,25 @@ addEventListener('hashchange',route);
 /* boot */
 if(PAGE.kind==='europe'||PAGE.kind==='methode'){}else loadDashboard(PAGE.region).catch(()=>{document.getElementById('vWord').textContent='HORS-LIGNE';document.getElementById('vRead').textContent='Réseau Open-Meteo injoignable — réessaie plus tard.';});
 route();
+
+/* MeteoVoid offline/static cache + minimal a11y hardening. */
+(function () {
+  if ("serviceWorker" in navigator && location.protocol !== "file:") {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js").catch(() => {});
+    });
+  }
+  window.addEventListener("DOMContentLoaded", () => {
+    document.querySelectorAll("button:not([aria-label])").forEach((button) => {
+      const text = (button.textContent || button.id || "action").trim();
+      button.setAttribute("aria-label", text || "action MeteoVoid");
+    });
+    document.querySelectorAll("input[type='checkbox']:not([aria-label])").forEach((input) => {
+      const label = input.closest("label");
+      input.setAttribute(
+        "aria-label",
+        (label && label.textContent ? label.textContent : input.id).trim()
+      );
+    });
+  });
+})();

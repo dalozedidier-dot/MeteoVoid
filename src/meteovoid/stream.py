@@ -5,6 +5,7 @@ import os
 import time
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from statistics import pstdev
 from typing import Any, cast
 
 from . import db as _db
@@ -74,6 +75,35 @@ def _median_dict_vals(d: dict[str, float], exclude_key: str) -> float | None:
     if len(xs) < 3:
         return None
     return _median(xs)
+
+
+def _peer_context(
+    d: dict[str, float] | None,
+    *,
+    station_id: str,
+    value: float,
+    min_peers: int = 3,
+) -> dict[str, Any]:
+    if not isinstance(d, dict):
+        return {"available": False, "peer_count": 0}
+    peers = [float(v) for k, v in d.items() if k != station_id]
+    if len(peers) < int(min_peers):
+        return {"available": False, "peer_count": len(peers)}
+    peer_median = _median(peers)
+    peer_mean = float(sum(peers) / len(peers))
+    peer_std = float(pstdev(peers))
+    if peer_std <= 1e-12:
+        z = float("inf") if abs(float(value) - peer_mean) > 1e-12 else 0.0
+    else:
+        z = abs(float(value) - peer_mean) / peer_std
+    return {
+        "available": True,
+        "peer_count": len(peers),
+        "peer_median": peer_median,
+        "peer_mean": peer_mean,
+        "peer_std": peer_std,
+        "peer_z": z,
+    }
 
 
 def _state_from_score(score: float, stable_th: float, unstable_th: float) -> State:
@@ -411,12 +441,14 @@ def process_observation(
     total_points = max(1, len(values) + imputed_points)
     imputed_frac = float(imputed_points / float(total_points)) if imputed_points > 0 else 0.0
 
-    # Peers (spatial check): median mean over other stations for the same variable
+    # Peers (spatial check): median/std over other stations for the same variable.
     peer_median = None
+    peer_ctx: dict[str, Any] = {"available": False, "peer_count": 0}
     if peer_state is not None:
         block = peer_state.get(variable)
         if isinstance(block, dict):
             peer_median = _median_dict_vals(block, exclude_key=station_id)
+            peer_ctx = _peer_context(block, station_id=station_id, value=v_mean)
 
     # Multi-variable peers: read from windows within the same station
     multivar_peers: dict[str, list[float]] = {}
@@ -437,7 +469,15 @@ def process_observation(
         missing_time_frac=missing_time_frac,
         overrides=overrides,
         peer_median=peer_median,
-        peer_tol=_get_float(overrides, "spatial_tol", 0.0) if peer_median is not None else None,
+        peer_tol=(
+            max(
+                1e-9,
+                float(peer_ctx.get("peer_std", 0.0))
+                * _get_float(overrides, "spatial_std_z_thresh", 3.0),
+            )
+            if peer_median is not None and peer_ctx.get("available")
+            else (_get_float(overrides, "spatial_tol", 0.0) if peer_median is not None else None)
+        ),
         multivar_peers=multivar_peers if multivar_peers else None,
     )
 
@@ -496,11 +536,55 @@ def process_observation(
                 "score_imputed": float(score_imputed),
                 "use_imputed_for_score": bool(use_imputed_for_score),
                 "window_s": int(window_s),
+                "spatial_context": peer_ctx,
             },
             "meteo": meteo,
         }
     )
     return report
+
+
+def _dead_letter_stream_name(in_stream: str) -> str:
+    return os.getenv("METEOVOID_DLQ_STREAM", f"{in_stream}:dlq")
+
+
+def _max_retries() -> int:
+    raw = os.getenv("METEOVOID_MAX_RETRIES", "3")
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return 3
+
+
+def _publish_dead_letter(
+    r: Any,
+    *,
+    dlq_stream: str,
+    source_stream: str,
+    msg_id: str,
+    fields: Mapping[str, Any],
+    reason: str,
+    error: str = "",
+) -> None:
+    payload = {
+        "source_stream": source_stream,
+        "source_id": msg_id,
+        "reason": reason,
+        "error": error[:500],
+        "retry_count": int(fields.get("retry_count", fields.get("attempts", 0)) or 0),
+        "max_retries": _max_retries(),
+        "fields": {str(k): str(v) for k, v in fields.items()},
+        "ts_dead_letter": time.time(),
+    }
+    r.xadd(
+        dlq_stream,
+        {
+            "source_stream": source_stream,
+            "source_id": msg_id,
+            "reason": reason,
+            "payload": json.dumps(payload, separators=(",", ":"), sort_keys=True),
+        },
+    )
 
 
 def run_live_worker(
@@ -524,6 +608,7 @@ def run_live_worker(
     peer_means: dict[str, dict[str, float]] = {}
 
     last_id = start_id if start_id is not None else _default_start_id()
+    dlq_stream = _dead_letter_stream_name(in_stream)
     processed = 0
     last_progress = time.time()
     _log.info("worker.started", in_stream=in_stream, out_stream=out_stream, start_id=last_id)
@@ -541,15 +626,42 @@ def run_live_worker(
             for msg_id, fields in messages:
                 last_id = msg_id
 
-                report = process_observation(
-                    fields,
-                    msg_id=msg_id,
-                    cfg=cfg,
-                    windows=windows,
-                    station_config=station_cfg,
-                    peer_state=peer_means,
-                )
+                try:
+                    report = process_observation(
+                        fields,
+                        msg_id=msg_id,
+                        cfg=cfg,
+                        windows=windows,
+                        station_config=station_cfg,
+                        peer_state=peer_means,
+                    )
+                except Exception as exc:  # pragma: no cover - defensive live safety net
+                    _publish_dead_letter(
+                        r,
+                        dlq_stream=dlq_stream,
+                        source_stream=in_stream,
+                        msg_id=msg_id,
+                        fields=fields,
+                        reason="processing_exception",
+                        error=str(exc),
+                    )
+                    _log.error(
+                        "worker.dead_letter",
+                        msg_id=msg_id,
+                        reason="processing_exception",
+                        exc=str(exc),
+                    )
+                    continue
+
                 if report is None:
+                    _publish_dead_letter(
+                        r,
+                        dlq_stream=dlq_stream,
+                        source_stream=in_stream,
+                        msg_id=msg_id,
+                        fields=fields,
+                        reason="invalid_payload",
+                    )
                     continue
 
                 last_progress = time.time()

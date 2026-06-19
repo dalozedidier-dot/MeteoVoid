@@ -145,6 +145,7 @@
     const upstream = watch.upstream_watch || {};
     const validation = watch.validation || {};
     const history = watch.validation_history || {};
+    const dataQuality = watch.data_quality || {};
     const weather = watch.weather_5days || {};
     const explanation = latest.alert_explanation || {};
     const bullets = Array.isArray(explanation.bullets) ? explanation.bullets : [];
@@ -188,8 +189,18 @@
         ${card("Corridors amont", upstream.max_corridor_score == null ? "—" : n(upstream.max_corridor_score, 3), `${upstream.corridor_count || 0} corridors · ${upstream.region_count || 0} régions`, "upstream")}
         ${card("Validation run", validation.status || "—", `POD ${n(validation.scores && validation.scores.pod)} · CSI ${n(validation.scores && validation.scores.csi)}`, "événements vérifiés")}
         ${card("Historique", history.status || "—", `${history.stored_run_count || 0} runs stockés · ${history.evaluated_run_count || 0} évalués`, "append-only")}
+        ${card("Qualité données", `${dataQuality.flagged_stations ? dataQuality.flagged_stations.length : 0} stations à revoir`, `flatline ${dataQuality.flatline_station_count || 0} · spatial ${dataQuality.spatial_incoherence_station_count || 0} · sources ${dataQuality.source_error_station_count || 0}`, "validation")}
         ${card("Bulletin 5 jours", weather.model || "best_match", weather.summary || "", "public")}
       </div>
+
+      <div class="sec-h"><h2>Qualité et cohérence des données</h2><div class="rule"></div><span class="meta">voids · flatline · spatial</span></div>
+      <div class="comp">
+        ${card("Stations", dataQuality.station_count || 0, "stations analysées dans le dernier run", "qualité")}
+        ${card("Flatline", dataQuality.flatline_station_count || 0, "plateaux/capteurs bloqués si le signal est disponible", "capteur")}
+        ${card("Inter-stations", dataQuality.spatial_incoherence_station_count || 0, "écart anormal aux stations voisines si le signal est disponible", "spatial")}
+        ${card("Sources", dataQuality.source_error_station_count || 0, "sources en erreur dans le run", "source")}
+      </div>
+      ${dataQuality.note ? `<p class="note">${esc(dataQuality.note)}</p>` : ""}
 
       <div class="sec-h"><h2>Cartes, rapports et exports disponibles</h2><div class="rule"></div><span class="meta">tout le run publié</span></div>
       ${artefactLinks(watch.artefacts)}

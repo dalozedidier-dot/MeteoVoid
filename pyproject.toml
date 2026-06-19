@@ -56,6 +56,7 @@ dev = [
   "mypy>=1.10,<2",
   "types-setuptools",
   "types-PyYAML",
+  "types-redis",
 ]
 
 [project.scripts]
@@ -93,6 +94,9 @@ strict_equality = true
 [tool.pytest.ini_options]
 addopts = "-q --cov=meteovoid --cov-report=term-missing --cov-fail-under=85"
 testpaths = ["tests"]
+markers = [
+  "performance: lightweight throughput smoke tests for live pipeline",
+]
 
 [tool.ruff.lint.per-file-ignores]
 "src/meteovoid/cli.py" = ["B008"]

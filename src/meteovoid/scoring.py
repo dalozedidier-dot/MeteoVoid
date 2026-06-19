@@ -47,6 +47,69 @@ def _weights_from_overrides(overrides: dict[str, Any]) -> dict[str, float]:
     return weights
 
 
+def _sample_month(samples: list[tuple[datetime, float]]) -> int | None:
+    if not samples:
+        return None
+    return int(samples[-1][0].month)
+
+
+def _season_name(month: int | None) -> str | None:
+    if month is None:
+        return None
+    if month in {12, 1, 2}:
+        return "winter"
+    if month in {3, 4, 5}:
+        return "spring"
+    if month in {6, 7, 8}:
+        return "summer"
+    return "autumn"
+
+
+def _seasonal_float(
+    overrides: dict[str, Any],
+    key: str,
+    default: float,
+    month: int | None,
+) -> tuple[float, str]:
+    """Resolve optional month/season-specific thresholds."""
+    source = "static"
+    value = float(default)
+    seasonal = overrides.get("seasonal_thresholds") or overrides.get("seasonality")
+    if not isinstance(seasonal, dict) or month is None:
+        return (value, source)
+
+    season = _season_name(month)
+    by_key = seasonal.get(key)
+    if isinstance(by_key, dict):
+        for lookup in (str(month), f"{month:02d}", season):
+            if lookup is not None and lookup in by_key:
+                try:
+                    return (float(by_key[lookup]), f"seasonal:{lookup}")
+                except (TypeError, ValueError):
+                    pass
+
+    months = seasonal.get("months")
+    if isinstance(months, dict):
+        for lookup in (str(month), f"{month:02d}"):
+            block = months.get(lookup)
+            if isinstance(block, dict) and key in block:
+                try:
+                    return (float(block[key]), f"seasonal:month:{lookup}")
+                except (TypeError, ValueError):
+                    pass
+
+    seasons = seasonal.get("seasons")
+    if isinstance(seasons, dict) and season is not None:
+        block = seasons.get(season)
+        if isinstance(block, dict) and key in block:
+            try:
+                return (float(block[key]), f"seasonal:season:{season}")
+            except (TypeError, ValueError):
+                pass
+
+    return (value, source)
+
+
 def compute_composite_score(
     *,
     samples: list[tuple[datetime, float]],
@@ -93,14 +156,21 @@ def compute_composite_score(
         span = expected_span_from_values(values)
 
     # Volatility proxy: robust-z MAD sigma, then normalize via ratio.
-    z = robust_zscore_outliers(values, z_thresh=float(overrides.get("outlier_z_thresh", 3.5)))
+    sample_month = _sample_month(samples)
+    outlier_z_thresh, outlier_z_source = _seasonal_float(
+        overrides, "outlier_z_thresh", float(overrides.get("outlier_z_thresh", 3.5)), sample_month
+    )
+    z = robust_zscore_outliers(values, z_thresh=outlier_z_thresh)
     # sigma estimate in details when available
     sigma = float(z.details.get("sigma", 0.0)) if isinstance(z.details, dict) else 0.0
     if sigma <= 0.0 and len(values) >= 2:
         # Fallback: use standard deviation. This keeps constant windows at sigma=0.
         sigma = float(pstdev(values))
 
-    vol_ref = float(overrides.get("volatility_ref", max(1e-9, span * 0.10)))
+    vol_ref_default = float(overrides.get("volatility_ref", max(1e-9, span * 0.10)))
+    vol_ref, vol_ref_source = _seasonal_float(
+        overrides, "volatility_ref", vol_ref_default, sample_month
+    )
     volatility = normalize_ratio(sigma, vol_ref)
 
     # Outliers
@@ -200,7 +270,16 @@ def compute_composite_score(
             "robust_z": {"frac": float(z.frac), "max_z": float(z.max_score)},
             "iqr": {"frac": float(iqr.frac), "max_score": float(iqr.max_score)},
         },
-        "volatility": {"sigma_est": float(sigma), "ref": float(vol_ref)},
+        "volatility": {
+            "sigma_est": float(sigma),
+            "ref": float(vol_ref),
+            "ref_source": vol_ref_source,
+        },
+        "seasonality": {
+            "month": sample_month,
+            "outlier_z_thresh": float(outlier_z_thresh),
+            "outlier_z_source": outlier_z_source,
+        },
     }
     return CompositeScore(
         score=float(score),

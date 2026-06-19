@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import os
 import time
+from collections import defaultdict, deque
 from typing import Any, Protocol, cast
 
-from fastapi import Body, Depends, FastAPI, Header, HTTPException, Path, Query, status
+from fastapi import Body, Depends, FastAPI, Header, HTTPException, Path, Query, Request, status
 from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 
 from . import db as _db
@@ -17,11 +18,38 @@ _log = get_logger(__name__)
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 OUT_STREAM = os.getenv("METEOVOID_OUT_STREAM", "meteovoid:reports")
 API_TOKEN = os.getenv("METEOVOID_API_TOKEN", "").strip()
+RATE_LIMIT_PER_MINUTE = int(os.getenv("METEOVOID_RATE_LIMIT_PER_MINUTE", "240"))
+_RATE_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
 
 
 class RedisLike(Protocol):
     def get(self, key: str) -> str | bytes | bytearray | None: ...
     def keys(self, pattern: str) -> list[Any]: ...
+
+
+def _client_key(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
+    if forwarded:
+        return forwarded
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
+
+
+def _rate_limit(request: Request) -> None:
+    if RATE_LIMIT_PER_MINUTE <= 0 or request.url.path in {"/health"}:
+        return
+    now = time.time()
+    bucket = _RATE_BUCKETS[_client_key(request)]
+    while bucket and (now - bucket[0]) > 60.0:
+        bucket.popleft()
+    if len(bucket) >= RATE_LIMIT_PER_MINUTE:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="rate_limit_exceeded",
+            headers={"Retry-After": "60"},
+        )
+    bucket.append(now)
 
 
 def _require_write_token(
@@ -312,7 +340,16 @@ def history(
     return {"status": "ok", "station_id": station_id, "variable": variable, "items": out}
 
 
-app = FastAPI()
+app = FastAPI(
+    title="MeteoVoid Live API",
+    description=(
+        "Lecture temps réel non officielle des rapports MeteoVoid. "
+        "Les endpoints publics sont protégés par un rate limiting mémoire configurable "
+        "via METEOVOID_RATE_LIMIT_PER_MINUTE."
+    ),
+    version="0.3.0",
+    dependencies=[Depends(_rate_limit)],
+)
 
 
 @app.get("/health")

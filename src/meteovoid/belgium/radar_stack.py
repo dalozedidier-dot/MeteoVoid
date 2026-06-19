@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import URLError
-from urllib.request import Request, urlopen
 
 import numpy as np
 
@@ -21,6 +21,7 @@ from meteovoid.belgium.opera_ord import (
 from meteovoid.belgium.opera_ord import (
     inspect_opera_ord as _inspect_opera_ord_v2,
 )
+from meteovoid.radar_cache import fetch_json_with_file_cache
 
 RAINVIEWER_API_URL = "https://api.rainviewer.com/public/weather-maps.json"
 DEFAULT_USER_AGENT = "MeteoVoid-RadarStack/1.0"
@@ -35,12 +36,19 @@ def _utc_now() -> str:
 
 
 def _http_json(url: str, *, timeout_s: float) -> dict[str, Any]:
-    request = Request(url, headers={"User-Agent": DEFAULT_USER_AGENT})
-    with urlopen(request, timeout=timeout_s) as response:  # noqa: S310
-        payload = json.loads(response.read().decode("utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError("HTTP JSON response must be an object")
-    return payload
+    cache_dir = os.getenv("METEOVOID_RADAR_CACHE_DIR", ".meteovoid_cache/radar")
+    ttl_raw = os.getenv("METEOVOID_RADAR_CACHE_TTL_SECONDS", "300")
+    try:
+        ttl_seconds = int(ttl_raw)
+    except (TypeError, ValueError):
+        ttl_seconds = 300
+    return fetch_json_with_file_cache(
+        url,
+        cache_dir=cache_dir,
+        ttl_seconds=ttl_seconds,
+        timeout_s=timeout_s,
+        user_agent=DEFAULT_USER_AGENT,
+    )
 
 
 def _frame_count(payload: dict[str, Any], key: str) -> int:
