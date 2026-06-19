@@ -1229,6 +1229,98 @@ def _build_bulletin(vm: dict[str, Any]) -> dict[str, Any]:
     regional_weather = (
         heat.get("regional_weather") if isinstance(heat.get("regional_weather"), list) else []
     )
+    convective_inputs = (
+        expert.get("convective_live_inputs")
+        if isinstance(expert.get("convective_live_inputs"), dict)
+        else {}
+    )
+    convective_fields = (
+        convective_inputs.get("fields")
+        if isinstance(convective_inputs.get("fields"), dict)
+        else {}
+    )
+
+    def _live_field_value(key: str) -> float | None:
+        field = convective_fields.get(key)
+        if not isinstance(field, dict) or field.get("available") is not True:
+            return None
+        return _num(field.get("value"))
+
+    temperatures = [
+        _num(row.get("temperature_c"))
+        for row in regional_weather
+        if isinstance(row, dict) and _num(row.get("temperature_c")) is not None
+    ]
+    dew_points = [
+        _num(row.get("dew_point_c"))
+        for row in regional_weather
+        if isinstance(row, dict) and _num(row.get("dew_point_c")) is not None
+    ]
+    humidex_values = [
+        _num(row.get("humidex"))
+        for row in regional_weather
+        if isinstance(row, dict) and _num(row.get("humidex")) is not None
+    ]
+    precip_probs = [
+        _num(row.get("precip_prob_pct"))
+        for row in regional_weather
+        if isinstance(row, dict) and _num(row.get("precip_prob_pct")) is not None
+    ]
+    gust_values = [
+        _num(row.get("wind_gust_ms"))
+        for row in regional_weather
+        if isinstance(row, dict) and _num(row.get("wind_gust_ms")) is not None
+    ]
+    pressure = _live_field_value("pressure_hpa")
+    cape = _live_field_value("cape_jkg")
+    cin = _live_field_value("cin_jkg")
+    shear = _live_field_value("shear_0_6km_ms")
+    pwat = _live_field_value("pwat_mm")
+    classic_bits = []
+    if temperatures:
+        classic_bits.append(
+            f"températures régionales de {_round(min(temperatures), 1)} à "
+            f"{_round(max(temperatures), 1)} °C"
+        )
+    if humidex_values:
+        classic_bits.append(f"humidex max {_round(max(humidex_values), 1)}")
+    if dew_points:
+        classic_bits.append(f"point de rosée max {_round(max(dew_points), 1)} °C")
+    if precip_probs:
+        classic_bits.append(f"probabilité de pluie max {_round(max(precip_probs), 0)} %")
+    if gust_values:
+        classic_bits.append(f"rafales max {_round(max(gust_values), 1)} m/s")
+    if pressure is not None:
+        classic_bits.append(f"pression {_round(pressure, 1)} hPa")
+    if classic_bits:
+        convective_bits = []
+        if cape is not None:
+            convective_bits.append(f"CAPE {_round(cape, 0)} J/kg")
+        if cin is not None:
+            convective_bits.append(f"CIN {_round(cin, 0)} J/kg")
+        if shear is not None:
+            convective_bits.append(f"cisaillement 0–6 km {_round(shear, 1)} m/s")
+        if pwat is not None:
+            convective_bits.append(f"PWAT {_round(pwat, 1)} mm")
+        body = "Bulletin classique du dernier run : " + "; ".join(classic_bits) + "."
+        if convective_bits:
+            body += (
+                " Ingrédients convectifs réels disponibles : "
+                + "; ".join(convective_bits)
+                + "."
+            )
+        sections.append(
+            {
+                "title": "Bulletin météo classique Belgique",
+                "body": body,
+                "note": (
+                    "Lecture classique issue des stations et champs réellement disponibles dans le "
+                    "dernier run. Les ingrédients convectifs absents restent marqués manquants "
+                    "dans l’onglet expert, sans simulation."
+                ),
+            }
+        )
+
     regional_items = []
     for row in regional_weather[:12]:
         if not isinstance(row, dict):
@@ -1237,10 +1329,12 @@ def _build_bulletin(vm: dict[str, Any]) -> dict[str, Any]:
         humidex = _score_label(row.get("humidex")).replace(".", ",")
         dew = _score_label(row.get("dew_point_c")).replace(".", ",")
         precip = _score_label(row.get("precip_prob_pct")).replace(".", ",")
+        gust = _score_label(row.get("wind_gust_ms")).replace(".", ",")
         station = str(row.get("representative_station") or "—")
         regional_items.append(
             f"{row.get('label') or 'Région'} · {temp} °C, "
-            f"humidex {humidex}, rosée {dew} °C, pluie {precip} % · station : {station}"
+            f"humidex {humidex}, rosée {dew} °C, pluie {precip} %, "
+            f"rafales {gust} m/s · station : {station}"
         )
     if regional_items:
         sections.append(
@@ -2349,7 +2443,7 @@ function cRadarStop(){if(CMAP.timer){clearInterval(CMAP.timer);CMAP.timer=null;}
 function cRadarShow(idx){if(!CMAP.inst||!window.L||!CMAP.frames.length)return;idx=(idx+CMAP.frames.length)%CMAP.frames.length;CMAP.idx=idx;const f=CMAP.frames[idx],next=L.tileLayer(CMAP.host+f.path+'/256/{z}/{x}/{y}/4/1_1.png',{opacity:.62,attribution:'RainViewer',zIndex:400});next.addTo(CMAP.inst);const prev=CMAP.radar;CMAP.radar=next;if(prev)setTimeout(()=>{try{CMAP.inst.removeLayer(prev);}catch(e){}},230);const fr=document.getElementById('c-frame');if(fr){const dt=new Date((f.time||0)*1000);fr.textContent=dt.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})+(idx>=CMAP.pastCount?' · prévision':'');}}
 function cRadarPlay(){cRadarStop();if(!CMAP.playing||CMAP.frames.length<2)return;CMAP.timer=setInterval(()=>cRadarShow(CMAP.idx+1),700);}
 function cToggleRadar(on){if(!CMAP.inst||!window.L)return;if(!on){cRadarStop();if(CMAP.radar){CMAP.inst.removeLayer(CMAP.radar);CMAP.radar=null;}const fr=document.getElementById('c-frame');if(fr)fr.textContent='';return;}if(CMAP.frames.length){cRadarShow(CMAP.idx);cRadarPlay();return;}fetch('https://api.rainviewer.com/public/weather-maps.json',{cache:'no-store'}).then(r=>r.json()).then(d=>{CMAP.host=d.host||'https://tilecache.rainviewer.com';const past=(d.radar&&d.radar.past)||[],now=(d.radar&&d.radar.nowcast)||[];CMAP.pastCount=past.length;CMAP.frames=past.concat(now);if(!CMAP.frames.length)return;CMAP.idx=Math.max(0,past.length-1);cRadarShow(CMAP.idx);cRadarPlay();}).catch(()=>{const t=document.getElementById('c-radartog');if(t)t.checked=false;const fr=document.getElementById('c-frame');if(fr)fr.textContent='radar indisponible (réseau)';});}
-function cNwpPoints(){return (M.stations||[]).filter(s=>s.lat!=null&&s.lon!=null).slice(0,24).map(s=>({name:s.name||s.station_id,lat:Number(s.lat),lon:Number(s.lon)}));}
+function cNwpPoints(){const seen=new Set(),out=[];function add(name,lat,lon,type){lat=Number(lat);lon=Number(lon);if(!Number.isFinite(lat)||!Number.isFinite(lon))return;const k=lat.toFixed(2)+'-'+lon.toFixed(2);if(seen.has(k))return;seen.add(k);out.push({name,lat,lon,type:type||'station'});} (M.stations||[]).forEach(s=>add(s.name||s.station_id,s.lat,s.lon,'station'));const c=M.center||{};const clat=Number(c.lat),clon=Number(c.lon);if(Number.isFinite(clat)&&Number.isFinite(clon)){[-.9,-.45,0,.45,.9].forEach(dy=>[-1.1,-.55,0,.55,1.1].forEach(dx=>add('Grille modèle',clat+dy,clon+dx,'grid')));}return out.slice(0,48);}
 function cNwpField(k){const l=C_NWP_LAYERS[k]||C_NWP_LAYERS.precipitation;return l.alias||k;}
 function cNwpVal(hourly,field,idx){const v=hourly&&hourly[field];if(!Array.isArray(v)||idx<0||idx>=v.length)return null;const n=Number(v[idx]);return Number.isFinite(n)?n:null;}
 function cNwpIdx(hourly){const t=(hourly&&hourly.time)||[];if(!Array.isArray(t)||!t.length)return 0;const now=Date.now();let bi=0,bd=Infinity;t.forEach((x,i)=>{const d=Math.abs(new Date(x).getTime()-now);if(d<bd){bd=d;bi=i;}});return bi;}
@@ -2359,8 +2453,9 @@ function cNwpColor(v,k){const l=C_NWP_LAYERS[k]||C_NWP_LAYERS.precipitation;let 
 function cNwpFmt(v,k){const l=C_NWP_LAYERS[k]||C_NWP_LAYERS.precipitation;if(v==null)return '—';const a=Math.abs(Number(v)),d=a>=100?0:(a>=10?1:2);return Number(v).toFixed(d)+' '+l.unit;}
 function cNwpUrl(points,modelKey,layerKey){const m=C_NWP_MODELS[modelKey]||C_NWP_MODELS.best,l=C_NWP_LAYERS[layerKey]||C_NWP_LAYERS.precipitation,u=new URL(m.endpoint);u.searchParams.set('latitude',points.map(p=>p.lat.toFixed(4)).join(','));u.searchParams.set('longitude',points.map(p=>p.lon.toFixed(4)).join(','));u.searchParams.set('hourly',Array.from(new Set(l.fields)).join(','));u.searchParams.set('forecast_hours','8');u.searchParams.set('past_hours','1');u.searchParams.set('timezone','Europe/Brussels');u.searchParams.set('wind_speed_unit','kmh');u.searchParams.set('precipitation_unit','mm');return u.toString();}
 function cClearNwp(){if(CMAP.modelLayer&&CMAP.inst){CMAP.inst.removeLayer(CMAP.modelLayer);}CMAP.modelLayer=null;}
-function cRenderNwp(){if(!CMAP.inst||!window.L||!CMAP.modelVisible||CMAP.modelBusy)return;const ms=document.getElementById('c-modelsrc'),ls=document.getElementById('c-modellayer'),mf=document.getElementById('c-model-frame');const mk=(ms&&ms.value)||'best',lk=(ls&&ls.value)||'precipitation';const m=C_NWP_MODELS[mk]||C_NWP_MODELS.best,l=C_NWP_LAYERS[lk]||C_NWP_LAYERS.precipitation,pts=cNwpPoints();if(!pts.length){if(mf)mf.textContent='aucun point';return;}CMAP.modelBusy=true;if(mf)mf.textContent=m.label+' · chargement';fetch(cNwpUrl(pts,mk,lk),{cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject(new Error('nwp_http'))).then(data=>{const rows=Array.isArray(data)?data:[data],g=L.layerGroup();let count=0,tf='';rows.forEach((row,i)=>{const p=pts[i]||pts[0];if(!row||!row.hourly)return;const idx=cNwpIdx(row.hourly),val=cNwpDerived(row.hourly,lk,idx);if(val==null)return;const color=cNwpColor(val,lk),time=(row.hourly.time||[])[idx]||'';tf=tf||time;const mm=L.circleMarker([p.lat,p.lon],{radius:13,color:'rgba(255,255,255,.75)',weight:1,fillColor:color,fillOpacity:.56});mm.bindPopup('<b>'+esc(p.name)+'</b><br>'+esc(m.label)+'<br>'+esc(l.label)+' : <b>'+esc(cNwpFmt(val,lk))+'</b><br><span class="muted">'+esc(time.replace('T',' '))+'</span>');mm.addTo(g);count++;});cClearNwp();CMAP.modelLayer=g;if(CMAP.modelVisible)g.addTo(CMAP.inst);if(mf)mf.textContent=count?(m.label+' · '+l.label+' · '+tf.replace('T',' ')):(m.label+' · champ indisponible');}).catch(()=>{cClearNwp();if(mf)mf.textContent=m.label+' · champ indisponible';}).finally(()=>{CMAP.modelBusy=false;});}
-function cToggleNwp(){CMAP.modelVisible=!CMAP.modelVisible;const b=document.getElementById('c-modeltog');if(b)b.setAttribute('aria-pressed',String(CMAP.modelVisible));if(!CMAP.modelVisible){cClearNwp();const mf=document.getElementById('c-model-frame');if(mf)mf.textContent='modèle masqué';return;}cRenderNwp();}
+function cRenderNwp(){if(!CMAP.inst||!window.L||!CMAP.modelVisible||CMAP.modelBusy)return;const ms=document.getElementById('c-modelsrc'),ls=document.getElementById('c-modellayer'),mf=document.getElementById('c-model-frame');const mk=(ms&&ms.value)||'best',lk=(ls&&ls.value)||'precipitation';const m=C_NWP_MODELS[mk]||C_NWP_MODELS.best,l=C_NWP_LAYERS[lk]||C_NWP_LAYERS.precipitation,pts=cNwpPoints();if(!pts.length){if(mf)mf.textContent='aucun point';return;}CMAP.modelBusy=true;if(mf)mf.textContent=m.label+' · chargement';fetch(cNwpUrl(pts,mk,lk),{cache:'no-store'}).then(r=>r.ok?r.json():Promise.reject(new Error('nwp_http'))).then(data=>{const rows=Array.isArray(data)?data:[data],g=L.layerGroup();let count=0,tf='';rows.forEach((row,i)=>{const p=pts[i]||pts[0];if(!row||!row.hourly)return;const idx=cNwpIdx(row.hourly),val=cNwpDerived(row.hourly,lk,idx);if(val==null)return;const color=cNwpColor(val,lk),time=(row.hourly.time||[])[idx]||'';tf=tf||time;const mm=L.circleMarker([p.lat,p.lon],{radius:p.type==='grid'?22:16,color:'rgba(255,255,255,.5)',weight:.8,fillColor:color,fillOpacity:p.type==='grid'?.36:.62});mm.bindPopup('<b>'+esc(p.name)+'</b><br>'+esc(m.label)+'<br>'+esc(l.label)+' : <b>'+esc(cNwpFmt(val,lk))+'</b><br><span class="muted">'+esc(time.replace('T',' '))+'</span><br><span class="muted">Open-Meteo · champ modèle réel</span>');mm.addTo(g);count++;});cClearNwp();CMAP.modelLayer=g;if(CMAP.modelVisible)g.addTo(CMAP.inst);if(mf)mf.textContent=count?(m.label+' · '+l.label+' · '+tf.replace('T',' ')):(m.label+' · champ indisponible');}).catch(()=>{cClearNwp();if(mf)mf.textContent=m.label+' · champ indisponible';}).finally(()=>{CMAP.modelBusy=false;});}
+function cToggleNwp(force){CMAP.modelVisible=typeof force==='boolean'?force:!CMAP.modelVisible;const b=document.getElementById('c-modeltog');if(b){b.setAttribute('aria-pressed',String(CMAP.modelVisible));b.textContent=CMAP.modelVisible?'Masquer modèle':'Modèle NWP';}if(!CMAP.modelVisible){cClearNwp();const mf=document.getElementById('c-model-frame');if(mf)mf.textContent='modèle masqué';return;}cRenderNwp();}
+function cNwpChanged(){if(!CMAP.modelVisible){cToggleNwp(true);return;}cClearNwp();cRenderNwp();}
 function initCountryMap(){const host=document.getElementById('cmap');if(!host)return;if(!window.L){host.innerHTML='<div class="map-fallback">Fond de carte indisponible (réseau). La détection et le réseau radar restent lisibles dans les autres onglets.</div>';return;}if(CMAP.booted){if(CMAP.inst)CMAP.inst.invalidateSize();return;}CMAP.booted=true;const ctr=M.center||{};const map=L.map(host,{zoomControl:true,scrollWheelZoom:true}).setView([ctr.lat!=null?ctr.lat:47,ctr.lon!=null?ctr.lon:5],M.zoom||6);CMAP.inst=map;
   L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,attribution:'&copy; OpenStreetMap, &copy; CARTO'}).addTo(map);
   const rn=M.radar_network||{};(rn.sites||[]).forEach(rs=>{if(rs.lat==null||rs.lon==null)return;const m=L.circleMarker([rs.lat,rs.lon],{radius:5,color:getCss('--accent'),weight:2,fillColor:'#fff',fillOpacity:.92});m.bindTooltip('📡 '+esc(rs.name)+(rs.band?(' · '+esc(rs.band)+'-band'):''),{direction:'top'});CMAP.radarSites.push(m);m.addTo(map);});
@@ -2368,8 +2463,8 @@ function initCountryMap(){const host=document.getElementById('cmap');if(!host)re
   const rt=document.getElementById('c-radartog');if(rt)rt.addEventListener('change',()=>cToggleRadar(rt.checked));
   const sit=document.getElementById('c-sitetog');if(sit)sit.addEventListener('change',()=>{CMAP.radarSites.forEach(m=>{if(sit.checked)m.addTo(CMAP.inst);else CMAP.inst.removeLayer(m);});});
   const mt=document.getElementById('c-modeltog');if(mt)mt.addEventListener('click',()=>cToggleNwp());
-  const ms=document.getElementById('c-modelsrc');if(ms)ms.addEventListener('change',()=>{if(CMAP.modelVisible)cRenderNwp();});
-  const ml=document.getElementById('c-modellayer');if(ml)ml.addEventListener('change',()=>{if(CMAP.modelVisible)cRenderNwp();});
+  const ms=document.getElementById('c-modelsrc');if(ms)ms.addEventListener('change',()=>cNwpChanged());
+  const ml=document.getElementById('c-modellayer');if(ml)ml.addEventListener('change',()=>cNwpChanged());
   const pt=document.getElementById('c-playtog');if(pt)pt.addEventListener('click',()=>{CMAP.playing=!CMAP.playing;pt.textContent=(CMAP.playing?'⏸':'▶')+' Animation';if(CMAP.playing)cRadarPlay();else cRadarStop();});
   if(rt&&rt.checked)cToggleRadar(true);
   const first=(M.stations||[])[0];if(first)cSelect(first.station_id);
@@ -2941,7 +3036,7 @@ button:focus-visible,.tab:focus-visible,a:focus-visible{outline:2px solid var(--
         <span class="map-status" id="mapStatus">Leaflet · initialisation</span>
       </div>
       <div class="legend"><span><i style="background:var(--calm)"></i>stable</span><span><i style="background:var(--watch)"></i>tension</span><span><i style="background:var(--alert)"></i>bascule / score fort</span></div>
-      <p class="map-note">Fond sombre interactif, couche radar RainViewer chargée en direct, provinces belges issues de <span class="mono">config/belgium_provinces_simplified.geojson</span>, stations cliquables et couche modèle NWP optionnelle. Les modèles ECMWF/ICON/AROME sont interrogés comme prévisions opérationnelles réelles ; si un champ n'est pas disponible, MeteoVoid l'indique au lieu de l'inventer.</p>
+      <p class="map-note">Fond cartographique réel OpenStreetMap/CARTO, couche radar RainViewer chargée en direct, cadrage Belgique fixe, stations belges cliquables et couche modèle NWP reliée aux sélecteurs. ECMWF/ICON/AROME sont interrogés comme prévisions opérationnelles réelles via Open‑Meteo ; si un champ n'est pas disponible, MeteoVoid l'indique au lieu de l'inventer. La couche modèle est une grille de points réelle, pas une nappe raster propriétaire type Windy.</p>
     </div>
   </section>
 
@@ -3283,6 +3378,17 @@ const NWP_LAYERS={
   temperature_500hPa:{label:"Température 500 hPa",unit:"°C",fields:["temperature_500hPa"],range:[-35,0]},
   shear_0_6km:{label:"Cisaillement 0–6 km",unit:"m/s",fields:["wind_speed_10m","wind_direction_10m","wind_speed_500hPa","wind_direction_500hPa"],range:[0,35],derived:true}
 };
+const BELGIUM_VIEW_BOUNDS=[[49.45,2.45],[51.55,6.45]];
+const BELGIUM_MODEL_GRID=[
+  ["Côte · Coxyde",51.10,2.65],["Côte · Ostende",51.22,2.93],["Bruges",51.21,3.22],["Courtrai",50.83,3.26],
+  ["Tournai",50.61,3.39],["Gand",51.05,3.72],["Mons",50.45,3.95],["Charleroi",50.41,4.44],
+  ["Bruxelles / Uccle",50.80,4.36],["Malines",51.03,4.48],["Anvers",51.22,4.40],["Turnhout",51.32,4.94],
+  ["Louvain",50.88,4.70],["Jodoigne",50.72,4.87],["Namur",50.47,4.87],["Dinant",50.26,4.91],
+  ["Hasselt",50.93,5.33],["Genk",50.97,5.50],["Liège",50.63,5.58],["Eupen",50.63,6.03],
+  ["Marche",50.23,5.34],["Bastogne",50.00,5.72],["Arlon",49.68,5.82],["Virton",49.57,5.53],
+  ["Grille W 1",50.95,3.15],["Grille W 2",50.70,3.70],["Grille Centre",50.70,4.40],["Grille E 1",50.70,5.20],
+  ["Grille NE",51.10,5.20],["Grille S",50.10,4.70],["Grille SE",50.10,5.55],["Grille Ardenne",50.35,5.80]
+];
 
 function cssVar(name){return getComputedStyle(document.documentElement).getPropertyValue(name).trim()||name;}
 function normName(v){return String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g,"");}
@@ -3314,17 +3420,22 @@ function popupHtml(record){return `<div class="mv-popup-title">${escTxt(record.n
   <div class="mv-popup-row"><span>Sévérité</span><b>${escTxt(record.severity)}</b></div>
   <div class="mv-popup-row"><span>Fenêtre</span><b>${escTxt(record.worst)}</b></div>
   <div class="mv-popup-row"><span>Signaux</span><b>${escTxt(record.signals)}</b></div>`;}
+function insideBelgiumView(lat,lon){
+  return Number.isFinite(lat)&&Number.isFinite(lon)&&lat>=BELGIUM_VIEW_BOUNDS[0][0]&&lat<=BELGIUM_VIEW_BOUNDS[1][0]&&lon>=BELGIUM_VIEW_BOUNDS[0][1]&&lon<=BELGIUM_VIEW_BOUNDS[1][1];
+}
 function stationRecords(){
-  return (STATIONS_GEO||[]).map(([name,lat,lon])=>({ ...stationDataFor(name), lat:numVal(lat), lon:numVal(lon)})).filter(x=>Number.isFinite(x.lat)&&Number.isFinite(x.lon));
+  return (STATIONS_GEO||[])
+    .map(([name,lat,lon])=>({ ...stationDataFor(name), lat:numVal(lat), lon:numVal(lon)}))
+    .filter(x=>insideBelgiumView(x.lat,x.lon)&&!String(x.region||"").startsWith("approach_"));
 }
 function nwpSamplingPoints(){
   const seen=new Set();
-  const base=stationRecords().map(s=>({name:s.name,lat:s.lat,lon:s.lon}));
-  const extra=[
-    ["Bruges",51.21,3.22],["Courtrai",50.83,3.26],["Mons",50.45,3.95],["Tournai",50.61,3.39],
-    ["Louvain",50.88,4.70],["Wavre",50.72,4.61],["Bastogne",50.00,5.72],["Arlon",49.68,5.82]
-  ].map(([name,lat,lon])=>({name,lat,lon}));
-  return base.concat(extra).filter(p=>{const k=`${p.name}-${p.lat.toFixed(2)}-${p.lon.toFixed(2)}`;if(seen.has(k))return false;seen.add(k);return true;}).slice(0,24);
+  const base=stationRecords().map(s=>({name:s.name,lat:s.lat,lon:s.lon,type:"station"}));
+  const grid=BELGIUM_MODEL_GRID.map(([name,lat,lon])=>({name,lat,lon,type:"grid"}));
+  return base.concat(grid)
+    .filter(p=>insideBelgiumView(Number(p.lat),Number(p.lon)))
+    .filter(p=>{const k=`${Number(p.lat).toFixed(2)}-${Number(p.lon).toFixed(2)}`;if(seen.has(k))return false;seen.add(k);return true;})
+    .slice(0,64);
 }
 function renderLocSelector(){
   const sel=document.getElementById("locsel"); if(!sel)return;
@@ -3466,10 +3577,12 @@ function renderModelLayer(){
         const value=nwpDerivedValue(row.hourly,layerKey,idx);
         if(value==null)return;
         const color=nwpColor(value,layerKey);
-        const marker=L.circleMarker([p.lat,p.lon],{radius:14,color:"rgba(255,255,255,.78)",weight:1.1,fillColor:color,fillOpacity:.58,pane:"overlayPane"});
         const time=(row.hourly.time||[])[idx]||"";
         frameText=frameText||time;
-        marker.bindPopup(`<div class="model-popup-title">${escTxt(p.name)}</div><div class="model-popup-row"><span>Modèle</span><b>${escTxt(model.label)}</b></div><div class="model-popup-row"><span>Couche</span><b>${escTxt(layer.label)}</b></div><div class="model-popup-row"><span>Valeur</span><b>${escTxt(nwpFormatValue(value,layerKey))}</b></div><div class="model-popup-row"><span>Échéance</span><b>${escTxt(time.replace("T"," "))}</b></div>`);
+        const radius=p.type==="grid"?24:18;
+        const opacity=p.type==="grid"?.38:.64;
+        const marker=L.circleMarker([p.lat,p.lon],{radius:radius,color:"rgba(255,255,255,.45)",weight:.8,fillColor:color,fillOpacity:opacity,pane:"overlayPane"});
+        marker.bindPopup(`<div class="model-popup-title">${escTxt(p.name)}</div><div class="model-popup-row"><span>Modèle</span><b>${escTxt(model.label)}</b></div><div class="model-popup-row"><span>Couche</span><b>${escTxt(layer.label)}</b></div><div class="model-popup-row"><span>Valeur</span><b>${escTxt(nwpFormatValue(value,layerKey))}</b></div><div class="model-popup-row"><span>Échéance</span><b>${escTxt(time.replace("T"," "))}</b></div><div class="model-popup-row"><span>Source</span><b>Open-Meteo · champ modèle réel</b></div>`);
         marker.addTo(group);count++;
       });
       clearModelLayer();
@@ -3486,9 +3599,25 @@ function renderModelLayer(){
 }
 function toggleModelLayer(force){
   MV_MODEL_VISIBLE=typeof force==="boolean"?force:!MV_MODEL_VISIBLE;
-  const btn=document.getElementById("toggleModel");if(btn)btn.setAttribute("aria-pressed",String(MV_MODEL_VISIBLE));
+  const btn=document.getElementById("toggleModel");
+  if(btn){
+    btn.setAttribute("aria-pressed",String(MV_MODEL_VISIBLE));
+    btn.textContent=MV_MODEL_VISIBLE?"Masquer modèle":"Modèle NWP";
+  }
   if(!MV_MODEL_VISIBLE){clearModelLayer();setModelStatus("Modèle NWP · masqué");return;}
   renderModelLayer();
+}
+function modelSelectionChanged(){
+  if(!MV_MODEL_VISIBLE){toggleModelLayer(true);return;}
+  clearModelLayer();
+  renderModelLayer();
+}
+function fitBelgiumMap(){
+  if(!MV_MAP||typeof L==="undefined")return;
+  const fixed=L.latLngBounds(BELGIUM_VIEW_BOUNDS);
+  const provinceBounds=MV_PROVINCE_LAYER?MV_PROVINCE_LAYER.getBounds():null;
+  const target=(provinceBounds&&provinceBounds.isValid())?provinceBounds:fixed;
+  MV_MAP.fitBounds(target.pad(.06));
 }
 function initMap(){
   const target=document.getElementById("leafletMap"); if(!target)return;
@@ -3503,13 +3632,13 @@ function initMap(){
   addRainViewerLayer();
   if(!MV_RAIN_REFRESH)MV_RAIN_REFRESH=setInterval(addRainViewerLayer,300000);
   const bounds=L.latLngBounds(stationRecords().map(s=>[s.lat,s.lon]));
-  if(bounds.isValid())MV_MAP.fitBounds(bounds.pad(.18));
-  const fit=document.getElementById("fitBelgium"); if(fit)fit.onclick=()=>{const b=MV_PROVINCE_LAYER?MV_PROVINCE_LAYER.getBounds():bounds;if(b&&b.isValid())MV_MAP.fitBounds(b.pad(.08));};
+  fitBelgiumMap();
+  const fit=document.getElementById("fitBelgium"); if(fit)fit.onclick=()=>fitBelgiumMap();
   const toggle=document.getElementById("toggleRain"); if(toggle)toggle.onclick=()=>{MV_RAIN_VISIBLE=!MV_RAIN_VISIBLE;toggle.setAttribute("aria-pressed",String(MV_RAIN_VISIBLE));if(MV_RAIN_LAYER){MV_RAIN_VISIBLE?MV_RAIN_LAYER.addTo(MV_MAP):MV_MAP.removeLayer(MV_RAIN_LAYER);}setMapStatus(MV_RAIN_VISIBLE?"RainViewer · actif":"RainViewer · masqué");};
   const modelToggle=document.getElementById("toggleModel"); if(modelToggle)modelToggle.onclick=()=>toggleModelLayer();
-  const modelSource=document.getElementById("modelSource"); if(modelSource)modelSource.onchange=()=>{if(MV_MODEL_VISIBLE)renderModelLayer();};
-  const modelLayer=document.getElementById("modelLayer"); if(modelLayer)modelLayer.onchange=()=>{if(MV_MODEL_VISIBLE)renderModelLayer();};
-  const sel=document.getElementById("locsel"); if(sel)sel.onchange=()=>{const records=stationRecords();const rec=records[Number(sel.value)];if(rec){MV_MAP.setView([rec.lat,rec.lon],10,{animate:true});setTimeout(()=>{MV_STATION_LAYER&&MV_STATION_LAYER.eachLayer(m=>{if(m.mvIndex===Number(sel.value))m.openPopup();});},220);}else if(bounds.isValid())MV_MAP.fitBounds(bounds.pad(.18));};
+  const modelSource=document.getElementById("modelSource"); if(modelSource)modelSource.onchange=()=>modelSelectionChanged();
+  const modelLayer=document.getElementById("modelLayer"); if(modelLayer)modelLayer.onchange=()=>modelSelectionChanged();
+  const sel=document.getElementById("locsel"); if(sel)sel.onchange=()=>{const records=stationRecords();const rec=records[Number(sel.value)];if(rec){MV_MAP.setView([rec.lat,rec.lon],10,{animate:true});setTimeout(()=>{MV_STATION_LAYER&&MV_STATION_LAYER.eachLayer(m=>{if(m.mvIndex===Number(sel.value))m.openPopup();});},220);}else fitBelgiumMap();};
   setTimeout(()=>MV_MAP.invalidateSize(),120);
 }
 function updateLeafletMap(){if(MV_MAP){renderLeafletStations();setTimeout(()=>MV_MAP.invalidateSize(),60);}}
@@ -3625,7 +3754,7 @@ function hydrateFromVM(vm){
   }
   BASE.stations=(expert.stations||[]).slice(0,12).map(x=>[x.name||"—",x.region||"",firstNum(x.score,0),((x.severity||{}).label)||"—",sevPill((x.severity||{}).class),fmtHourFromIso(x.worst_time),((x.signals||[]).join(" · "))]);
   BASE.provinces=(expert.provinces||[]).map(x=>[x.province||"—",firstNum(x.max_score,0),x.top_station||"",((x.severity||{}).label)||"—",sevPill((x.severity||{}).class)]);
-  const stGeo=(expert.stations||[]).filter(x=>x.lat!=null&&x.lon!=null); if(stGeo.length){STATIONS_GEO.length=0;stGeo.forEach(x=>STATIONS_GEO.push([x.name||x.station_id,x.lat,x.lon]));}
+  const stGeo=(expert.stations||[]).filter(x=>x.lat!=null&&x.lon!=null&&insideBelgiumView(Number(x.lat),Number(x.lon))&&!String(x.region||"").startsWith("approach_")); if(stGeo.length){STATIONS_GEO.length=0;stGeo.forEach(x=>STATIONS_GEO.push([x.name||x.station_id,x.lat,x.lon]));}
   return updateScenarioFromVM(vm);
 }
 function renderBulletin(vm){

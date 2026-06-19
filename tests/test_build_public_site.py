@@ -463,5 +463,37 @@ def test_belgium_page_has_a_weather_bulletin(tmp_path: Path) -> None:
     assert bulletin["non_official"] is True
 
     index_html = (site_dir / "index.html").read_text(encoding="utf-8")
-    for token in ['data-view="bulletin"', "renderBulletin", "view-bulletin"]:
+    for token in [
+        'data-view="bulletin"',
+        "renderBulletin",
+        "view-bulletin",
+        "Bulletin météo classique Belgique",
+        "Températures par région belge",
+    ]:
         assert token in index_html, token
+
+    section_titles = {section.get("title") for section in bulletin["sections"]}
+    assert "Bulletin météo classique Belgique" in section_titles
+
+
+def test_model_map_selectors_are_actually_wired(tmp_path: Path) -> None:
+    report_dir = _minimal_report_dir(tmp_path)
+    site_dir = tmp_path / "site"
+    site.build_index(report_dir, site_dir)
+
+    index_html = (site_dir / "index.html").read_text(encoding="utf-8")
+    for token in [
+        "BELGIUM_VIEW_BOUNDS",
+        "BELGIUM_MODEL_GRID",
+        "modelSelectionChanged",
+        "fitBelgiumMap",
+        "Open-Meteo · champ modèle réel",
+    ]:
+        assert token in index_html, token
+
+    assert "modelSource.onchange=()=>modelSelectionChanged()" in index_html
+    assert "modelLayer.onchange=()=>modelSelectionChanged()" in index_html
+
+    france_html = (site_dir / "france.html").read_text(encoding="utf-8")
+    assert "cNwpChanged" in france_html
+    assert "Open-Meteo · champ modèle réel" in france_html
