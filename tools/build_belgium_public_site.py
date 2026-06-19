@@ -2699,20 +2699,24 @@ def _copy_stormscope_assets(site_dir: Path, pkg_web: Path | None = None) -> bool
 
 
 def _prepare_stormscope_html(html: str, *, default_view: str = "veille") -> str:
-    """Return the Storm-scope shell prepared for publication under GitHub Pages.
+    """Return a Storm-scope HTML page prepared for GitHub Pages publication.
 
-    The Storm-scope UI is now the global public interface.  Legacy public
-    routes such as ``europe.html`` or ``methodology.html`` therefore render the
-    same lightning interface and, when opened without a hash, jump to the
-    matching tab.
+    The Storm-scope package can provide dedicated pages for countries and for
+    methodology. Legacy public routes still render the same lightning shell and
+    jump to the requested tab when opened without a hash.
     """
     if _STORMSCOPE_COMPATIBILITY_MARKER not in html:
         html = html.replace("</head>", f"{_STORMSCOPE_COMPATIBILITY_MARKER}</head>")
-    if '<script src="assets/site-api-adapter.js"></script>' not in html:
-        html = html.replace(
-            "<script>\nconst reduce=",
-            '<script src="assets/site-api-adapter.js"></script>\n<script>\nconst reduce=',
-        )
+    adapter = '<script src="assets/site-api-adapter.js"></script>'
+    if adapter not in html:
+        app_script = '<script src="assets/app.js"></script>'
+        if app_script in html:
+            html = html.replace(app_script, adapter + "\n" + app_script)
+        else:
+            html = html.replace(
+                "<script>\nconst reduce=",
+                adapter + "\n<script>\nconst reduce=",
+            )
     if default_view and default_view != "veille" and "METEOVOID_DEFAULT_VIEW" not in html:
         safe_view = default_view.replace("'", "")
         jump = (
@@ -2734,13 +2738,16 @@ def _write_stormscope_page(
     *,
     default_view: str = "veille",
     pkg_web: Path | None = None,
+    source_filename: str | None = None,
 ) -> bool:
     pkg_web = _stormscope_web_dir(pkg_web)
-    index_src = pkg_web / "index.html"
-    if not index_src.exists():
+    src = pkg_web / (source_filename or filename)
+    if not src.exists():
+        src = pkg_web / "index.html"
+    if not src.exists():
         return False
     html = _prepare_stormscope_html(
-        index_src.read_text(encoding="utf-8"),
+        src.read_text(encoding="utf-8"),
         default_view=default_view,
     )
     (site_dir / filename).write_text(html, encoding="utf-8")
@@ -2751,25 +2758,49 @@ def _write_stormscope_public_pages(
     site_dir: Path, country_links: list[dict[str, str]], pkg_web: Path | None = None
 ) -> bool:
     """Install the lightning Storm-scope shell on every public HTML route."""
+    pkg_web = _stormscope_web_dir(pkg_web)
     if not _copy_stormscope_assets(site_dir, pkg_web):
         return False
-    routes = {
+
+    page_views = {
         "index.html": "veille",
-        "classic.html": "veille",
         "europe.html": "europe",
         "methodology.html": "methode",
+        "france.html": "veille",
+        "spain.html": "veille",
+        "switzerland.html": "veille",
+        "netherlands.html": "veille",
+        "germany.html": "veille",
+        "denmark.html": "veille",
+        "italy.html": "veille",
+        "austria.html": "veille",
+        "uk.html": "veille",
+    }
+    for source in sorted(pkg_web.glob("*.html")):
+        view = page_views.get(source.name, "veille")
+        _write_stormscope_page(
+            site_dir,
+            source.name,
+            default_view=view,
+            pkg_web=pkg_web,
+            source_filename=source.name,
+        )
+
+    alias_routes = {
+        "classic.html": "veille",
         "bulletin.html": "bulletin",
         "carte.html": "carte",
         "expert.html": "expert",
         "chaleur.html": "chaleur",
         "reseau.html": "reseau",
     }
+    for filename, view in alias_routes.items():
+        _write_stormscope_page(site_dir, filename, default_view=view, pkg_web=pkg_web)
+
     for link in country_links:
         href = str(link.get("href") or "").strip()
-        if href.endswith(".html"):
-            routes[href] = "europe"
-    for filename, view in routes.items():
-        _write_stormscope_page(site_dir, filename, default_view=view, pkg_web=pkg_web)
+        if href.endswith(".html") and not (site_dir / href).exists():
+            _write_stormscope_page(site_dir, href, default_view="europe", pkg_web=pkg_web)
     return True
 
 

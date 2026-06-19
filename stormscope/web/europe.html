@@ -1,0 +1,41 @@
+<!doctype html><html lang="fr"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>MeteoVoid · Europe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<link rel="stylesheet" href="assets/app.css"/>
+</head><body>
+<div class="skybg"></div><canvas id="sky"></canvas><div class="flash" id="flash"></div>
+<div class="app">
+<header class="bar"><div class="in">
+  <div class="logo"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" fill="#74B4FF"/></svg></div>
+  <div><div class="bname">MeteoVoid</div><div class="bsub">Storm-scope · veille de bascule</div></div>
+  <div class="grow"></div>
+  <nav class="zones"><a href="index.html">Belgique</a><a href="europe.html" class="active">Europe</a><a href="france.html">France</a><a href="germany.html">Allemagne</a><a href="netherlands.html">Pays-Bas</a><a href="spain.html">Espagne</a><a href="switzerland.html">Suisse</a><a href="italy.html">Italie</a><a href="austria.html">Autriche</a><a href="denmark.html">Danemark</a><a href="uk.html">Royaume-Uni</a><a href="methodology.html">Méthode</a></nav>
+  <div class="live"><span class="spark"></span><span id="clock">—</span></div>
+</div></header>
+<main class="wrap">
+<section class="view" id="view-europe"><div class="sec">
+  <div class="sec-h"><h2>Europe</h2><div class="rule"></div><span class="meta">chaque pays aussi parlant que la Belgique</span></div>
+  <div class="maptools">
+    <select class="mvsel" id="euRegion"></select>
+    <div class="lyrs">
+      <label><input type="checkbox" id="eL-surf" checked>Surface</label>
+      <label><input type="checkbox" id="eL-sta" checked>Détecteurs</label>
+      <label><input type="checkbox" id="eL-rad" checked>Radar</label>
+      <label><input type="checkbox" id="eL-net">Réseau radar</label>
+    </div>
+  </div>
+  <div class="mapbox"><div id="euMap" class="lf"></div>
+    <div class="loading" id="eLoad">Lecture des indices…</div>
+    <div class="maprail"><div class="eyebrow" style="margin-bottom:4px" id="euEye">Europe · maintenant</div><div class="w" id="euWord">—</div><div class="s" id="euSub">chargement</div></div>
+    <div class="mvtime"><button id="ePlay">&#9654;</button><input type="range" id="eTime" min="0" max="17" value="0"><div class="tl" id="eTl">maintenant</div></div>
+  </div>
+</div></section><footer class="wrap" style="padding-left:0;padding-right:0">MeteoVoid · Storm-scope · prototype non officiel · indices Open-Meteo · radar RainViewer · ori-c.be</footer>
+</main></div>
+<script>window.MV_PAGE={"kind": "europe", "region": "europe", "label": "Europe"};</script>
+<script src="assets/regions.js"></script>
+<script src="assets/app.js"></script>
+</body></html>

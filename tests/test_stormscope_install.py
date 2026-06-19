@@ -22,11 +22,15 @@ def test_stormscope_is_global_public_interface(tmp_path: Path) -> None:
         "expert.html",
         "chaleur.html",
         "reseau.html",
+        "italy.html",
+        "austria.html",
+        "uk.html",
     ]
     for page in public_pages:
         html = (site_dir / page).read_text(encoding="utf-8")
         assert "MeteoVoid · Storm-scope" in html
         assert "Storm-scope · veille de bascule" in html
+        assert '<script src="assets/app.js"></script>' in html
         assert '<script src="assets/site-api-adapter.js"></script>' in html
         assert "Interface classique" not in html
 
@@ -41,3 +45,7 @@ def test_stormscope_is_global_public_interface(tmp_path: Path) -> None:
         encoding="utf-8"
     )
     assert (site_dir / "config" / "belgium_provinces_simplified.geojson").exists()
+    assert (site_dir / "assets" / "app.css").exists()
+    assert (site_dir / "assets" / "app.js").exists()
+    assert "Royaume-Uni" in (site_dir / "uk.html").read_text(encoding="utf-8")
+    assert "Italie" in (site_dir / "italy.html").read_text(encoding="utf-8")
