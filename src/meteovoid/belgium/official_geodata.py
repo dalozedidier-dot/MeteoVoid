@@ -51,10 +51,14 @@ def _is_feature_collection(payload: dict[str, Any]) -> bool:
 
 def _write_geojson(payload: dict[str, Any], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    path.write_text(
+        json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
+    )
 
 
-def _source_record(layer: str, status: str, source: str, path: str, error: str = "") -> dict[str, Any]:
+def _source_record(
+    layer: str, status: str, source: str, path: str, error: str = ""
+) -> dict[str, Any]:
     return {"layer": layer, "status": status, "source": source, "path": path, "error": error}
 
 
@@ -89,7 +93,9 @@ def prepare_belgium_geodata(
             if not _is_feature_collection(province_payload):
                 raise ValueError("province payload is not GeoJSON FeatureCollection")
             _write_geojson(province_payload, province_path)
-            records.append(_source_record("provinces", "downloaded", province_url, str(province_path)))
+            records.append(
+                _source_record("provinces", "downloaded", province_url, str(province_path))
+            )
         except Exception as exc:  # noqa: BLE001 - keep the site build alive
             province_payload = _load_local(fallback_province_geojson)
             _write_geojson(province_payload, province_path)
@@ -108,11 +114,19 @@ def prepare_belgium_geodata(
                 raise ValueError("municipality payload is not GeoJSON FeatureCollection")
             _write_geojson(municipality_payload, municipality_path)
             records.append(
-                _source_record("municipalities", "downloaded", municipality_url, str(municipality_path))
+                _source_record(
+                    "municipalities", "downloaded", municipality_url, str(municipality_path)
+                )
             )
         except Exception as exc:  # noqa: BLE001 - municipalities are optional/heavy
             records.append(
-                _source_record("municipalities", "unavailable", municipality_url, str(municipality_path), str(exc))
+                _source_record(
+                    "municipalities",
+                    "unavailable",
+                    municipality_url,
+                    str(municipality_path),
+                    str(exc),
+                )
             )
 
     status = {

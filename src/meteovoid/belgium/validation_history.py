@@ -31,14 +31,22 @@ def _read_csv(path: Path) -> list[dict[str, str]]:
         return list(csv.DictReader(fh))
 
 
+def _dict_or_empty(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _list_or_empty(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def _target_date(report: dict[str, Any]) -> str:
-    window = report.get("target_window") if isinstance(report.get("target_window"), dict) else {}
+    window = _dict_or_empty(report.get("target_window"))
     return str(window.get("start") or report.get("window_start") or "")[:10]
 
 
 def _prediction_row(report: dict[str, Any]) -> dict[str, Any]:
-    op = report.get("operational_state") if isinstance(report.get("operational_state"), dict) else {}
-    aggregate = report.get("aggregate") if isinstance(report.get("aggregate"), dict) else {}
+    op = _dict_or_empty(report.get("operational_state"))
+    aggregate = _dict_or_empty(report.get("aggregate"))
     level = str(op.get("level") or aggregate.get("severity") or "normal")
     probability = max(_num(op.get("model_score")), _num(aggregate.get("score")))
     return {
@@ -53,7 +61,7 @@ def _prediction_row(report: dict[str, Any]) -> dict[str, Any]:
 
 
 def _main_zone(report: dict[str, Any]) -> str:
-    provinces = report.get("province_summary") if isinstance(report.get("province_summary"), list) else []
+    provinces = _list_or_empty(report.get("province_summary"))
     best_name = ""
     best_score = -1.0
     for item in provinces:
@@ -170,5 +178,7 @@ def update_validation_history(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    (out_dir / "forecast_history.csv").write_text(csv_path.read_text(encoding="utf-8"), encoding="utf-8")
+    (out_dir / "forecast_history.csv").write_text(
+        csv_path.read_text(encoding="utf-8"), encoding="utf-8"
+    )
     return payload

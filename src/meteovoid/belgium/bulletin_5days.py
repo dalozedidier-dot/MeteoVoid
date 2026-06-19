@@ -91,6 +91,14 @@ def _round(value: Any, ndigits: int = 1) -> float | None:
     return round(number, ndigits) if number is not None else None
 
 
+def _dict_or_empty(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _list_or_empty(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
 def _load_zone_config(path: Path | None) -> list[ForecastZone]:
     if path is None or not path.exists():
         return list(DEFAULT_ZONES)
@@ -98,9 +106,9 @@ def _load_zone_config(path: Path | None) -> list[ForecastZone]:
         import yaml
     except ModuleNotFoundError as exc:  # pragma: no cover - package dependency exists in repo
         raise BulletinError("PyYAML is required to read Belgium forecast zones") from exc
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    zones = raw.get("zones") if isinstance(raw, dict) else None
-    if not isinstance(zones, list):
+    raw = _dict_or_empty(yaml.safe_load(path.read_text(encoding="utf-8")))
+    zones = _list_or_empty(raw.get("zones"))
+    if not zones:
         return list(DEFAULT_ZONES)
     parsed: list[ForecastZone] = []
     for item in zones:
@@ -193,12 +201,10 @@ def _day_from_daily(daily: dict[str, Any], idx: int) -> dict[str, Any]:
 
 
 def _hourly_extremes(payload: dict[str, Any]) -> dict[str, Any]:
-    hourly = payload.get("hourly") if isinstance(payload.get("hourly"), dict) else {}
+    hourly = _dict_or_empty(payload.get("hourly"))
 
     def values(key: str) -> list[float]:
-        raw = hourly.get(key)
-        if not isinstance(raw, list):
-            return []
+        raw = _list_or_empty(hourly.get(key))
         parsed = [_as_float(x) for x in raw]
         return [x for x in parsed if x is not None]
 
@@ -225,8 +231,8 @@ def _zone_live_forecast(
 ) -> dict[str, Any]:
     url = _openmeteo_url(zone, model=model, timezone=timezone, days=days)
     payload = _fetch_json(url, timeout_s=timeout_s)
-    daily = payload.get("daily") if isinstance(payload.get("daily"), dict) else {}
-    dates = daily.get("time") if isinstance(daily.get("time"), list) else []
+    daily = _dict_or_empty(payload.get("daily"))
+    dates = _list_or_empty(daily.get("time"))
     day_rows = [_day_from_daily(daily, idx) for idx in range(min(days, len(dates)))]
     extremes = _hourly_extremes(payload)
     return {
@@ -243,7 +249,9 @@ def _zone_live_forecast(
     }
 
 
-def _offline_zone_forecast(zone: ForecastZone, *, days: int, start: date | None = None) -> dict[str, Any]:
+def _offline_zone_forecast(
+    zone: ForecastZone, *, days: int, start: date | None = None
+) -> dict[str, Any]:
     base = start or datetime.now(tz=UTC).date()
     day_rows: list[dict[str, Any]] = []
     for idx in range(days):
@@ -289,11 +297,14 @@ def _offline_zone_forecast(zone: ForecastZone, *, days: int, start: date | None 
 def _national_days(zone_forecasts: list[dict[str, Any]], *, days: int) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for idx in range(days):
-        samples = []
+        samples: list[dict[str, Any]] = []
         for zone in zone_forecasts:
-            zone_days = zone.get("days") if isinstance(zone.get("days"), list) else []
-            if idx < len(zone_days) and isinstance(zone_days[idx], dict):
-                samples.append(zone_days[idx])
+            zone_days = _list_or_empty(zone.get("days"))
+            if idx >= len(zone_days):
+                continue
+            candidate = zone_days[idx]
+            if isinstance(candidate, dict):
+                samples.append(candidate)
         if not samples:
             continue
         tmax_values = [_as_float(x.get("temperature_2m_max")) for x in samples]
@@ -409,7 +420,7 @@ def render_bulletin_markdown(data: dict[str, Any]) -> str:
     lines.append("")
     lines.append("## Tendance Belgique")
     lines.append("")
-    for day in data.get("national_days", []) if isinstance(data.get("national_days"), list) else []:
+    for day in _list_or_empty(data.get("national_days")):
         if not isinstance(day, dict):
             continue
         lines.append(
@@ -422,12 +433,11 @@ def render_bulletin_markdown(data: dict[str, Any]) -> str:
     lines.append("")
     lines.append("## Zones")
     lines.append("")
-    for zone in data.get("zones", []) if isinstance(data.get("zones"), list) else []:
+    for zone in _list_or_empty(data.get("zones")):
         if not isinstance(zone, dict):
             continue
-        first = (zone.get("days") or [{}])[0] if isinstance(zone.get("days"), list) else {}
-        if not isinstance(first, dict):
-            first = {}
+        zone_days = _list_or_empty(zone.get("days"))
+        first = zone_days[0] if zone_days and isinstance(zone_days[0], dict) else {}
         lines.append(
             "- "
             f"{zone.get('label')}: {first.get('weather_label', '—')} · "

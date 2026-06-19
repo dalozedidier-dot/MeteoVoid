@@ -21,9 +21,7 @@ def test_offline_5day_bulletin_writes_public_contract(tmp_path: Path) -> None:
 
 def test_geodata_offline_falls_back_explicitly(tmp_path: Path) -> None:
     fallback = tmp_path / "fallback.geojson"
-    fallback.write_text(
-        json.dumps({"type": "FeatureCollection", "features": []}), encoding="utf-8"
-    )
+    fallback.write_text(json.dumps({"type": "FeatureCollection", "features": []}), encoding="utf-8")
 
     status = prepare_belgium_geodata(
         out_dir=tmp_path,

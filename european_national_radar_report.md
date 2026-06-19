@@ -2,7 +2,7 @@
 
 Extension radar pour Espagne, France, Suisse et Pays-Bas.
 
-- Généré : `2026-06-18T20:38:27+00:00`
+- Généré : `2026-06-19T12:16:53+00:00`
 - Statut : `interfaces_ready_no_machine_data`
 - Live probe : `False`
 

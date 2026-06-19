@@ -19,7 +19,9 @@ from meteovoid.belgium.official_geodata import (  # noqa: E402
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Prepare Belgium administrative GeoJSON layers.")
     parser.add_argument("--out-dir", default="_ci_out/belgium_alert")
-    parser.add_argument("--fallback-province-geojson", default="config/belgium_provinces_simplified.geojson")
+    parser.add_argument(
+        "--fallback-province-geojson", default="config/belgium_provinces_simplified.geojson"
+    )
     parser.add_argument("--province-url", default=DEFAULT_PROVINCE_URL)
     parser.add_argument("--municipality-url", default=DEFAULT_MUNICIPALITY_URL)
     parser.add_argument("--timeout-s", type=float, default=20.0)

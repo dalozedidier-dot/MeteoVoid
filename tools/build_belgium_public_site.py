@@ -1376,11 +1376,15 @@ def _build_bulletin(vm: dict[str, Any]) -> dict[str, Any]:
                 "title": "Prévision classique à 5 jours",
                 "body": str(weather_5days.get("summary") or ""),
                 "items": day_items,
-                "note": str(weather_5days.get("disclaimer") or "Bulletin automatique non officiel."),
+                "note": str(
+                    weather_5days.get("disclaimer") or "Bulletin automatique non officiel."
+                ),
             }
         )
 
-    zone_forecasts = weather_5days.get("zones") if isinstance(weather_5days.get("zones"), list) else []
+    zone_forecasts = (
+        weather_5days.get("zones") if isinstance(weather_5days.get("zones"), list) else []
+    )
     if zone_forecasts:
         zone_items = []
         for zone_item in zone_forecasts[:8]:
@@ -1422,7 +1426,9 @@ def _build_bulletin(vm: dict[str, Any]) -> dict[str, Any]:
                     f"Brier : {scores.get('brier_score') if scores else 'n/a'}, "
                     f"CSI : {scores.get('csi') if scores else 'n/a'}."
                 ),
-                "note": str(validation_history.get("note") or "Les scores exigent des événements vérifiés."),
+                "note": str(
+                    validation_history.get("note") or "Les scores exigent des événements vérifiés."
+                ),
             }
         )
 

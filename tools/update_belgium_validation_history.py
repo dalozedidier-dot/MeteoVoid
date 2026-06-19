@@ -14,7 +14,9 @@ from meteovoid.belgium.validation_history import update_validation_history  # no
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Append Belgium forecast run to validation history.")
+    parser = argparse.ArgumentParser(
+        description="Append Belgium forecast run to validation history."
+    )
     parser.add_argument("--report", default="_ci_out/belgium_alert/belgium_alert_report.json")
     parser.add_argument("--history-dir", default=".meteovoid_history/belgium_validation")
     parser.add_argument("--verified-events", default="config/belgium_verified_storm_events.csv")
