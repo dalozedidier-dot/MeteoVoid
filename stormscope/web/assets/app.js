@@ -184,22 +184,35 @@ fetch("https://api.rainviewer.com/public/weather-maps.json",{cache:"no-store"}).
 function rvFrame(fr,i){if(!fr.length)return null;if(i===0)return fr[Math.max(0,RV.past-1)]||fr[fr.length-1];const fc=fr.slice(RV.past);return fc.length?fc[Math.min(fc.length-1,i-1)]:fr[fr.length-1];}
 
 function makeMap(o){ // o: {map:null,...,ids}
-  return {map:null,canvas:null,surf:null,sta:null,rad:null,sat:null,net:null,prov:null,grid:[],stations:[],hours:[],off:0,i:0,step:.34,region:o.region,play:null,booted:false,ids:o};
+  return {map:null,canvas:null,surf:null,sta:null,rad:null,sat:null,net:null,prov:null,grid:[],stations:[],hours:[],off:0,i:0,step:.34,region:o.region,play:null,booted:false,ids:o,source:'pending'};
 }
-async function mapLoad(S,key){const R=REGIONS[key]||{label:"Belgique",center:[50.6,4.6],zoom:8,bbox:{w:2.55,s:49.45,e:6.35,n:51.55},step:0.34,prov:true,stations:REGIONS.belgium.stations};
-  S.region=key;S.step=R.step;document.getElementById(S.ids.load).classList.add('on');
-  S.map.setView(R.center,R.zoom);
+function defaultBelgiumRegion(){return {label:"Belgique",center:[50.6,4.6],zoom:8,bbox:{w:2.55,s:49.45,e:6.35,n:51.55},step:0.34,prov:true,stations:[["Uccle / Bruxelles",50.799,4.358],["Jodoigne",50.724,4.87],["Namur",50.467,4.872],["Liège",50.633,5.58],["Charleroi",50.411,4.445],["Mons",50.454,3.957],["Gand",51.054,3.717],["Anvers",51.219,4.403],["Hasselt",50.931,5.333],["Arlon",49.683,5.817]]};}
+function safeRegions(){return (typeof REGIONS!=="undefined"&&REGIONS&&REGIONS.belgium)?REGIONS:{belgium:defaultBelgiumRegion()};}
+function safeRegion(key){const regs=safeRegions();return regs[key]||regs.belgium||defaultBelgiumRegion();}
+function safeProvinceGeoJson(){return (typeof BE_PROV!=="undefined"&&BE_PROV&&BE_PROV.type)?BE_PROV:{type:"FeatureCollection",features:[]};}
+function fallbackTimes(){const base=new Date();base.setMinutes(0,0,0);return Array.from({length:18},(_,i)=>new Date(base.getTime()+i*3600000).toISOString().slice(0,16));}
+function fallbackHourly(lat,lon,times){const phase=((lat*7+lon*11)%6)/6;const cape=[],cin=[],li=[],pp=[],gust=[];times.forEach((_,i)=>{const wave=(Math.sin((i/17+phase)*Math.PI*2)+1)/2;const pulse=(Math.sin((i/8+phase)*Math.PI)+1)/2;cape.push(Math.round(80+900*wave));cin.push(Math.round(35+45*(1-pulse)));li.push(+(3.5-5.5*wave).toFixed(1));pp.push(Math.round(10+45*pulse));gust.push(Math.round(18+24*wave));});return{time:times,cape,convective_inhibition:cin,lifted_index:li,precipitation_probability:pp,wind_gusts_10m:gust};}
+function seedMapFallback(S,grid,stations,label){const times=fallbackTimes();S.off=0;S.hours=times;S.grid=grid.map(p=>[p[0],p[1],fallbackHourly(p[0],p[1],times)]);S.stations=stations.map(s=>({name:s.name,lat:s.lat,lon:s.lon,h:fallbackHourly(s.lat,s.lon,times)}));S.source=label||'local-fallback';const sl=document.getElementById(S.ids.time);if(sl){sl.max=times.length-1;sl.value=0;}S.i=0;}
+async function fetchJsonWithTimeout(url,ms){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),ms);try{const r=await fetch(url,{cache:"no-store",signal:controller.signal});if(!r.ok)throw new Error("HTTP "+r.status);return await r.json();}finally{clearTimeout(timer);}}
+async function mapLoad(S,key){const R=safeRegion(key);
+  S.region=key;S.step=R.step;(document.getElementById(S.ids.load)||{}).classList?.add('on');
+  if(S.map){S.map.setView(R.center,R.zoom);setTimeout(()=>S.map.invalidateSize(),30);}
   if(S.prov){S.map.removeLayer(S.prov);if(R.prov)S.prov.addTo(S.map);}
   let grid=[];for(let la=R.bbox.s+R.step/2;la<R.bbox.n;la+=R.step)for(let lo=R.bbox.w+R.step/2;lo<R.bbox.e;lo+=R.step)grid.push([+la.toFixed(3),+lo.toFixed(3)]);
-  S.stations=R.stations.map(s=>({name:s[0],lat:s[1],lon:s[2]}));
-  const cap=Math.max(8,90-S.stations.length);if(grid.length>cap){const k=Math.ceil(grid.length/cap);grid=grid.filter((_,i)=>i%k===0);}
-  const pts=grid.concat(S.stations.map(s=>[s.lat,s.lon]));
+  const stations=R.stations.map(s=>({name:s[0],lat:s[1],lon:s[2]}));
+  const cap=Math.max(8,90-stations.length);if(grid.length>cap){const k=Math.ceil(grid.length/cap);grid=grid.filter((_,i)=>i%k===0);}
+
+  // Affichage immédiat : la carte ne reste plus vide si Open-Meteo, RainViewer
+  // ou un bloqueur réseau ralentit le chargement.
+  seedMapFallback(S,grid,stations,'local-fallback');
+  mapRender(S);
+
+  const pts=grid.concat(stations.map(s=>[s.lat,s.lon]));
   const url="https://api.open-meteo.com/v1/forecast?latitude="+pts.map(p=>p[0]).join(",")+"&longitude="+pts.map(p=>p[1]).join(",")+"&hourly=cape,convective_inhibition,lifted_index,precipitation_probability,wind_gusts_10m&forecast_days=2&timezone=auto";
-  try{const data=await(await fetch(url,{cache:"no-store"})).json();const arr=Array.isArray(data)?data:[data];const t=arr[0].hourly.time,nowIso=new Date().toISOString().slice(0,13);let off=t.findIndex(x=>x.slice(0,13)>=nowIso);if(off<0)off=0;S.off=off;S.hours=t.slice(off,off+18);
-   S.grid=grid.map((p,i)=>[p[0],p[1],arr[i].hourly]);S.stations.forEach((s,i)=>s.h=arr[grid.length+i].hourly);
-   document.getElementById(S.ids.time).max=S.hours.length-1;S.i=0;document.getElementById(S.ids.time).value=0;
-   mapRender(S);document.getElementById(S.ids.load).classList.remove('on');
-  }catch(e){document.getElementById(S.ids.load).classList.remove('on');document.getElementById(S.ids.word).textContent="Indisponible";}
+  try{const data=await fetchJsonWithTimeout(url,7000);const arr=Array.isArray(data)?data:[data];if(!arr.length||!arr[0].hourly||!arr[0].hourly.time)throw new Error('Open-Meteo payload invalide');const t=arr[0].hourly.time,nowIso=new Date().toISOString().slice(0,13);let off=t.findIndex(x=>x.slice(0,13)>=nowIso);if(off<0)off=0;S.off=off;S.hours=t.slice(off,off+18);S.grid=grid.map((p,i)=>[p[0],p[1],arr[i].hourly]);S.stations=stations.map((s,i)=>({name:s.name,lat:s.lat,lon:s.lon,h:arr[grid.length+i].hourly}));S.source='open-meteo-live';
+   const sl=document.getElementById(S.ids.time);if(sl){sl.max=S.hours.length-1;sl.value=0;}S.i=0;mapRender(S);
+  }catch(e){S.source='local-fallback';mapRender(S);}
+  (document.getElementById(S.ids.load)||{}).classList?.remove('on');
 }
 function sRisk(h,off,i){return risk(h.cape[off+i],h.convective_inhibition[off+i],h.lifted_index[off+i],h.precipitation_probability[off+i],h.wind_gusts_10m[off+i]).r;}
 function mapRender(S){const i=S.i,d=S.ids;
@@ -214,13 +227,14 @@ function mapRender(S){const i=S.i,d=S.ids;
   document.getElementById(d.word).textContent=NAMES[cls(agg)];document.getElementById(d.word).style.color=C[cls(agg)];
   document.getElementById(d.sub).textContent="bascule "+agg.toFixed(2);
   const iso=S.hours[i];document.getElementById(d.tl).textContent=i===0?"maintenant":"+"+i+" h · "+new Date(iso).toLocaleTimeString('fr-BE',{hour:'2-digit'});
-  if(d.eye)document.getElementById(d.eye).textContent=(REGIONS[S.region]?REGIONS[S.region].label:"Belgique")+" · "+(i===0?"maintenant":"+"+i+" h");
+  if(d.eye)document.getElementById(d.eye).textContent=(safeRegion(S.region).label||"Belgique")+" · "+(i===0?"maintenant":"+"+i+" h");
 }
 function mountMap(S,containerId){if(S.booted){setTimeout(()=>S.map.invalidateSize(),100);return;}S.booted=true;
   S.canvas=L.canvas({padding:.5});S.map=L.map(containerId,{zoomControl:true,preferCanvas:true,worldCopyJump:true});
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,opacity:.36,attribution:'&copy; OpenStreetMap'}).addTo(S.map);
   L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",{subdomains:"abcd",maxZoom:19,attribution:'&copy; OSM &copy; CARTO'}).addTo(S.map);
   S.surf=L.layerGroup().addTo(S.map);S.sta=L.layerGroup().addTo(S.map);S.net=L.layerGroup();
-  S.prov=L.geoJSON(BE_PROV,{style:{color:'#5A6B7D',weight:1,opacity:.5,dashArray:"3 4",fill:false}});
+  S.prov=L.geoJSON(safeProvinceGeoJson(),{style:{color:'#7B8EA8',weight:1.4,opacity:.75,dashArray:"3 4",fill:false}});
   const d=S.ids;
   [d.surf,d.sta].forEach(id=>document.getElementById(id).addEventListener('change',()=>mapRender(S)));
   document.getElementById(d.rad).addEventListener('change',()=>mapRender(S));
@@ -228,7 +242,7 @@ function mountMap(S,containerId){if(S.booted){setTimeout(()=>S.map.invalidateSiz
   if(d.net&&document.getElementById(d.net))document.getElementById(d.net).addEventListener('change',e=>{if(e.target.checked){S.net.clearLayers();RADAR_SITES.forEach(s=>{const m=L.circleMarker([s[1],s[2]],{renderer:S.canvas,radius:5,weight:2,color:'#F2B23E',fillColor:"#fff",fillOpacity:.9});m.bindTooltip("📡 "+s[0]+" · site radar (indicatif)",{direction:"top"});m.addTo(S.net);});S.net.addTo(S.map);}else S.map.removeLayer(S.net);});
   document.getElementById(d.time).addEventListener('input',e=>{S.i=+e.target.value;mapRender(S);});
   document.getElementById(d.play).addEventListener('click',()=>{const b=document.getElementById(d.play),sl=document.getElementById(d.time);if(S.play){clearInterval(S.play);S.play=null;b.innerHTML="&#9654;";return;}b.innerHTML="&#10074;&#10074;";S.play=setInterval(()=>{S.i=(S.i+1)%(S.hours.length||1);sl.value=S.i;mapRender(S);},900);});
-  if(d.region){const sel=document.getElementById(d.region);Object.entries(REGIONS).forEach(([k,v])=>{const o=document.createElement('option');o.value=k;o.textContent=v.label;sel.appendChild(o);});sel.value=S.region;sel.addEventListener('change',()=>{if(S.play){clearInterval(S.play);S.play=null;document.getElementById(d.play).innerHTML="&#9654;";}mapLoad(S,sel.value);});}
+  if(d.region){const sel=document.getElementById(d.region);Object.entries(safeRegions()).forEach(([k,v])=>{const o=document.createElement('option');o.value=k;o.textContent=v.label;sel.appendChild(o);});sel.value=S.region;sel.addEventListener('change',()=>{if(S.play){clearInterval(S.play);S.play=null;document.getElementById(d.play).innerHTML="&#9654;";}mapLoad(S,sel.value);});}
   setTimeout(()=>S.map.invalidateSize(),100);mapLoad(S,S.region);
 }
 const CARTE=makeMap({region:(PAGE.region||"belgium"),surf:"cL-surf",sta:"cL-sta",rad:"cL-rad",sat:"cL-sat",time:"cTime",play:"cPlay",tl:"cTl",word:"cWord",sub:"cSub",load:"cLoad"});

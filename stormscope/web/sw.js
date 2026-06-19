@@ -1,4 +1,4 @@
-const CACHE_NAME = "meteovoid-stormscope-static-v1";
+const CACHE_NAME = "meteovoid-stormscope-static-v3";
 const STATIC_ASSETS = [
   "./",
   "./index.html",
@@ -30,23 +30,30 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+function networkFirst(request) {
+  return fetch(request)
+    .then((response) => {
+      const clone = response.clone();
+      caches
+        .open(CACHE_NAME)
+        .then((cache) => cache.put(request, clone))
+        .catch(() => undefined);
+      return response;
+    })
+    .catch(() => caches.match(request));
+}
+
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (event.request.method !== "GET") return;
 
-  if (url.pathname.includes("/api/")) {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          const clone = response.clone();
-          caches
-            .open(CACHE_NAME)
-            .then((cache) => cache.put(event.request, clone))
-            .catch(() => undefined);
-          return response;
-        })
-        .catch(() => caches.match(event.request))
-    );
+  if (
+    url.pathname.includes("/api/") ||
+    url.pathname.includes("/assets/") ||
+    url.pathname.endsWith(".html") ||
+    url.pathname.endsWith("/")
+  ) {
+    event.respondWith(networkFirst(event.request));
     return;
   }
 
