@@ -23,6 +23,7 @@ def build_belgium_public_latest(report: dict[str, Any]) -> dict[str, Any]:
         },
         "operational_state": report.get("operational_state"),
         "external_confirmation": report.get("external_confirmation"),
+        "convective_live_inputs": report.get("convective_live_inputs"),
         "trend": report.get("trend"),
         "outputs": report.get("outputs"),
         "disclaimer": "Prototype technique non officiel. Toujours consulter les sources officielles.",

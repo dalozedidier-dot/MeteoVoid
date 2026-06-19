@@ -29,6 +29,12 @@ from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
+from .convective_live_inputs import (
+    OPEN_METEO_REQUIRED_HOURLY_VARIABLES,
+    aggregate_real_input_summary,
+    augment_hourly_with_real_derived_fields,
+    station_real_input_summary,
+)
 from .scoring import compute_composite_score
 
 DEFAULT_CONFIG = Path("config/european_country_radar_sites.yaml")
@@ -60,6 +66,29 @@ def _as_list(obj: Any) -> list[Any]:
 
 def _as_dict(obj: Any) -> dict[str, Any]:
     return obj if isinstance(obj, dict) else {}
+
+
+def _series_to_hourly(series: dict[str, list[float]]) -> dict[str, list[float]]:
+    """Map internal station series back to canonical Open-Meteo-like names."""
+    mapping = {
+        "temperature_c": "temperature_2m",
+        "dew_point_c": "dew_point_2m",
+        "precip_prob_pct": "precipitation_probability",
+        "pressure_hpa": "surface_pressure",
+        "wind_gust_ms": "wind_gusts_10m",
+        "cape_jkg": "cape",
+        "cin_jkg": "convective_inhibition",
+        "lifted_index": "lifted_index",
+        "bulk_shear_ms": "shear_0_6km_ms",
+        "pwat_mm": "total_column_integrated_water_vapour",
+        "temperature_850hpa_c": "temperature_850hPa",
+        "temperature_700hpa_c": "temperature_700hPa",
+        "temperature_500hpa_c": "temperature_500hPa",
+        "wind_speed_10m": "wind_speed_10m",
+        "wind_direction_10m": "wind_direction_10m",
+        "thunderstorm_probability_pct": "thunderstorm_probability",
+    }
+    return {target: values for source, target in mapping.items() if (values := series.get(source))}
 
 
 def _seed(*parts: str) -> int:
@@ -179,7 +208,7 @@ def _convective_block(
         score = max(0.0, min(1.0, precip_v / 100.0 * 0.6 + gust_v / 28.0 * 0.4))
         fields = {"cape_jkg": None, "cin_jkg": None, "lifted_index": None, "bulk_shear_ms": None}
     return {
-        "basis": basis if have else "proxy_precip_gust",
+        "basis": basis if have else "surface_weather_only",
         "native_fields_available": native,
         "score": round(score, 3),
         **fields,
@@ -216,10 +245,16 @@ def _detect_station(
     heat = _humidex_proxy(temp[peak_idx], dew[peak_idx])
     conv = _convective_block(series, peak_idx, convective_basis, precip[peak_idx], gusts[peak_idx])
     convective = float(conv["score"])
+    source_mode = "offline_demo" if convective_basis == "proxy_demo" else "live_forecast_api"
+    live_convective_inputs = station_real_input_summary(
+        _series_to_hourly(series),
+        source_mode=source_mode,
+        source_name="Open-Meteo Forecast API",
+    )
 
     # Same engine at the core (volatility/spike/drift of gusts), blended with the
     # convective layer (native CAPE/CIN/LI/shear when available) and the heat
-    # proxy into a public risk score, exactly the Belgium philosophy.
+    # surface ingredient into a public risk score, exactly the Belgium philosophy.
     score = max(0.0, min(1.0, 0.45 * composite.score + 0.35 * convective + 0.20 * heat))
     severity = _severity(score)
 
@@ -236,7 +271,9 @@ def _detect_station(
                 f"cisaillement {conv['bulk_shear_ms']} m/s"
             )
         else:
-            signals.append("potentiel convectif (proxy pluie + rafales)")
+            signals.append(
+                "champs convectifs avancés absents ; lecture limitée aux champs de surface réels"
+            )
     if pressure_drop >= 5.0:
         signals.append(f"chute de pression {pressure_drop} hPa sur la fenêtre")
     if heat > 0.55:
@@ -258,12 +295,28 @@ def _detect_station(
             "temperature_c": temp[peak_idx],
             "dew_point_c": dew[peak_idx],
             "precip_prob_pct": precip[peak_idx],
+            "pressure_hpa": pressure[peak_idx],
             "pressure_drop_hpa": pressure_drop,
             "wind_gust_ms": gusts[peak_idx],
+            "cape_jkg": conv.get("cape_jkg"),
+            "cin_jkg": conv.get("cin_jkg"),
+            "lifted_index": conv.get("lifted_index"),
+            "bulk_shear_ms": conv.get("bulk_shear_ms"),
+            "pwat_mm": (series.get("pwat_mm") or [None] * (peak_idx + 1))[peak_idx],
+            "temperature_850hpa_c": (series.get("temperature_850hpa_c") or [None] * (peak_idx + 1))[
+                peak_idx
+            ],
+            "temperature_700hpa_c": (series.get("temperature_700hpa_c") or [None] * (peak_idx + 1))[
+                peak_idx
+            ],
+            "temperature_500hpa_c": (series.get("temperature_500hpa_c") or [None] * (peak_idx + 1))[
+                peak_idx
+            ],
         },
         "hourly": hourly,
         "signals": signals[:4],
         "convective": conv,
+        "live_convective_inputs": live_convective_inputs,
         "engine_signals": {k: round(v, 3) for k, v in composite.signals.items()},
     }
 
@@ -325,7 +378,7 @@ def build_country_detection(
                     basis = "native_openmeteo"
                     native_convective = True
                 else:
-                    basis = "proxy_live"
+                    basis = "surface_only_live"
         detections.append(
             _detect_station(station, run_day=run_day, series=series, convective_basis=basis)
         )
@@ -341,6 +394,41 @@ def build_country_detection(
 
     bbox = _as_dict(cfg.get("bbox"))
     center = _as_dict(cfg.get("center"))
+
+    convective_real_inputs = aggregate_real_input_summary(
+        detections,
+        external={
+            "radar": {
+                "key": "radar",
+                "label": "Radar",
+                "available": bool(_machine_radar_status(country_key, cfg).get("available")),
+                "status": (
+                    "real_file"
+                    if _machine_radar_status(country_key, cfg).get("available")
+                    else "visual_display_only_or_missing"
+                ),
+                "basis": (
+                    "national radar/OPERA file"
+                    if _machine_radar_status(country_key, cfg).get("available")
+                    else "RainViewer/national display is visual only; no machine radar file in this run"
+                ),
+            },
+            "lightning": {
+                "key": "lightning",
+                "label": "Foudre",
+                "available": False,
+                "status": "provider_not_configured",
+                "basis": "requires a lightning provider; no simulation",
+            },
+            "satellite": {
+                "key": "satellite",
+                "label": "Satellite",
+                "available": False,
+                "status": "provider_not_configured",
+                "basis": "requires a satellite WMS/tile provider; no simulation",
+            },
+        },
+    )
 
     return {
         "contract": "meteovoid_country_followup_v1",
@@ -360,7 +448,11 @@ def build_country_detection(
             "mean_score": mean_score,
             "severity_counts": counts,
             "radar_site_count": _radar_network(cfg)["site_count"],
-            "convective_basis": "native_openmeteo" if native_convective else "proxy",
+            "convective_basis": (
+                "native_openmeteo"
+                if native_convective
+                else ("proxy" if data_mode == "offline_demo" else "missing_or_surface_only")
+            ),
             "native_convective_fields": native_convective,
         },
         "stations": detections,
@@ -369,12 +461,34 @@ def build_country_detection(
         "machine_radar": _machine_radar_status(country_key, cfg),
         "validation": _validation_status(country_key),
         "convective": {
-            "basis": "native_openmeteo" if native_convective else "proxy",
+            "basis": (
+                "native_openmeteo"
+                if native_convective
+                else ("proxy" if data_mode == "offline_demo" else "missing_or_surface_only")
+            ),
             "native_fields_available": native_convective,
             "fields": ["CAPE", "CIN", "lifted_index", "bulk_shear"],
+            "requested_real_fields": [
+                "dew_point",
+                "CAPE",
+                "CIN",
+                "bulk_shear_0_6km",
+                "surface_convergence",
+                "pressure",
+                "wind_gusts",
+                "PWAT",
+                "T850",
+                "T700",
+                "T500",
+                "radar",
+                "lightning",
+                "satellite",
+            ],
+            "real_inputs": convective_real_inputs,
             "note": (
-                "Champs convectifs natifs (CAPE/CIN/LI/cisaillement) lus via Open-Meteo "
-                "en mode live ; sinon proxy déterministe explicitement étiqueté."
+                "Contrat réel uniquement : les champs convectifs sont lus via Open-Meteo "
+                "ou des fournisseurs radar/foudre/satellite configurés. Si une donnée manque, "
+                "elle reste manquante ; aucune valeur n'est simulée."
             ),
         },
         "data_sources": master_sources or [],
@@ -415,6 +529,13 @@ def _country_weather(stations: list[dict[str, Any]]) -> dict[str, Any]:
                 "humidex": _humidex_value(float(t), float(dew)),
                 "precip_prob_pct": drivers.get("precip_prob_pct"),
                 "wind_gust_ms": drivers.get("wind_gust_ms"),
+                "cape_jkg": drivers.get("cape_jkg"),
+                "cin_jkg": drivers.get("cin_jkg"),
+                "bulk_shear_ms": drivers.get("bulk_shear_ms"),
+                "pwat_mm": drivers.get("pwat_mm"),
+                "temperature_850hpa_c": drivers.get("temperature_850hpa_c"),
+                "temperature_700hpa_c": drivers.get("temperature_700hpa_c"),
+                "temperature_500hpa_c": drivers.get("temperature_500hpa_c"),
                 "score": s.get("score"),
                 "severity": s.get("severity"),
             }
@@ -427,7 +548,7 @@ def _country_weather(stations: list[dict[str, Any]]) -> dict[str, Any]:
         "max_humidex": top.get("humidex"),
         "top_station": top.get("name"),
         "stations": rows,
-        "note": "Températures issues du même maillage Open‑Meteo / MeteoVoid que la détection pays.",
+        "note": "Températures et champs convectifs issus du dernier run réel quand disponibles ; les absences restent explicites.",
     }
 
 
@@ -499,64 +620,96 @@ def _validation_status(country_key: str) -> dict[str, Any]:
 
 
 def _try_live_series(station: dict[str, Any]) -> dict[str, list[float]] | None:
-    """Best-effort real observations via Open-Meteo; returns None on any failure."""
+    """Best-effort real weather/model fields via Open-Meteo; no simulation."""
     lat = station.get("lat")
     lon = station.get("lon")
     if lat is None or lon is None:
         return None
-    try:
+
+    def _url(vars_: list[str]) -> str:
+        hourly = ",".join(dict.fromkeys(vars_))
+        return (
+            "https://api.open-meteo.com/v1/forecast"
+            f"?latitude={float(lat)}&longitude={float(lon)}"
+            f"&hourly={hourly}&wind_speed_unit=ms"
+            "&temperature_unit=celsius&precipitation_unit=mm"
+            "&forecast_days=2&timezone=UTC"
+        )
+
+    def _fetch(vars_: list[str]) -> dict[str, Any]:
         import json
         from urllib.request import Request, urlopen
 
-        # Open-Meteo exposes native convective fields (cape, convective_inhibition,
-        # lifted_index) and pressure-level winds used to derive bulk shear.
-        url = (
-            "https://api.open-meteo.com/v1/forecast"
-            f"?latitude={float(lat)}&longitude={float(lon)}"
-            "&hourly=temperature_2m,dew_point_2m,precipitation_probability,"
-            "surface_pressure,wind_gusts_10m,cape,convective_inhibition,lifted_index,"
-            "wind_speed_1000hPa,wind_speed_500hPa&forecast_days=2&timezone=UTC"
-        )
-        req = Request(url, headers={"User-Agent": "MeteoVoid/CountryFollowup"})
+        req = Request(_url(vars_), headers={"User-Agent": "MeteoVoid/CountryFollowup"})
         with urlopen(req, timeout=8) as resp:  # noqa: S310 - fixed https host
             payload = json.loads(resp.read().decode("utf-8"))
-        hourly = _as_dict(payload.get("hourly"))
+        if isinstance(payload, dict) and payload.get("error") is True:
+            raise ValueError(str(payload.get("reason") or "Open-Meteo returned an error"))
+        return _as_dict(payload.get("hourly"))
 
-        def _floats(key: str) -> list[float]:
-            seq = hourly.get(key)
-            if not isinstance(seq, list):
-                return []
-            return [float(v) for v in seq if isinstance(v, int | float)]
-
-        temp = _floats("temperature_2m")
-        dew = _floats("dew_point_2m")
-        precip = _floats("precipitation_probability")
-        pressure = _floats("surface_pressure")
-        gust = _floats("wind_gusts_10m")
-        n = min(len(temp), len(dew), len(precip), len(pressure), len(gust))
-        if n < 12:
-            return None
-        out: dict[str, list[float]] = {
-            "temperature_c": temp[:n],
-            "dew_point_c": dew[:n],
-            "precip_prob_pct": precip[:n],
-            "pressure_hpa": pressure[:n],
-            "wind_gust_ms": gust[:n],
-        }
-        cape = _floats("cape")
-        cin = _floats("convective_inhibition")
-        lifted = _floats("lifted_index")
-        w1000 = _floats("wind_speed_1000hPa")
-        w500 = _floats("wind_speed_500hPa")
-        if len(cape) >= n and len(lifted) >= n:
-            out["cape_jkg"] = cape[:n]
-            out["cin_jkg"] = cin[:n] if len(cin) >= n else [0.0] * n
-            out["lifted_index"] = lifted[:n]
-            if len(w1000) >= n and len(w500) >= n:
-                out["bulk_shear_ms"] = [abs(w500[i] - w1000[i]) for i in range(n)]
-        return out
+    base = [
+        "temperature_2m",
+        "dew_point_2m",
+        "precipitation_probability",
+        "surface_pressure",
+        "pressure_msl",
+        "wind_gusts_10m",
+        "wind_speed_10m",
+        "wind_direction_10m",
+    ]
+    advanced = list(OPEN_METEO_REQUIRED_HOURLY_VARIABLES)
+    try:
+        hourly = _fetch([*base, *advanced])
     except Exception:
+        try:
+            hourly = _fetch(base)
+        except Exception:
+            return None
+    hourly = augment_hourly_with_real_derived_fields(hourly)
+
+    def _floats(key: str) -> list[float]:
+        seq = hourly.get(key)
+        if not isinstance(seq, list):
+            return []
+        out: list[float] = []
+        for v in seq:
+            if isinstance(v, int | float):
+                out.append(float(v))
+        return out
+
+    temp = _floats("temperature_2m")
+    dew = _floats("dew_point_2m")
+    precip = _floats("precipitation_probability")
+    pressure = _floats("surface_pressure") or _floats("pressure_msl")
+    gust = _floats("wind_gusts_10m")
+    n = min(len(temp), len(dew), len(precip), len(pressure), len(gust))
+    if n < 12:
         return None
+    out: dict[str, list[float]] = {
+        "temperature_c": temp[:n],
+        "dew_point_c": dew[:n],
+        "precip_prob_pct": precip[:n],
+        "pressure_hpa": pressure[:n],
+        "wind_gust_ms": gust[:n],
+    }
+    optional_map = {
+        "cape": "cape_jkg",
+        "convective_inhibition": "cin_jkg",
+        "lifted_index": "lifted_index",
+        "shear_0_6km_ms": "bulk_shear_ms",
+        "total_column_integrated_water_vapour": "pwat_mm",
+        "temperature_850hPa": "temperature_850hpa_c",
+        "temperature_700hPa": "temperature_700hpa_c",
+        "temperature_500hPa": "temperature_500hpa_c",
+        "wind_speed_10m": "wind_speed_10m",
+        "wind_direction_10m": "wind_direction_10m",
+        "thunderstorm_probability": "thunderstorm_probability_pct",
+    }
+    for source, target in optional_map.items():
+        values = _floats(source)
+        if len(values) >= n:
+            out[target] = values[:n]
+    return out
 
 
 def build_all_countries(

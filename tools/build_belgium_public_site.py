@@ -452,6 +452,7 @@ def _station_card(s: dict[str, Any]) -> dict[str, Any]:
             "humidity_pct": _round(s.get("max_relative_humidity_pct"), 0),
         },
         "hourly": hourly,
+        "live_convective_inputs": s.get("live_convective_inputs") or {},
     }
 
 
@@ -1320,6 +1321,13 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
     opera_inventory = _load_json(report_dir / "opera_ord_inventory.json")
     national_radar = _load_json(report_dir / "european_national_radar_status.json")
     national_radar_metrics = _load_json(report_dir / "european_national_radar_metrics.json")
+    convective_live = _load_json(report_dir / "convective_live_inputs.json")
+    if not convective_live:
+        convective_live = (
+            report.get("convective_live_inputs")
+            if isinstance(report.get("convective_live_inputs"), dict)
+            else {}
+        )
 
     operational = report.get("operational_state")
     operational = operational if isinstance(operational, dict) else alert_state
@@ -1370,6 +1378,7 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
             "upstream": "api/upstream.json",
             "radar": "api/radar.json",
             "europe": "api/europe.json",
+            "convective_live": "api/convective_live.json",
         },
     }
 
@@ -1446,6 +1455,7 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
             national_radar.get("summary") if isinstance(national_radar.get("summary"), dict) else {}
         ),
         "european_national_radar_metrics": national_radar_metrics,
+        "convective_live_inputs": convective_live,
         "opera_ord_inventory": {
             "status": opera_inventory.get("status"),
             "enabled": opera_inventory.get("enabled"),
@@ -2168,6 +2178,13 @@ def build_api(vm: dict[str, Any], site_dir: Path) -> None:
         },
     )
     _write_json(
+        api_dir / "convective_live.json",
+        {
+            "generated_at": generated_at,
+            **(vm["expert"].get("convective_live_inputs") or {}),
+        },
+    )
+    _write_json(
         api_dir / "europe.json",
         build_europe_model(site_dir / "reports" / "latest", vm),
     )
@@ -2182,6 +2199,7 @@ def build_api(vm: dict[str, Any], site_dir: Path) -> None:
                 "radar": "api/radar.json",
                 "heat": "api/heat.json",
                 "weather_belgium": "api/weather_belgium.json",
+                "convective_live": "api/convective_live.json",
                 "europe": "api/europe.json",
             },
             "disclaimer": meta.get("disclaimer"),
@@ -2885,6 +2903,7 @@ button:focus-visible,.tab:focus-visible,a:focus-visible{outline:2px solid var(--
       <button data-sv="obs">Observation émergente</button>
       <button data-sv="valid">Validation</button>
       <button data-sv="sources">Sources</button>
+      <button data-sv="convective">Champs réels</button>
       <button data-sv="graphes">Cartes & graphes</button>
       <button data-sv="api">Exports & API</button>
     </div>
@@ -2924,11 +2943,19 @@ button:focus-visible,.tab:focus-visible,a:focus-visible{outline:2px solid var(--
           <dt>Signal interne</dt><dd>stations + variables disponibles</dd>
           <dt>Heat stress</dt><dd>heat_stress_score</dd>
           <dt>Risque convectif</dt><dd>convective_risk_score</dd>
-          <dt>Champs natifs</dt><dd>CAPE · CIN · LI · K · TT · PW · cisaillement (mode proxy si absents)</dd>
+          <dt>Champs réels suivis</dt><dd>point de rosée · CAPE · CIN · cisaillement 0–6 km · convergence au sol · pression · rafales · PWAT · températures 850/700/500 hPa</dd>
+          <dt>Règle anti-simulation</dt><dd>si un champ réel est absent, MeteoVoid écrit “manquant” au lieu d’inventer une valeur</dd>
           <dt>Radar visuel</dt><dd>RainViewer</dd>
           <dt>Radar machine</dt><dd>OPERA ORD / MeteoGate</dd>
           <dt>Nowcast</dt><dd>wradlib · pySTEPS (si données)</dd>
         </dl>
+      </div>
+    </div>
+    <div class="subview" data-sv="convective">
+      <div class="card"><div class="eyebrow"><span class="d"></span>Ingrédients convectifs réels · sans simulation</div>
+        <p style="color:var(--ink-dim);margin-top:12px">Les valeurs sont publiées uniquement si elles existent dans le dernier run réel ou dans un fournisseur configuré. Radar, foudre et satellite restent marqués manquants tant qu’aucune source exploitable n’est connectée.</p>
+        <div id="liveConvectiveInputs" style="margin-top:14px"></div>
+        <div class="note">Contrat : <span class="mono">meteovoid_real_convective_inputs_v1</span> · API : <span class="mono">api/convective_live.json</span></div>
       </div>
     </div>
     <div class="subview" data-sv="graphes">
@@ -3415,10 +3442,30 @@ function renderBulletin(vm){
   const sectionHtml=(b.sections||[]).map(sec=>{const items=(sec.items||[]).map(x=>`<li>${escTxt(x)}</li>`).join("");const advice=(sec.advice||[]).map(x=>`<li>${escTxt(x)}</li>`).join("");return `<div class="card"><div class="eyebrow"><span class="d"></span>${escTxt(sec.title||'Section')}</div>${sec.body?`<p style="color:var(--ink-dim);margin-top:12px">${escTxt(sec.body)}</p>`:""}${items?`<ul style="margin:10px 0 0;color:var(--ink)">${items}</ul>`:""}${sec.note?`<div class="note">${escTxt(sec.note)}</div>`:""}${advice?`<ul class="advice">${advice}</ul>`:""}</div>`;}).join("");
   document.getElementById('bulletinSections').innerHTML=sectionHtml+`<div class="note">${escTxt(b.disclaimer||'Prototype technique non officiel.')} Bulletin non officiel : il ne remplace pas l’IRM/KMI ni MeteoAlarm.</div>`;
 }
+function fieldValueHtml(field){
+  if(!field||typeof field!=="object")return "<span class=\"muted\">manquant</span>";
+  const available=!!field.available;
+  const value=field.value;
+  const unit=field.unit||"";
+  const status=field.status||"missing";
+  const val=(value===null||value===undefined||value==="")?"—":String(value)+(unit&&unit!=="frame"&&unit!=="layer"&&unit!=="impacts"?" "+unit:"");
+  const cls=available?"pill stable":"pill veille";
+  return `<span class="${cls}"><span class="pd"></span>${escTxt(available?val:status)}</span>`;
+}
+function renderConvectiveLiveInputs(vm){
+  const box=document.getElementById('liveConvectiveInputs'); if(!box)return;
+  const live=(vm&&vm.expert&&vm.expert.convective_live_inputs)||{};
+  const fields=(live.fields&&typeof live.fields==='object')?live.fields:{};
+  const order=['dew_point_c','cape_jkg','cin_jkg','shear_0_6km_ms','surface_convergence_index','pressure_hpa','wind_gust_ms','pwat_mm','temperature_850hpa_c','temperature_700hpa_c','temperature_500hpa_c','radar','lightning','satellite'];
+  const rows=order.map(k=>{const f=fields[k]||{};return `<tr><td><div class="place">${escTxt(f.label||k)}</div><div class="sub">${escTxt(f.source||f.basis||'source réelle requise')}</div></td><td>${fieldValueHtml(f)}</td><td>${escTxt(f.station_count??f.sample_count??'—')}</td><td>${escTxt(f.basis||f.status||'—')}</td></tr>`}).join('');
+  const avail=Number(live.available_count||0), req=Number(live.required_count||order.length);
+  box.innerHTML=`<div class="statline"><span class="b mono">${avail}/${req}</span><span class="t">champs disponibles dans le dernier run réel · aucune valeur simulée</span></div><table style="margin-top:12px"><thead><tr><th>Champ</th><th>Valeur / état</th><th>Stations</th><th>Base</th></tr></thead><tbody>${rows}</tbody></table><div class="note">${escTxt(live.note||'Les champs absents restent absents jusqu’à connexion d’un fournisseur réel.')}</div>`;
+}
 function renderDynamicLinks(vm){
   const e=(vm&&vm.expert)||{};
   const f=document.getElementById('expertFrameLinks'); if(f){f.innerHTML=(e.frames||[]).slice(0,9).map(x=>`<a class="kpi" href="${escTxt(x.file)}"><div class="name">${escTxt(x.group||'Carte')}</div><div class="foot mono">${escTxt(x.label||x.file)}</div></a>`).join("");}
   const ex=document.getElementById('expertExportLinks'); if(ex){ex.innerHTML=`<div class="row c3">${(e.exports||[]).slice(0,9).map(x=>`<a class="kpi" href="${escTxt(x.file)}"><div class="name">Export</div><div class="foot mono">${escTxt(x.label||x.file)}</div></a>`).join("")}</div>`;}
+  renderConvectiveLiveInputs(vm);
 }
 function renderMap(){drawMap();}
 function updateLiveBadges(vm){
@@ -3450,15 +3497,17 @@ function loadLiveModel(){
         fetch("api/transition.json",{cache:"no-store"}).then(r=>r.ok?r.json():null),
         fetch("api/heat.json",{cache:"no-store"}).then(r=>r.ok?r.json():null),
         fetch("api/sources.json",{cache:"no-store"}).then(r=>r.ok?r.json():null),
-        fetch("api/validation.json",{cache:"no-store"}).then(r=>r.ok?r.json():null)
+        fetch("api/validation.json",{cache:"no-store"}).then(r=>r.ok?r.json():null),
+        fetch("api/convective_live.json",{cache:"no-store"}).then(r=>r.ok?r.json():null)
       ]).then(results=>{
-        const [stations,timeline,transition,heat,sources,validation]=results.map(x=>x.status==="fulfilled"?x.value:null);
+        const [stations,timeline,transition,heat,sources,validation,convectiveLive]=results.map(x=>x.status==="fulfilled"?x.value:null);
         if(stations){vm.expert={...(vm.expert||{}),stations:stations.stations||vm.expert?.stations,provinces:stations.provinces||vm.expert?.provinces};}
         if(timeline){vm.operational={...(vm.operational||{}),timeline:{...(vm.operational?.timeline||{}),...timeline}};}
         if(transition){vm.operational={...(vm.operational||{}),...transition};}
         if(heat){vm.heat={...(vm.heat||{}),...heat};}
         if(sources){vm.expert={...(vm.expert||{}),sources:sources.sources||vm.expert?.sources,observation:sources.observation||vm.expert?.observation,watchdog:sources.watchdog||vm.expert?.watchdog};}
         if(validation){vm.expert={...(vm.expert||{}),validation:{...(vm.expert?.validation||{}),...validation}};}
+        if(convectiveLive){vm.expert={...(vm.expert||{}),convective_live_inputs:{...(vm.expert?.convective_live_inputs||{}),...convectiveLive}};}
         applyLiveModel(vm);
       });
     })

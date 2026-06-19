@@ -25,6 +25,12 @@ except ModuleNotFoundError:  # pragma: no cover - dependency is declared but kee
 _ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_ROOT / "src") if (_ROOT / "src").exists() else str(_ROOT))
 
+from meteovoid.convective_live_inputs import (  # noqa: E402
+    OPEN_METEO_REQUIRED_HOURLY_VARIABLES,
+    aggregate_real_input_summary,
+    augment_hourly_with_real_derived_fields,
+    station_real_input_summary,
+)
 from meteovoid.stations_config import StationSpec, load_stations_config  # noqa: E402
 
 try:  # noqa: E402
@@ -37,7 +43,7 @@ except ModuleNotFoundError:  # pragma: no cover - package import mode
 
 OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 DEFAULT_TIMEZONE = "Europe/Brussels"
-HOURLY_VARIABLES = [
+BASE_SURFACE_HOURLY_VARIABLES = (
     "temperature_2m",
     "relative_humidity_2m",
     "dew_point_2m",
@@ -47,16 +53,16 @@ HOURLY_VARIABLES = [
     "showers",
     "weather_code",
     "pressure_msl",
+    "surface_pressure",
     "wind_speed_10m",
+    "wind_direction_10m",
     "wind_gusts_10m",
-    # Native convective model fields exposed by Open-Meteo.
-    # These are model fields, not observed radar/lightning proof.
-    "cape",
-    "lifted_index",
-    "convective_inhibition",
-    "freezing_level_height",
-    "boundary_layer_height",
-]
+    "cloud_cover",
+)
+HOURLY_VARIABLES = list(
+    dict.fromkeys([*BASE_SURFACE_HOURLY_VARIABLES, *OPEN_METEO_REQUIRED_HOURLY_VARIABLES])
+)
+SAFE_HOURLY_VARIABLES = list(BASE_SURFACE_HOURLY_VARIABLES)
 THUNDERSTORM_CODES = {95, 96, 99}
 SHOWER_CODES = {51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82}
 SEVERITY_RANK = {"normal": 0, "watch": 1, "medium": 2, "high": 3, "alert": 4}
@@ -205,6 +211,7 @@ class StationRisk:
     convective_indices: dict[str, Any]
     native_convective_available: bool
     native_convective_fields: list[str]
+    live_convective_inputs: dict[str, Any]
     signals: list[str]
     hourly_risk: list[dict[str, Any]]
     source_ok: bool
@@ -321,11 +328,13 @@ def _build_openmeteo_forecast_url(
     *,
     target: TargetWindow,
     timezone: str,
+    hourly_variables: list[str] | tuple[str, ...] | None = None,
 ) -> str:
+    variables = HOURLY_VARIABLES if hourly_variables is None else list(hourly_variables)
     params = {
         "latitude": f"{station.lat:.6f}",
         "longitude": f"{station.lon:.6f}",
-        "hourly": ",".join(HOURLY_VARIABLES),
+        "hourly": ",".join(variables),
         "wind_speed_unit": "ms",
         "temperature_unit": "celsius",
         "precipitation_unit": "mm",
@@ -381,6 +390,7 @@ def _offline_payload(station: StationSpec, *, target: TargetWindow) -> dict[str,
         cur += timedelta(days=1)
 
     return {
+        "_meteovoid_source_mode": "offline_demo",
         "hourly": {
             "time": times,
             "temperature_2m": temp,
@@ -399,7 +409,7 @@ def _offline_payload(station: StationSpec, *, target: TargetWindow) -> dict[str,
             "convective_inhibition": convective_inhibition,
             "freezing_level_height": freezing_level_height,
             "boundary_layer_height": boundary_layer_height,
-        }
+        },
     }
 
 
@@ -474,6 +484,8 @@ def _station_risk_from_payload(station: StationSpec, payload: dict[str, Any]) ->
     if not isinstance(hourly_any, dict):
         raise ValueError("Missing hourly forecast in response")
 
+    hourly_any = augment_hourly_with_real_derived_fields(hourly_any)
+
     times_any = hourly_any.get("time")
     times = [str(x) for x in times_any] if isinstance(times_any, list) else []
     temperatures = hourly_any.get("temperature_2m", [])
@@ -506,6 +518,16 @@ def _station_risk_from_payload(station: StationSpec, payload: dict[str, Any]) ->
     codes = {v for v in weather_codes if v is not None}
     thunderstorm = bool(codes & THUNDERSTORM_CODES)
     showers_seen = bool(codes & SHOWER_CODES)
+    source_mode = (
+        "offline_demo"
+        if payload.get("_meteovoid_source_mode") == "offline_demo"
+        else "live_forecast_api"
+    )
+    live_convective_inputs = station_real_input_summary(
+        hourly_any,
+        source_mode=source_mode,
+        source_name="Open-Meteo Forecast API",
+    )
 
     components = {
         "heat": _ramp(max_temp, _calib_threshold("heat_watch_c"), _calib_threshold("heat_alert_c")),
@@ -611,6 +633,7 @@ def _station_risk_from_payload(station: StationSpec, payload: dict[str, Any]) ->
         convective_indices=convective_indices,
         native_convective_available=bool(convective_indices.get("available")),
         native_convective_fields=list(convective_indices.get("available_fields") or []),
+        live_convective_inputs=live_convective_inputs,
         signals=signals,
         hourly_risk=hourly_risk,
         source_ok=True,
@@ -750,6 +773,15 @@ def _failed_station(station: StationSpec, error: str) -> StationRisk:
         convective_indices={"available": False, "available_fields": []},
         native_convective_available=False,
         native_convective_fields=[],
+        live_convective_inputs={
+            "contract": "meteovoid_real_convective_inputs_v1",
+            "real_data": False,
+            "available_count": 0,
+            "available_fields": [],
+            "missing_fields": [],
+            "fields": {},
+            "error": error,
+        },
         signals=[],
         hourly_risk=[],
         source_ok=False,
@@ -3187,6 +3219,9 @@ def _write_outputs(report: dict[str, Any], out_dir: Path) -> None:
     (out_dir / "alert_state.json").write_text(
         _json_dumps(report.get("operational_state", {})), encoding="utf-8"
     )
+    (out_dir / "convective_live_inputs.json").write_text(
+        _json_dumps(report.get("convective_live_inputs", {})), encoding="utf-8"
+    )
     write_weather_layer_outputs(report, out_dir)
     write_convective_transition_outputs(report, out_dir)
     write_upstream_graph_outputs(report, out_dir)
@@ -3299,8 +3334,23 @@ def _build_report(
             if offline_demo:
                 payload = _offline_payload(station, target=target)
             else:
-                url = _build_openmeteo_forecast_url(station, target=target, timezone=timezone)
-                payload = _http_json(url, timeout_s=timeout_s)
+                try:
+                    url = _build_openmeteo_forecast_url(station, target=target, timezone=timezone)
+                    payload = _http_json(url, timeout_s=timeout_s)
+                    payload["_meteovoid_source_mode"] = "live_forecast_api"
+                except ValueError as exc:
+                    # If a provider/model does not expose one advanced field, keep the
+                    # run live by falling back to surface fields only. Missing advanced
+                    # ingredients remain explicitly unavailable; they are never simulated.
+                    url = _build_openmeteo_forecast_url(
+                        station,
+                        target=target,
+                        timezone=timezone,
+                        hourly_variables=SAFE_HOURLY_VARIABLES,
+                    )
+                    payload = _http_json(url, timeout_s=timeout_s)
+                    payload["_meteovoid_source_mode"] = "live_forecast_api"
+                    payload["_meteovoid_advanced_input_error"] = str(exc)
             risks.append(_station_risk_from_payload(station, payload))
         except (OSError, URLError, TimeoutError, ValueError) as exc:
             risks.append(_failed_station(station, str(exc)))
@@ -3400,9 +3450,54 @@ def _build_report(
             "european_national_radar_sources": "european_national_radar_sources.csv",
             "european_national_radar_map_html": "european_national_radar_map.html",
             "european_national_radar_report": "european_national_radar_report.md",
+            "convective_live_inputs": "convective_live_inputs.json",
         },
         "aggregate": aggregate,
         "components_summary": _components_summary(stations),
+        "convective_live_inputs": aggregate_real_input_summary(
+            stations,
+            external={
+                "radar": {
+                    "key": "radar",
+                    "label": "Radar",
+                    "available": bool(
+                        external_inputs.get("radar_confirmation") not in {None, "none", ""}
+                    ),
+                    "status": str(external_inputs.get("radar_confirmation") or "missing"),
+                    "basis": (
+                        "external_confirmation/radar_stack/RainViewer display"
+                        if external_inputs.get("radar_confirmation") not in {None, "none", ""}
+                        else "no machine radar confirmation in this run"
+                    ),
+                },
+                "lightning": {
+                    "key": "lightning",
+                    "label": "Foudre",
+                    "available": bool(
+                        external_inputs.get("lightning_confirmation") not in {None, "none", ""}
+                    ),
+                    "status": str(external_inputs.get("lightning_confirmation") or "missing"),
+                    "basis": (
+                        "external_confirmation lightning provider"
+                        if external_inputs.get("lightning_confirmation") not in {None, "none", ""}
+                        else "no lightning provider in this run"
+                    ),
+                },
+                "satellite": {
+                    "key": "satellite",
+                    "label": "Satellite",
+                    "available": bool(
+                        external_inputs.get("satellite_confirmation") not in {None, "none", ""}
+                    ),
+                    "status": str(external_inputs.get("satellite_confirmation") or "missing"),
+                    "basis": (
+                        "external_confirmation satellite provider"
+                        if external_inputs.get("satellite_confirmation") not in {None, "none", ""}
+                        else "no satellite provider in this run"
+                    ),
+                },
+            },
+        ),
         "timeline_summary": _timeline_summary({"stations": stations}),
         "province_summary": _province_summary({"stations": stations}),
         "stations": stations,

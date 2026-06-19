@@ -60,9 +60,16 @@ NATIVE_CONVECTIVE_ALIASES: dict[str, tuple[str, ...]] = {
     "lifted_index_c": ("lifted_index_c", "lifted_index", "LI"),
     "k_index_c": ("k_index_c", "k_index", "K_index"),
     "total_totals_index": ("total_totals_index", "total_totals", "TT"),
-    "precipitable_water_mm": ("precipitable_water_mm", "pwat_mm", "pwat", "PWAT"),
+    "precipitable_water_mm": (
+        "precipitable_water_mm",
+        "total_column_integrated_water_vapour",
+        "pwat_mm",
+        "pwat",
+        "PWAT",
+    ),
     "lightning_potential_index": (
         "lightning_potential_index",
+        "thunderstorm_probability",
         "lightning_potential",
         "lpi",
         "LPI",
@@ -80,11 +87,15 @@ NATIVE_CONVECTIVE_ALIASES: dict[str, tuple[str, ...]] = {
     "lcl_m": ("lcl_m", "lifted_condensation_level_m"),
     "lfc_m": ("lfc_m", "level_free_convection_m"),
     "theta_e_850k": ("theta_e_850k", "theta_e_850", "equivalent_potential_temperature_850hPa"),
+    "temperature_850hpa_c": ("temperature_850hPa", "temperature_850hpa_c"),
+    "temperature_700hpa_c": ("temperature_700hPa", "temperature_700hpa_c"),
+    "temperature_500hpa_c": ("temperature_500hPa", "temperature_500hpa_c"),
     "lapse_rate_700_500_c_km": (
         "lapse_rate_700_500_c_km",
         "lapse_rate_700_500",
         "mid_level_lapse_rate_c_km",
     ),
+    "surface_convergence_index": ("surface_convergence_index", "surface_convergence_1e4_s"),
 }
 
 
@@ -121,6 +132,7 @@ def native_convective_indices_from_hourly(hourly: dict[str, Any]) -> dict[str, A
         "lfc": _inverse_ramp(raw["lfc_m"], 1200.0, 3000.0),
         "theta_e_850": _ramp(raw["theta_e_850k"], 320.0, 350.0),
         "lapse_rate_700_500": _ramp(raw["lapse_rate_700_500_c_km"], 6.5, 8.5),
+        "surface_convergence": _ramp(raw["surface_convergence_index"], 0.5, 3.0),
     }
     available = [key for key, value in raw.items() if value is not None]
     if available:
@@ -135,10 +147,11 @@ def native_convective_indices_from_hourly(hourly: dict[str, Any]) -> dict[str, A
             + 0.04 * normalized["boundary_layer"]
         )
         organization = _clamp01(
-            0.36 * normalized["shear_0_6km"]
-            + 0.20 * normalized["shear_0_3km"]
-            + 0.22 * normalized["srh_0_1km"]
-            + 0.22 * normalized["srh_0_3km"]
+            0.32 * normalized["shear_0_6km"]
+            + 0.17 * normalized["shear_0_3km"]
+            + 0.19 * normalized["srh_0_1km"]
+            + 0.19 * normalized["srh_0_3km"]
+            + 0.13 * normalized["surface_convergence"]
         )
         cap_break = _clamp01(
             0.42 * normalized["cin_erosion"]
