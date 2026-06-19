@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="fr" data-theme="dark">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>MeteoVoid · Carte de bascule convective · Europe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+ integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+ integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<style>
+:root{
+  --bg:#070d15;--panel:#0f1a28;--panel2:#142235;--ink:#e9f0fa;--muted:#8a9bb3;
+  --line:#22344d;--soft:#0c1623;--accent:#5db4ff;
+  --stable:#15a173;--latent:#3f86d6;--transition:#d6a017;--bascule:#dc4a3c;
+  --shadow:0 18px 48px rgba(0,0,0,.42);--mono:'JetBrains Mono',ui-monospace,Menlo,monospace}
+[data-theme=light]{--bg:#eef3f9;--panel:#fff;--panel2:#f6f9fd;--ink:#16243a;--muted:#5d6e87;
+  --line:#d8e2f0;--soft:#eef3fa;--accent:#1f6fc0;--shadow:0 16px 40px rgba(18,34,58,.10)}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--ink);font-family:Inter,system-ui,Segoe UI,Arial,sans-serif;line-height:1.5;-webkit-font-smoothing:antialiased}
+h1,h2,h3,.disp{font-family:'Space Grotesk',Inter,sans-serif;letter-spacing:-.01em}
+.mono{font-family:var(--mono)}
+.eyebrow{text-transform:uppercase;letter-spacing:.14em;font-size:11px;font-weight:600;color:var(--muted)}
+.shell{display:grid;grid-template-rows:auto 1fr;height:100vh;min-height:560px}
+header.top{display:flex;align-items:center;gap:14px;padding:11px 18px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,rgba(93,180,255,.06),transparent);position:relative;z-index:30;flex-wrap:wrap}
+.logo{width:36px;height:36px;border-radius:11px;display:grid;place-items:center;
+  background:radial-gradient(120% 120% at 30% 20%,#1d3a5c,#0b1a2c);border:1px solid var(--line);color:var(--accent);font-size:16px}
+.brand b{font-family:'Space Grotesk';font-size:16px;font-weight:700;display:block;line-height:1.1}
+.brand span{font-size:11px;color:var(--muted)}
+.spacer{flex:1}
+.ctrl{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+select,.btn{font:inherit;font-size:13px;color:var(--ink);background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 11px;cursor:pointer}
+select:focus,.btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.run{font-family:var(--mono);font-size:12px;color:var(--muted);border:1px solid var(--line);border-radius:10px;padding:7px 11px;background:var(--soft);white-space:nowrap}
+.run b{color:var(--ink)}
+.dotlive{width:7px;height:7px;border-radius:50%;background:var(--stable);display:inline-block;margin-right:6px;animation:pulse 2.4s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(21,161,115,.55)}70%{box-shadow:0 0 0 7px rgba(21,161,115,0)}100%{box-shadow:0 0 0 0 rgba(21,161,115,0)}}
+.body{display:grid;grid-template-columns:minmax(0,1fr) 360px;min-height:0}
+.mapwrap{position:relative;min-height:0}
+#map{position:absolute;inset:0;background:var(--soft)}
+.leaflet-container{font:inherit;background:var(--soft)}
+.leaflet-popup-content-wrapper,.leaflet-tooltip{background:var(--panel);color:var(--ink);border:1px solid var(--line)}
+.leaflet-tooltip{box-shadow:var(--shadow)}.leaflet-tooltip-top:before{border-top-color:var(--line)}
+.loading{position:absolute;inset:0;display:grid;place-items:center;z-index:25;background:rgba(7,13,21,.55);backdrop-filter:blur(2px);pointer-events:none;opacity:0;transition:opacity .2s}
+.loading.on{opacity:1}.loading .b{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 16px;font-family:var(--mono);font-size:13px;box-shadow:var(--shadow)}
+.layers{position:absolute;top:14px;left:14px;z-index:20;background:rgba(15,26,40,.86);border:1px solid var(--line);border-radius:14px;padding:10px;backdrop-filter:blur(10px);box-shadow:var(--shadow);display:grid;gap:3px;min-width:196px}
+[data-theme=light] .layers{background:rgba(255,255,255,.9)}
+.layers .eyebrow{padding:2px 4px 4px}
+.lyr{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:9px;cursor:pointer;font-size:13px;user-select:none}
+.lyr:hover{background:var(--panel2)}.lyr input{accent-color:var(--accent);width:15px;height:15px}
+.lyr .sw{width:11px;height:11px;border-radius:3px;flex:0 0 auto}
+.timebar{position:absolute;left:14px;right:14px;bottom:14px;z-index:20;background:rgba(15,26,40,.9);border:1px solid var(--line);border-radius:14px;padding:11px 14px;backdrop-filter:blur(10px);box-shadow:var(--shadow)}
+[data-theme=light] .timebar{background:rgba(255,255,255,.92)}
+.timebar .row{display:flex;align-items:center;gap:12px}
+.play{width:38px;height:38px;border-radius:11px;flex:0 0 auto;display:grid;place-items:center;font-size:15px}
+input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:6px;border-radius:99px;background:var(--line);outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:17px;height:17px;border-radius:50%;background:var(--accent);border:2px solid var(--panel);cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:var(--accent);border:2px solid var(--panel);cursor:pointer}
+.tlabel{font-family:var(--mono);font-size:13px;white-space:nowrap;min-width:140px;text-align:right}
+.tlabel b{color:var(--accent)}.fcast{color:var(--transition)}
+.ticks{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:6px;padding:0 52px}
+.rail{border-left:1px solid var(--line);background:var(--panel);overflow:auto;padding:16px;display:flex;flex-direction:column;gap:13px}
+.notice{border:1px solid var(--line);background:var(--soft);border-radius:12px;padding:10px 12px;font-size:12px;color:var(--muted)}
+.notice b{color:var(--ink)}
+.card{border:1px solid var(--line);background:var(--panel2);border-radius:16px;padding:15px}
+.gaugewrap{display:flex;align-items:center;gap:16px}
+.dial{position:relative;width:96px;height:96px;flex:0 0 auto}.dial svg{transform:rotate(-90deg)}
+.dial .val{position:absolute;inset:0;display:grid;place-items:center;text-align:center}
+.dial .val b{font-family:'Space Grotesk';font-size:24px;line-height:1;display:block}
+.dial .val span{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.regime{font-family:'Space Grotesk';font-size:22px;font-weight:700;margin:0}
+.regsub{font-size:12px;color:var(--muted);margin-top:2px}
+.track{height:9px;border-radius:99px;margin:14px 0 6px;position:relative;background:linear-gradient(90deg,var(--stable),var(--latent) 36%,var(--transition) 68%,var(--bascule))}
+.track .cursor{position:absolute;top:50%;width:14px;height:14px;border-radius:50%;background:#fff;border:2px solid var(--panel);transform:translate(-50%,-50%);box-shadow:0 1px 5px rgba(0,0,0,.5);transition:left .25s}
+.track .seuil{position:absolute;top:-4px;height:17px;width:2px;background:var(--ink);opacity:.45;left:72%}
+.trlabels{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:4px}
+.metric{border:1px solid var(--line);border-radius:11px;padding:9px 11px;background:var(--soft)}
+.metric .k{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.07em}
+.metric .v{font-family:var(--mono);font-size:17px;margin-top:2px}.metric .u{font-size:10.5px;color:var(--muted)}
+.hot{display:grid;gap:6px}
+.hotrow{display:flex;align-items:center;gap:9px;font-size:12.5px;padding:5px 0;border-top:1px solid var(--line)}
+.hotrow:first-child{border-top:0}.hotrow .sw{width:10px;height:10px;border-radius:3px;flex:0 0 auto}
+.hotrow .nm{flex:1}.hotrow .sc{font-family:var(--mono);color:var(--muted)}
+.legend{display:grid;gap:7px;font-size:12px}.legend .li{display:flex;align-items:center;gap:9px}.legend .sw{width:13px;height:13px;border-radius:4px}
+.foudre{display:none;border:1px solid var(--line);border-radius:14px;overflow:hidden;height:300px;background:var(--soft)}
+.foudre.on{display:block}.foudre iframe{width:100%;height:100%;border:0}.foudre .fb{padding:14px;font-size:12.5px;color:var(--muted)}
+a{color:var(--accent)}
+footer{font-size:11px;color:var(--muted);border-top:1px solid var(--line);padding-top:10px}
+@media(max-width:980px){.body{grid-template-columns:1fr;grid-template-rows:60vh auto}.rail{border-left:0;border-top:1px solid var(--line)}}
+@media(prefers-reduced-motion:reduce){.dotlive{animation:none}.track .cursor{transition:none}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <header class="top">
+    <div class="logo" aria-hidden="true">&#9670;</div>
+    <div class="brand"><b>MeteoVoid</b><span>Carte de bascule convective · Europe · prototype ORI-C · non officiel</span></div>
+    <div class="spacer"></div>
+    <div class="ctrl">
+      <label class="eyebrow" for="region" style="align-self:center">Zone</label>
+      <select id="region" aria-label="Choisir la zone"></select>
+      <div class="run"><span class="dotlive"></span>RUN <b id="run">—</b></div>
+      <button class="btn" id="theme" aria-label="Basculer le thème">&#9728;</button>
+    </div>
+  </header>
+  <div class="body">
+    <div class="mapwrap">
+      <div id="map"></div>
+      <div class="loading" id="loading"><div class="b" id="loadmsg">Lecture des indices convectifs…</div></div>
+      <div class="layers" role="group" aria-label="Couches">
+        <div class="eyebrow">Couches</div>
+        <label class="lyr"><input type="checkbox" id="L-surface" checked><span class="sw" style="background:linear-gradient(90deg,var(--stable),var(--bascule))"></span>Surface de bascule</label>
+        <label class="lyr"><input type="checkbox" id="L-stations" checked><span class="sw" style="background:#fff;border:2px solid var(--accent)"></span>Détecteurs</label>
+        <label class="lyr"><input type="checkbox" id="L-radar" checked><span class="sw" style="background:#3aa0e0"></span>Radar pluie (RainViewer)</label>
+        <label class="lyr"><input type="checkbox" id="L-sat"><span class="sw" style="background:#9aa7b5"></span>Satellite IR</label>
+        <label class="lyr"><input type="checkbox" id="L-radsite"><span class="sw" style="background:#fff;border:2px solid var(--transition)"></span>Réseau radar national</label>
+        <label class="lyr"><input type="checkbox" id="L-prov" checked><span class="sw" style="background:transparent;border:1px dashed var(--muted)"></span>Provinces (BE)</label>
+        <label class="lyr"><input type="checkbox" id="L-foudre"><span class="sw" style="background:#e7c84b"></span>Foudre (communautaire)</label>
+      </div>
+      <div class="timebar">
+        <div class="row">
+          <button class="btn play" id="play" aria-label="Lecture">&#9654;</button>
+          <input type="range" id="time" min="0" max="17" value="0" step="1" aria-label="Heure">
+          <div class="tlabel" id="tlabel">—</div>
+        </div>
+        <div class="ticks"><span>maintenant</span><span>+6 h</span><span>+12 h</span><span>+18 h</span></div>
+      </div>
+    </div>
+    <aside class="rail">
+      <div class="notice"><b>Lecture honnête.</b> La <b>surface de bascule</b> est un proxy d’ingrédients
+        (CAPE · inhibition · indice de soulèvement · déclenchement) calculé en direct depuis Open-Meteo —
+        une <b>anticipation de terrain, pas une confirmation radar</b>. Radar, satellite et foudre sont des
+        couches d’<b>affichage / corroboration</b>, jamais des preuves machine. Toujours comparer aux services officiels.</div>
+      <div class="card">
+        <div class="eyebrow" id="zone-eyebrow">Zone · maintenant</div>
+        <div class="gaugewrap">
+          <div class="dial">
+            <svg width="96" height="96" viewBox="0 0 96 96">
+              <circle cx="48" cy="48" r="40" fill="none" stroke="var(--line)" stroke-width="9"/>
+              <circle id="dial-arc" cx="48" cy="48" r="40" fill="none" stroke="var(--stable)" stroke-width="9" stroke-linecap="round" stroke-dasharray="251" stroke-dashoffset="251"/>
+            </svg>
+            <div class="val"><b id="dial-val">—</b><span>bascule</span></div>
+          </div>
+          <div><p class="regime" id="regime">Initialisation…</p><p class="regsub" id="regsub">Chargement</p></div>
+        </div>
+        <div class="track"><div class="seuil" title="seuil de bascule"></div><div class="cursor" id="track-cursor" style="left:0%"></div></div>
+        <div class="trlabels"><span>Stable</span><span>Latent</span><span>Transition</span><span>Bascule</span></div>
+      </div>
+      <div class="card">
+        <div class="eyebrow">Ingrédients · zone agrégée</div>
+        <div class="metrics">
+          <div class="metric"><div class="k">CAPE</div><div class="v" id="m-cape">—</div><div class="u">J/kg · énergie</div></div>
+          <div class="metric"><div class="k">Inhibition</div><div class="v" id="m-cin">—</div><div class="u">J/kg · couvercle</div></div>
+          <div class="metric"><div class="k">Soulèvement</div><div class="v" id="m-li">—</div><div class="u">LI · &lt;0 instable</div></div>
+          <div class="metric"><div class="k">Déclenchement</div><div class="v" id="m-trig">—</div><div class="u">pluie + rafales</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="eyebrow" id="hot-title">Détecteurs les plus exposés</div>
+        <div class="hot" id="hot"></div>
+      </div>
+      <div class="card legend">
+        <div class="eyebrow">Échelle de bascule</div>
+        <div class="li"><span class="sw" style="background:var(--stable)"></span>Stable — énergie faible, pas de signal</div>
+        <div class="li"><span class="sw" style="background:var(--latent)"></span>Latent — l’énergie s’accumule, couvercle tenu</div>
+        <div class="li"><span class="sw" style="background:var(--transition)"></span>Transition — ingrédients réunis, fenêtre sensible</div>
+        <div class="li"><span class="sw" style="background:var(--bascule)"></span>Bascule — déclenchement probable, surveiller le radar</div>
+      </div>
+      <div class="foudre" id="foudre"><iframe id="foudre-frame" title="Foudre temps réel (Blitzortung)" loading="lazy" referrerpolicy="no-referrer" src="about:blank"></iframe></div>
+      <footer>MeteoVoid · prototype non officiel · radar &amp; satellite : RainViewer · foudre : Blitzortung.org (communautaire) · indices : Open-Meteo (CC BY 4.0)</footer>
+    </aside>
+  </div>
+</div>
+<script>
+const BE_PROV = {"type":"FeatureCollection","features":[{"type":"Feature","properties":{"province":"Flandre occidentale"},"geometry":{"type":"Polygon","coordinates":[[[2.55,50.72],[3.18,50.72],[3.32,51.12],[2.85,51.38],[2.55,51.15],[2.55,50.72]]]}},{"type":"Feature","properties":{"province":"Flandre orientale"},"geometry":{"type":"Polygon","coordinates":[[[3.18,50.72],[4.05,50.78],[4.18,51.25],[3.32,51.42],[3.18,50.72]]]}},{"type":"Feature","properties":{"province":"Anvers"},"geometry":{"type":"Polygon","coordinates":[[[4.05,51.02],[5.15,51.05],[5.35,51.48],[4.25,51.52],[4.05,51.02]]]}},{"type":"Feature","properties":{"province":"Limbourg"},"geometry":{"type":"Polygon","coordinates":[[[5.15,50.72],[5.98,50.74],[6.2,51.28],[5.35,51.48],[5.15,50.72]]]}},{"type":"Feature","properties":{"province":"Brabant flamand"},"geometry":{"type":"Polygon","coordinates":[[[4.05,50.72],[5.15,50.72],[5.15,51.05],[4.05,51.02],[4.05,50.72]]]}},{"type":"Feature","properties":{"province":"Bruxelles"},"geometry":{"type":"Polygon","coordinates":[[[4.25,50.77],[4.47,50.77],[4.47,50.93],[4.25,50.93],[4.25,50.77]]]}},{"type":"Feature","properties":{"province":"Brabant wallon"},"geometry":{"type":"Polygon","coordinates":[[[4.15,50.55],[4.9,50.55],[5.0,50.75],[4.15,50.75],[4.15,50.55]]]}},{"type":"Feature","properties":{"province":"Hainaut"},"geometry":{"type":"Polygon","coordinates":[[[2.85,49.88],[4.35,49.88],[4.45,50.55],[3.2,50.72],[2.75,50.35],[2.85,49.88]]]}},{"type":"Feature","properties":{"province":"Namur"},"geometry":{"type":"Polygon","coordinates":[[[4.35,49.88],[5.35,49.85],[5.45,50.55],[4.9,50.55],[4.15,50.55],[4.35,49.88]]]}},{"type":"Feature","properties":{"province":"Liège"},"geometry":{"type":"Polygon","coordinates":[[[5.35,49.98],[6.42,50.05],[6.22,50.78],[5.45,50.8],[5.35,49.98]]]}},{"type":"Feature","properties":{"province":"Luxembourg belge"},"geometry":{"type":"Polygon","coordinates":[[[4.98,49.45],[6.18,49.45],[6.42,50.05],[5.35,49.98],[4.98,49.45]]]}}]};
+
+/* radar network (sites publics, emplacements indicatifs — pas une confirmation) */
+const RADAR_SITES = [
+  ["Wideumont (RMI/IRM)",49.914,5.504],["Jabbeke (RMI/IRM)",51.192,3.064],["Zaventem (RMI/IRM)",50.901,4.461],
+  ["Den Helder (KNMI)",52.955,4.790],["Herwijnen (KNMI)",51.837,5.138],
+  ["Abbeville (MF)",50.136,1.834],["Avesnois (MF)",50.128,3.808],["Nancy (MF)",48.716,6.581],
+  ["Essen (DWD)",51.406,6.967],["Neuheilenbach (DWD)",50.110,6.548],["Flechtdorf (DWD)",51.311,8.802],
+  ["Albis (MeteoSwiss)",47.284,8.512],["La Dôle (MeteoSwiss)",46.425,6.099],
+  ["London (UKMO)",51.690,0.180],["Clee Hill (UKMO)",52.398,-2.595],
+  ["Madrid (AEMET)",40.169,-3.713],["Barcelona (AEMET)",41.408,1.883],
+  ["Roma (DPC)",41.940,12.470],["Milano (DPC)",45.470,9.180],
+  ["Legionowo (IMGW)",52.405,20.961],["Brdy (CHMI)",49.658,13.818],["Wien (ACG)",48.318,16.532]
+];
+
+/* same component, every zone */
+const REGIONS = {
+  europe:{label:"Europe (vue d’ensemble)",center:[49.5,9],zoom:4,bbox:{w:-9,s:36,e:28,n:60},step:3.6,prov:false,
+    stations:[["Bruxelles",50.85,4.35],["Paris",48.857,2.352],["Amsterdam",52.373,4.894],["Berlin",52.52,13.405],
+      ["Londres",51.507,-0.128],["Madrid",40.417,-3.704],["Barcelone",41.39,2.17],["Rome",41.903,12.496],
+      ["Milan",45.46,9.19],["Vienne",48.21,16.37],["Zurich",47.38,8.54],["Munich",48.14,11.58],
+      ["Lyon",45.76,4.84],["Marseille",43.30,5.37],["Hambourg",53.55,9.99],["Francfort",50.11,8.68],
+      ["Varsovie",52.23,21.01],["Prague",50.08,14.44],["Copenhague",55.68,12.57],["Dublin",53.35,-6.26],
+      ["Lisbonne",38.72,-9.14],["Genève",46.20,6.14],["Cologne",50.94,6.96],["Stuttgart",48.78,9.18]]},
+  belgium:{label:"Belgique",center:[50.6,4.6],zoom:8,bbox:{w:2.55,s:49.45,e:6.35,n:51.55},step:0.34,prov:true,
+    stations:[["Uccle / Bruxelles",50.799,4.358],["Jodoigne",50.724,4.870],["Namur",50.467,4.872],["Liège",50.633,5.580],
+      ["Charleroi",50.411,4.445],["Mons",50.454,3.957],["Gand",51.054,3.717],["Anvers",51.219,4.403],
+      ["Hasselt",50.931,5.333],["Arlon",49.683,5.817],["Coxyde",51.106,2.651],["Bruges",51.209,3.224],
+      ["Ostende",51.231,2.917],["Courtrai",50.828,3.265],["Alost",50.939,4.040],["Malines",51.028,4.480],
+      ["Louvain",50.879,4.701],["Wavre",50.717,4.607],["Nivelles",50.598,4.328],["La Louvière",50.479,4.187],
+      ["Tournai",50.607,3.389],["Ath",50.629,3.778],["Dinant",50.258,4.912],["Marche-en-Famenne",50.227,5.343],
+      ["Bastogne",50.0,5.717],["Verviers",50.589,5.862],["Eupen",50.630,6.039],["Spa",50.492,5.866],
+      ["Genk",50.965,5.501],["Tongres",50.781,5.464],["Saint-Hubert",50.027,5.374],["Bouillon",49.793,5.067]]},
+  france:{label:"France",center:[46.7,2.6],zoom:6,bbox:{w:-4.7,s:42.3,e:8.2,n:51.0},step:1.25,prov:false,
+    stations:[["Paris",48.857,2.352],["Lille",50.629,3.057],["Reims",49.258,4.032],["Strasbourg",48.583,7.745],
+      ["Lyon",45.764,4.836],["Clermont-Fd",45.777,3.087],["Bordeaux",44.838,-0.579],["Toulouse",43.605,1.444],
+      ["Montpellier",43.611,3.877],["Marseille",43.297,5.370],["Nice",43.710,7.262],["Nantes",47.218,-1.554],
+      ["Rennes",48.117,-1.677],["Rouen",49.443,1.099],["Dijon",47.322,5.041],["Brest",48.390,-4.486]]},
+  netherlands:{label:"Pays-Bas",center:[52.1,5.3],zoom:7,bbox:{w:3.3,s:50.7,e:7.3,n:53.6},step:0.55,prov:false,
+    stations:[["Amsterdam",52.373,4.894],["Rotterdam",51.924,4.478],["La Haye",52.078,4.310],["Utrecht",52.091,5.121],
+      ["Eindhoven",51.442,5.470],["Maastricht",50.851,5.691],["Groningue",53.219,6.567],["Arnhem",51.985,5.899],
+      ["Breda",51.586,4.776],["Enschede",52.221,6.896],["Den Helder",52.959,4.760],["Vlissingen",51.443,3.574]]},
+  germany:{label:"Allemagne",center:[51.0,10.3],zoom:6,bbox:{w:5.8,s:47.3,e:15.1,n:55.0},step:1.2,prov:false,
+    stations:[["Berlin",52.52,13.405],["Hambourg",53.551,9.993],["Munich",48.137,11.576],["Cologne",50.938,6.960],
+      ["Francfort",50.110,8.682],["Stuttgart",48.776,9.183],["Düsseldorf",51.228,6.773],["Leipzig",51.339,12.378],
+      ["Dresde",51.050,13.738],["Nuremberg",49.452,11.077],["Hanovre",52.376,9.733],["Brême",53.079,8.802],
+      ["Aix-la-Chapelle",50.775,6.084],["Trèves",49.760,6.644],["Fribourg",47.999,7.842]]},
+  alps:{label:"Suisse · Autriche · Alpes",center:[47.2,11.0],zoom:6,bbox:{w:5.9,s:45.6,e:17.2,n:49.1},step:1.1,prov:false,
+    stations:[["Zurich",47.377,8.540],["Genève",46.204,6.143],["Bâle",47.560,7.588],["Berne",46.948,7.447],
+      ["Lugano",46.005,8.951],["Innsbruck",47.269,11.404],["Vienne",48.208,16.374],["Salzbourg",47.811,13.055],
+      ["Graz",47.071,15.439],["Klagenfurt",46.624,14.308],["Milan",45.464,9.190],["Vérone",45.438,10.992]]},
+  iberia:{label:"Espagne · Portugal",center:[40.0,-4.0],zoom:6,bbox:{w:-9.6,s:36.0,e:3.4,n:43.9},step:1.4,prov:false,
+    stations:[["Madrid",40.417,-3.704],["Barcelone",41.390,2.170],["Valence",39.470,-0.376],["Séville",37.389,-5.984],
+      ["Bilbao",43.263,-2.935],["Saragosse",41.649,-0.889],["Malaga",36.721,-4.421],["Lisbonne",38.722,-9.139],
+      ["Porto",41.158,-8.629],["Murcie",37.987,-1.130],["Valladolid",41.652,-4.724],["La Corogne",43.362,-8.412]]},
+  italy:{label:"Italie",center:[42.3,12.6],zoom:6,bbox:{w:6.5,s:36.6,e:18.6,n:47.1},step:1.25,prov:false,
+    stations:[["Rome",41.903,12.496],["Milan",45.464,9.190],["Naples",40.852,14.268],["Turin",45.070,7.687],
+      ["Bologne",44.494,11.343],["Florence",43.770,11.256],["Venise",45.440,12.316],["Gênes",44.406,8.946],
+      ["Bari",41.118,16.871],["Palerme",38.116,13.361],["Cagliari",39.224,9.122],["Pescara",42.464,14.214]]},
+  poland_cz:{label:"Pologne · Tchéquie",center:[51.2,17.5],zoom:6,bbox:{w:12.0,s:48.5,e:24.2,n:54.9},step:1.3,prov:false,
+    stations:[["Varsovie",52.230,21.012],["Cracovie",50.065,19.945],["Wrocław",51.108,17.038],["Poznań",52.407,16.925],
+      ["Gdańsk",54.352,18.646],["Łódź",51.759,19.456],["Prague",50.075,14.437],["Brno",49.195,16.608],
+      ["Ostrava",49.820,18.263],["Katowice",50.270,19.039],["Lublin",51.246,22.568],["Szczecin",53.428,14.553]]},
+  uk:{label:"Îles Britanniques",center:[53.5,-3.5],zoom:5,bbox:{w:-10.5,s:50.0,e:1.9,n:58.7},step:1.4,prov:false,
+    stations:[["Londres",51.507,-0.128],["Birmingham",52.486,-1.890],["Manchester",53.481,-2.242],["Leeds",53.801,-1.549],
+      ["Glasgow",55.864,-4.252],["Édimbourg",55.953,-3.188],["Cardiff",51.481,-3.179],["Belfast",54.597,-5.930],
+      ["Dublin",53.350,-6.260],["Bristol",51.455,-2.587],["Newcastle",54.978,-1.618],["Plymouth",50.376,-4.143]]}
+};
+
+const clamp01=v=>Math.max(0,Math.min(1,v));
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+function classOf(r){return r<0.25?0:r<0.5?1:r<0.72?2:3;}
+const CLASS=[{col:"--stable",name:"Stable",sub:"énergie faible, pas de signal de bascule"},
+  {col:"--latent",name:"Latent",sub:"l’énergie s’accumule, couvercle encore tenu"},
+  {col:"--transition",name:"Transition",sub:"ingrédients réunis, fenêtre sensible"},
+  {col:"--bascule",name:"Bascule",sub:"déclenchement probable, surveiller le radar"}];
+function colorFor(r){return css(CLASS[classOf(r)].col);}
+function riskFrom(cape,cin,li,pp,gust){
+  cape=cape||0;cin=cin||0;li=(li==null?4:li);pp=pp||0;gust=gust||0;
+  const charge=clamp01(cape/2500),liBoost=clamp01((4-li)/14),energy=clamp01(0.6*charge+0.4*liBoost);
+  const cap=clamp01(1-cin/150),trigger=clamp01(0.55*(pp/100)+0.30*cap+0.15*clamp01((gust-10)/25));
+  return {r:clamp01(energy*(0.45+0.55*trigger)),energy,trigger};
+}
+
+let map,baseLayer,provLayer,surfaceLayer,stationLayer,radarLayer,satLayer,radsiteLayer;
+const canvasR=L.canvas({padding:0.5});
+const RV={host:"https://tilecache.rainviewer.com",radar:[],sat:[],pastCount:0};
+let GRID=[],STATIONS=[],HOURS=[],hourIdx=0,region="belgium",playTimer=null,STEP=0.34;
+
+function basemapUrl(){return document.documentElement.dataset.theme==="light"
+  ? "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+  : "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";}
+function initMap(){
+  map=L.map("map",{zoomControl:true,worldCopyJump:true});
+  baseLayer=L.tileLayer(basemapUrl(),{subdomains:"abcd",maxZoom:19,attribution:'&copy; OpenStreetMap &copy; CARTO'}).addTo(map);
+  surfaceLayer=L.layerGroup().addTo(map);stationLayer=L.layerGroup().addTo(map);
+  radsiteLayer=L.layerGroup();
+  provLayer=L.geoJSON(BE_PROV,{style:{color:css("--muted"),weight:1,opacity:.55,dashArray:"3 4",fill:false}});
+}
+function swapBasemap(){baseLayer.setUrl(basemapUrl());if(provLayer)provLayer.setStyle({color:css("--muted")});}
+function busy(on,msg){const l=document.getElementById("loading");l.classList.toggle("on",on);if(msg)document.getElementById("loadmsg").textContent=msg;}
+
+function buildGrid(b,step){const g=[];for(let la=b.s+step/2;la<b.n;la+=step)for(let lo=b.w+step/2;lo<b.e;lo+=step)g.push([+la.toFixed(3),+lo.toFixed(3)]);return g;}
+
+async function loadRegion(key){
+  region=key;const R=REGIONS[key];STEP=R.step;
+  busy(true,"Lecture des indices convectifs…");
+  map.setView(R.center,R.zoom);
+  if(provLayer){map.removeLayer(provLayer);if(R.prov&&document.getElementById("L-prov").checked)provLayer.addTo(map);}
+  let grid=buildGrid(R.bbox,R.step);
+  STATIONS=R.stations.map(s=>({name:s[0],lat:s[1],lon:s[2]}));
+  const cap=Math.max(8,96-STATIONS.length);
+  if(grid.length>cap){const k=Math.ceil(grid.length/cap);grid=grid.filter((_,i)=>i%k===0);}
+  GRID=grid;
+  const pts=GRID.concat(STATIONS.map(s=>[s.lat,s.lon]));
+  const lat=pts.map(p=>p[0]).join(","),lon=pts.map(p=>p[1]).join(",");
+  const url="https://api.open-meteo.com/v1/forecast?latitude="+lat+"&longitude="+lon+
+    "&hourly=cape,convective_inhibition,lifted_index,precipitation_probability,wind_gusts_10m,temperature_2m,dew_point_2m&forecast_days=2&timezone=auto";
+  try{
+    const data=await (await fetch(url,{cache:"no-store"})).json();
+    const arr=Array.isArray(data)?data:[data];
+    const t=arr[0].hourly.time;
+    const nowIso=new Date().toISOString().slice(0,13);
+    let start=t.findIndex(x=>x.slice(0,13)>=nowIso);if(start<0)start=0;
+    HOURS=t.slice(start,start+18);
+    const slot=o=>({cape:o.hourly.cape,cin:o.hourly.convective_inhibition,li:o.hourly.lifted_index,
+      pp:o.hourly.precipitation_probability,gust:o.hourly.wind_gusts_10m,temp:o.hourly.temperature_2m,dew:o.hourly.dew_point_2m,off:start});
+    GRID.forEach((p,i)=>{p[2]=slot(arr[i]);});
+    STATIONS.forEach((s,i)=>s.d=slot(arr[GRID.length+i]));
+    document.getElementById("run").textContent=(HOURS[0]||"").replace("T"," ");
+    const sl=document.getElementById("time");sl.max=HOURS.length-1;hourIdx=0;sl.value=0;
+    drawRadarSites();render();busy(false);
+  }catch(e){busy(false);document.getElementById("regime").textContent="Indices indisponibles";
+    document.getElementById("regsub").textContent="réseau Open-Meteo injoignable — réessayer plus tard";}
+}
+
+function metricsAt(slot,i){const o=slot.off+i;
+  const m=riskFrom(slot.cape[o],slot.cin[o],slot.li[o],slot.pp[o],slot.gust[o]);
+  return {...m,cape:slot.cape[o],cin:slot.cin[o],li:slot.li[o],pp:slot.pp[o],gust:slot.gust[o]};}
+
+function render(){
+  const i=hourIdx,iso=HOURS[i]||"",dt=new Date(iso);
+  const hh=isNaN(dt)?iso:dt.toLocaleString("fr-FR",{weekday:"short",hour:"2-digit",minute:"2-digit"});
+  document.getElementById("tlabel").innerHTML=i===0?'<b>maintenant</b>':'<span class="fcast">+'+i+' h · '+hh+'</span>';
+  document.getElementById("zone-eyebrow").textContent=REGIONS[region].label.toUpperCase()+" · "+(i===0?"MAINTENANT":"+"+i+" H");
+
+  surfaceLayer.clearLayers();
+  if(document.getElementById("L-surface").checked){
+    const h=STEP/2;
+    GRID.forEach(p=>{const r=metricsAt(p[2],i).r;
+      L.rectangle([[p[0]-h,p[1]-h],[p[0]+h,p[1]+h]],{renderer:canvasR,stroke:false,
+        fillColor:colorFor(r),fillOpacity:0.10+0.5*r}).addTo(surfaceLayer);});
+  }
+  stationLayer.clearLayers();
+  const ranked=[];
+  STATIONS.forEach(s=>{const d=metricsAt(s.d,i);ranked.push({name:s.name,r:d.r});
+    if(document.getElementById("L-stations").checked){
+      const m=L.circleMarker([s.lat,s.lon],{renderer:canvasR,radius:7,weight:2.5,color:colorFor(d.r),fillColor:"#fff",fillOpacity:.95});
+      m.bindTooltip("<b>"+s.name+"</b><br>bascule "+d.r.toFixed(2)+" · "+CLASS[classOf(d.r)].name
+        +"<br>CAPE "+Math.round(d.cape||0)+" J/kg · LI "+(d.li==null?"—":d.li.toFixed(1))
+        +"<br>pluie "+(d.pp||0)+"% · rafales "+Math.round(d.gust||0)+" km/h",{direction:"top"});
+      m.addTo(stationLayer);}});
+  showRadarFrame();
+
+  const rs=GRID.map(p=>metricsAt(p[2],i).r);
+  const agg=rs.length?Math.max(...rs)*0.6+(rs.reduce((a,b)=>a+b,0)/rs.length)*0.4:0;
+  paintGauge(agg);
+  const ms=GRID.map(p=>metricsAt(p[2],i)),mean=k=>ms.length?ms.reduce((a,b)=>a+(b[k]||0),0)/ms.length:0;
+  document.getElementById("m-cape").textContent=Math.round(mean("cape"));
+  document.getElementById("m-cin").textContent=Math.round(mean("cin"));
+  const li=mean("li");document.getElementById("m-li").textContent=isFinite(li)?li.toFixed(1):"—";
+  document.getElementById("m-trig").textContent=(mean("trigger")*100|0)+"%";
+
+  ranked.sort((a,b)=>b.r-a.r);
+  document.getElementById("hot").innerHTML=ranked.slice(0,6).map(x=>
+    '<div class="hotrow"><span class="sw" style="background:'+colorFor(x.r)+'"></span><span class="nm">'+x.name+'</span><span class="sc">'+x.r.toFixed(2)+'</span></div>').join("")
+    ||'<div class="hotrow"><span class="nm" style="color:var(--muted)">—</span></div>';
+}
+function paintGauge(r){const arc=document.getElementById("dial-arc"),C=251;
+  arc.style.strokeDashoffset=(C*(1-r)).toFixed(1);arc.setAttribute("stroke",colorFor(r));
+  document.getElementById("dial-val").textContent=r.toFixed(2);
+  const c=CLASS[classOf(r)];document.getElementById("regime").textContent=c.name;document.getElementById("regsub").textContent=c.sub;
+  document.getElementById("track-cursor").style.left=(r*100)+"%";}
+
+function drawRadarSites(){
+  radsiteLayer.clearLayers();
+  RADAR_SITES.forEach(s=>{const m=L.circleMarker([s[1],s[2]],{renderer:canvasR,radius:5,weight:2,color:css("--transition"),fillColor:"#fff",fillOpacity:.9});
+    m.bindTooltip("📡 "+s[0]+"<br><span style='color:var(--muted)'>site radar national · emplacement indicatif</span>",{direction:"top"});m.addTo(radsiteLayer);});
+}
+
+async function loadRainviewer(){
+  try{const d=await (await fetch("https://api.rainviewer.com/public/weather-maps.json",{cache:"no-store"})).json();
+    RV.host=d.host||RV.host;const past=(d.radar&&d.radar.past)||[],now=(d.radar&&d.radar.nowcast)||[];
+    RV.pastCount=past.length;RV.radar=past.concat(now);RV.sat=(d.satellite&&d.satellite.infrared)||[];showRadarFrame();
+  }catch(e){}
+}
+function frameForHour(frames,i){if(!frames.length)return null;
+  if(i===0)return frames[Math.max(0,RV.pastCount-1)]||frames[frames.length-1];
+  const fc=frames.slice(RV.pastCount);if(fc.length)return fc[Math.min(fc.length-1,i-1)];return frames[frames.length-1];}
+function showRadarFrame(){
+  if(radarLayer){map.removeLayer(radarLayer);radarLayer=null;}
+  if(satLayer){map.removeLayer(satLayer);satLayer=null;}
+  if(document.getElementById("L-sat").checked&&RV.sat.length){const f=frameForHour(RV.sat,hourIdx);
+    if(f)satLayer=L.tileLayer(RV.host+f.path+"/256/{z}/{x}/{y}/0/0_0.png",{opacity:.5,zIndex:350,attribution:"RainViewer"}).addTo(map);}
+  if(document.getElementById("L-radar").checked&&RV.radar.length){const f=frameForHour(RV.radar,hourIdx);
+    if(f)radarLayer=L.tileLayer(RV.host+f.path+"/256/{z}/{x}/{y}/4/1_1.png",{opacity:.62,zIndex:400,attribution:"RainViewer"}).addTo(map);}
+}
+
+function toggleFoudre(on){const box=document.getElementById("foudre"),fr=document.getElementById("foudre-frame");
+  box.classList.toggle("on",on);
+  if(on&&fr.src==="about:blank"){const R=REGIONS[region];
+    fr.src="https://map.blitzortung.org/#"+Math.max(5,R.zoom)+"/"+R.center[0]+"/"+R.center[1];
+    setTimeout(()=>{try{if(fr.contentWindow&&fr.contentWindow.length===0)return;}catch(e){
+      box.innerHTML='<div class="fb"><b>Foudre en direct (communautaire).</b><br>Intégration bloquée par la source. Ouvrir : <a target="_blank" rel="noopener" href="https://map.blitzortung.org/">map.blitzortung.org</a>.<br><br>À traiter comme une corroboration d’affichage, jamais comme une confirmation.</div>';}},2600);}}
+
+function buildRegionSelect(){const sel=document.getElementById("region");
+  Object.entries(REGIONS).forEach(([k,v])=>{const o=document.createElement("option");o.value=k;o.textContent=v.label;sel.appendChild(o);});
+  sel.value="belgium";
+  sel.addEventListener("change",()=>{stopPlay();loadRegion(sel.value);
+    if(document.getElementById("L-foudre").checked){document.getElementById("foudre-frame").src="about:blank";toggleFoudre(true);}});}
+function bindLayers(){
+  ["L-surface","L-stations"].forEach(id=>document.getElementById(id).addEventListener("change",render));
+  document.getElementById("L-prov").addEventListener("change",()=>{const on=document.getElementById("L-prov").checked;
+    if(on&&REGIONS[region].prov)provLayer.addTo(map);else map.removeLayer(provLayer);});
+  document.getElementById("L-radsite").addEventListener("change",e=>{if(e.target.checked)radsiteLayer.addTo(map);else map.removeLayer(radsiteLayer);});
+  document.getElementById("L-radar").addEventListener("change",showRadarFrame);
+  document.getElementById("L-sat").addEventListener("change",showRadarFrame);
+  document.getElementById("L-foudre").addEventListener("change",e=>toggleFoudre(e.target.checked));}
+function bindTime(){const s=document.getElementById("time");
+  s.addEventListener("input",()=>{hourIdx=+s.value;render();});
+  document.getElementById("play").addEventListener("click",()=>playTimer?stopPlay():startPlay());}
+function startPlay(){const s=document.getElementById("time");document.getElementById("play").innerHTML="&#10074;&#10074;";
+  playTimer=setInterval(()=>{hourIdx=(hourIdx+1)%(HOURS.length||1);s.value=hourIdx;render();},900);}
+function stopPlay(){if(playTimer)clearInterval(playTimer);playTimer=null;document.getElementById("play").innerHTML="&#9654;";}
+function initTheme(){const saved=localStorage.getItem("mv-theme");if(saved)document.documentElement.dataset.theme=saved;
+  document.getElementById("theme").innerHTML=document.documentElement.dataset.theme==="light"?"&#9790;":"&#9728;";
+  document.getElementById("theme").addEventListener("click",()=>{const t=document.documentElement.dataset.theme==="light"?"dark":"light";
+    document.documentElement.dataset.theme=t;localStorage.setItem("mv-theme",t);
+    document.getElementById("theme").innerHTML=t==="light"?"&#9790;":"&#9728;";swapBasemap();drawRadarSites();render();});}
+
+initTheme();initMap();buildRegionSelect();bindLayers();bindTime();loadRainviewer();loadRegion("belgium");
+</script>
+</body>
+</html>
