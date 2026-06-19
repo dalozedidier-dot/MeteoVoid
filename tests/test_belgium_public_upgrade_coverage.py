@@ -99,13 +99,9 @@ def test_bulletin_live_transform_and_error_paths(monkeypatch: pytest.MonkeyPatch
     assert len(live["days"]) == 2
     assert live["convective_extremes"]["cape_max_j_kg"] == 1234.0
 
-    assert "models=" not in b5._openmeteo_url(
-        zone, model="best_match", timezone="UTC", days=1
-    )
+    assert "models=" not in b5._openmeteo_url(zone, model="best_match", timezone="UTC", days=1)
     assert b5._hourly_extremes({})["dew_point_max_c"] is None
-    assert b5._day_from_daily({"time": ["2026-01-01"], "ignored": "x"}, 0)[
-        "weather_label"
-    ]
+    assert b5._day_from_daily({"time": ["2026-01-01"], "ignored": "x"}, 0)["weather_label"]
     assert b5._national_days([], days=2) == []
     assert b5._summary_text([]) == "Bulletin 5 jours indisponible pour le moment."
 
