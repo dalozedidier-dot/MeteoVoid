@@ -102,8 +102,12 @@ function renderChaleur(){if(!$('hxBig')||!DASH)return;
 }
 /* ---- Réseau ---- */
 function renderNet(){const net=$('net');if(!net||!DASH)return;net.innerHTML='';
-  const list=DASH.stations.map(st=>({n:st.name,r:risk(st.h.cape[DASH.off],st.h.convective_inhibition[DASH.off],st.h.lifted_index[DASH.off],st.h.precipitation_probability[DASH.off],st.h.wind_gusts_10m[DASH.off]).r})).sort((a,b)=>b.r-a.r);
-  document.getElementById('netMeta').textContent=list.length+' stations · live';
+  const mapLive=(typeof CARTE!=='undefined'&&CARTE&&CARTE.source==='alert-watch-live'&&CARTE.stations&&CARTE.stations.length)?CARTE:null;
+  const source=mapLive||DASH;
+  const off=source.off||0,idx=source.i||0;
+  const list=(source.stations||[]).map(st=>({n:st.name,r:stationRiskValue(st,off,idx)})).sort((a,b)=>b.r-a.r);
+  const meta=document.getElementById('netMeta');
+  if(meta)meta.textContent=list.length+' stations · '+(mapLive?'Alert Watch live':'live');
   list.forEach(d=>{const c=cls(d.r);const el=document.createElement('div');el.className='det';
     el.innerHTML=`<span class="dot" style="background:${C[c]};box-shadow:0 0 10px ${C[c]}"></span><div><div class="nm">${d.n}</div><div class="lv">${NAMES[c]}</div></div><div class="sc">${d.r.toFixed(2)}</div>`;net.appendChild(el);});
 }
@@ -211,7 +215,7 @@ function rvTileLayer(frame,kind){
 }
 
 function makeMap(o){ // o: {map:null,...,ids}
-  return {map:null,canvas:null,surf:null,sta:null,rad:null,sat:null,net:null,prov:null,grid:[],stations:[],hours:[],off:0,i:0,step:.18,region:o.region,play:null,refresh:null,booted:false,ids:o,source:'pending',lastMapRefresh:null};
+  return {map:null,canvas:null,stationRenderer:null,surf:null,sta:null,rad:null,sat:null,net:null,prov:null,grid:[],stations:[],hours:[],off:0,i:0,step:.18,region:o.region,play:null,refresh:null,booted:false,ids:o,source:'pending',lastMapRefresh:null};
 }
 function defaultBelgiumRegion(){return {label:"Belgique",center:[50.6,4.6],zoom:8,bbox:{w:2.55,s:49.45,e:6.35,n:51.55},step:0.18,prov:true,stations:[["Uccle / Bruxelles",50.799,4.358],["Jodoigne",50.724,4.87],["Namur",50.467,4.872],["Liège",50.633,5.58],["Charleroi",50.411,4.445],["Mons",50.454,3.957],["Gand",51.054,3.717],["Anvers",51.219,4.403],["Hasselt",50.931,5.333],["Arlon",49.683,5.817]]};}
 function safeRegions(){return (typeof REGIONS!=="undefined"&&REGIONS&&REGIONS.belgium)?REGIONS:{belgium:defaultBelgiumRegion()};}
@@ -238,7 +242,7 @@ function seedMapFallback(S,grid,stations,label){const times=fallbackTimes();S.of
 function apiSeries(values, fallback, n){const arr=Array.isArray(values)?values:[];const out=[];for(let i=0;i<n;i++){const v=arr[i];out.push(v==null?fallback:Number(v));}return out;}
 function apiConstant(value,n){return Array.from({length:n},()=>value==null?null:Number(value));}
 function apiHourlyFromMapItem(item,hours){const n=Math.max(hours.length,1);const score=Number(item.score||0);return{time:hours.map(h=>h.time||h.hour),meteovoid_score:apiSeries(item.scores,score,n),cape:apiConstant(item.cape_jkg,n),convective_inhibition:apiConstant(item.cin_jkg,n),lifted_index:apiConstant(item.lifted_index_c,n),precipitation_probability:apiConstant(item.precip_probability_pct,n),wind_gusts_10m:apiConstant(item.wind_gust_ms,n),dew_point_2m:apiConstant(item.dew_point_c,n),temperature_2m:apiConstant(item.temperature_c,n)};}
-function applyMapLivePayload(S,payload,R){const hours=(payload.hours||[]).slice(0,48);S.off=0;S.hours=hours.map(h=>h.time||h.hour||'');S.grid=(payload.grid||[]).filter(p=>p.lat!=null&&p.lon!=null).map(p=>[Number(p.lat),Number(p.lon),apiHourlyFromMapItem(p,hours)]);S.stations=(payload.stations||[]).filter(s=>s.lat!=null&&s.lon!=null).map(s=>({name:s.name||s.station_id||'station',lat:Number(s.lat),lon:Number(s.lon),source:'alert-watch',score:s.score,h:apiHourlyFromMapItem(s,hours)}));S.source='alert-watch-live';S.lastMapRefresh=new Date();const sl=document.getElementById(S.ids.time);if(sl){sl.max=Math.max(S.hours.length-1,0);sl.value=0;}S.i=0;ensureStaticMapFallback(S,S.ids.eye?'euMap':'carteMap',R);mapRender(S);return S.grid.length>0||S.stations.length>0;}
+function applyMapLivePayload(S,payload,R){const hours=(payload.hours||[]).slice(0,48);S.off=0;S.hours=hours.map(h=>h.time||h.hour||'');S.grid=(payload.grid||[]).filter(p=>p.lat!=null&&p.lon!=null).map(p=>[Number(p.lat),Number(p.lon),apiHourlyFromMapItem(p,hours)]);S.stations=(payload.stations||[]).filter(s=>s.lat!=null&&s.lon!=null).map(s=>({name:s.name||s.station_id||'station',lat:Number(s.lat),lon:Number(s.lon),source:'alert-watch',score:s.score,h:apiHourlyFromMapItem(s,hours)}));S.source='alert-watch-live';S.lastMapRefresh=new Date();const sl=document.getElementById(S.ids.time);if(sl){sl.max=Math.max(S.hours.length-1,0);sl.value=0;}S.i=0;ensureStaticMapFallback(S,S.ids.eye?'euMap':'carteMap',R);mapRender(S);if(S===CARTE&&document.getElementById('net'))renderNet();return S.grid.length>0||S.stations.length>0;}
 async function trySiteApiMap(S,key,R){if(!window.MeteoVoidSiteApi||!window.MeteoVoidSiteApi.loadMapLiveFromSiteApi)return false;const payload=await window.MeteoVoidSiteApi.loadMapLiveFromSiteApi('api/',key);if(!payload)return false;return applyMapLivePayload(S,payload,R);}
 
 async function fetchJsonWithTimeout(url,ms){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),ms);try{const r=await fetch(url,{cache:"no-store",signal:controller.signal});if(!r.ok)throw new Error("HTTP "+r.status);return await r.json();}finally{clearTimeout(timer);}}
@@ -298,13 +302,19 @@ async function mapLoad(S,key,opts={}){let R=safeRegion(key);const silent=!!opts.
   }
 }
 function sRisk(h,off,i){if(h&&Array.isArray(h.meteovoid_score)){const v=h.meteovoid_score[off+i];if(v!=null&&!Number.isNaN(Number(v)))return clamp(Number(v));}return risk(h.cape[off+i],h.convective_inhibition[off+i],h.lifted_index[off+i],h.precipitation_probability[off+i],h.wind_gusts_10m[off+i]).r;}
+function arrVal(a,idx){return Array.isArray(a)?a[idx]:null;}
+function stationRiskValue(st,off,i){try{return sRisk(st.h,off||0,i||0);}catch(e){return clamp(Number(st.score||0));}}
+function stationSourceLabel(st){return st.source==='alert-watch'?'Alert Watch':(st.source||'Open-Meteo');}
+function fmtNum(v,digits,suffix){if(v==null||Number.isNaN(Number(v)))return '—';return Number(v).toFixed(digits)+(suffix||'');}
+function stationPopupHtml(st,r,off,i){const idx=(off||0)+(i||0),h=st.h||{},c=cls(r);return `<div class="mv-station-popup"><div class="mv-sp-title">${String(st.name||'station').replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]))}</div><div class="mv-sp-state" style="color:${C[c]}">${NAMES[c]} · ${r.toFixed(2)}</div><div class="mv-sp-grid"><span>CAPE</span><b>${fmtNum(arrVal(h.cape,idx),0,' J/kg')}</b><span>CIN</span><b>${fmtNum(arrVal(h.convective_inhibition,idx),0,'')}</b><span>LI</span><b>${fmtNum(arrVal(h.lifted_index,idx),1,'')}</b><span>Rafales</span><b>${fmtNum(arrVal(h.wind_gusts_10m,idx),0,'')}</b></div><div class="mv-sp-src">${stationSourceLabel(st)}</div></div>`;}
+function addStationMarker(S,st,r,i){const c=cls(r),col=C[c];const marker=L.circleMarker([st.lat,st.lon],{renderer:S.stationRenderer||S.canvas,pane:'mvStationsPane',interactive:true,bubblingMouseEvents:false,radius:c>=2?8:7,weight:2.4,color:'#EAF0FA',opacity:.96,fillColor:col,fillOpacity:.94,className:'mv-station-marker'});marker.bindTooltip('<b>'+st.name+'</b><br>bascule '+r.toFixed(2)+' · '+NAMES[c],{direction:'top',sticky:true});marker.bindPopup(stationPopupHtml(st,r,S.off,i),{maxWidth:260,closeButton:true});marker.on('mouseover',()=>{try{marker.setStyle({radius:c>=2?10:9,weight:3.2});marker.bringToFront();}catch(e){}});marker.on('mouseout',()=>{try{marker.setStyle({radius:c>=2?8:7,weight:2.4});}catch(e){}});marker.addTo(S.sta);return marker;}
 function hexToRgb(h){h=h.replace('#','');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
 const RGB=C.map(hexToRgb);
 function mix(a,b,t){return Math.round(a+(b-a)*t);}
 function rampColor(v,a){v=clamp(v||0);const x=v*(RGB.length-1),i=Math.min(RGB.length-2,Math.floor(x)),t=x-i;const A=RGB[i],B=RGB[i+1];return `rgba(${mix(A[0],B[0],t)},${mix(A[1],B[1],t)},${mix(A[2],B[2],t)},${a})`;}
 function makeRiskSurfaceLayer(S){return new (L.Layer.extend({
   initialize:function(){this._S=S;},
-  onAdd:function(map){this._map=map;this._canvas=L.DomUtil.create('canvas','mv-risk-canvas');this._canvas.style.position='absolute';this._canvas.style.pointerEvents='none';map.getPanes().overlayPane.appendChild(this._canvas);map.on('moveend zoomend resize viewreset',this._reset,this);this._reset();},
+  onAdd:function(map){this._map=map;this._canvas=L.DomUtil.create('canvas','mv-risk-canvas');this._canvas.style.position='absolute';this._canvas.style.pointerEvents='none';const pane=map.getPane('mvSurfacePane')||map.getPanes().overlayPane;pane.appendChild(this._canvas);map.on('moveend zoomend resize viewreset',this._reset,this);this._reset();},
   onRemove:function(map){map.off('moveend zoomend resize viewreset',this._reset,this);if(this._canvas&&this._canvas.parentNode)this._canvas.parentNode.removeChild(this._canvas);},
   _reset:function(){const map=this._map,S=this._S;if(!map||!S.grid||!S.grid.length)return;const size=map.getSize(),topLeft=map.containerPointToLayerPoint([0,0]),dpr=Math.min(2,window.devicePixelRatio||1);L.DomUtil.setPosition(this._canvas,topLeft);this._canvas.style.width=size.x+'px';this._canvas.style.height=size.y+'px';this._canvas.width=Math.max(1,Math.round(size.x*dpr));this._canvas.height=Math.max(1,Math.round(size.y*dpr));this._draw(size,dpr);},
   _draw:function(size,dpr){const map=this._map,S=this._S,idx=S.i||0,off=S.off||0;const samples=[];(S.grid||[]).forEach(p=>{try{samples.push({lat:p[0],lon:p[1],v:sRisk(p[2],off,idx),w:1});}catch(e){}});(S.stations||[]).forEach(st=>{try{samples.push({lat:st.lat,lon:st.lon,v:sRisk(st.h,off,idx),w:.65});}catch(e){}});if(!samples.length)return;const scale=size.x>900?7:6,ow=Math.max(1,Math.ceil(size.x/scale)),oh=Math.max(1,Math.ceil(size.y/scale));const tmp=document.createElement('canvas');tmp.width=ow;tmp.height=oh;const tctx=tmp.getContext('2d');for(let y=0;y<oh;y++){for(let x=0;x<ow;x++){const ll=map.containerPointToLatLng([x*scale+scale/2,y*scale+scale/2]);const cos=Math.cos(ll.lat*Math.PI/180);let sw=0,sv=0;for(const p of samples){const dx=(p.lon-ll.lng)*cos,dy=p.lat-ll.lat,d2=dx*dx+dy*dy;const ww=p.w/Math.pow(d2+.012,1.18);sw+=ww;sv+=p.v*ww;}const v=sw?sv/sw:0;tctx.fillStyle=rampColor(v,.07+.46*v);tctx.fillRect(x,y,1,1);}}const ctx=this._canvas.getContext('2d');ctx.clearRect(0,0,this._canvas.width,this._canvas.height);ctx.imageSmoothingEnabled=true;ctx.globalAlpha=.96;ctx.drawImage(tmp,0,0,this._canvas.width,this._canvas.height);}
@@ -316,7 +326,7 @@ function mapRender(S){const i=S.i,d=S.ids,R=safeRegion(S.region);
     const surf=document.getElementById(d.surf),sta=document.getElementById(d.sta),rad=document.getElementById(d.rad);
     if(surf&&surf.checked&&S.grid.length){makeRiskSurfaceLayer(S).addTo(S.surf);}
     S.sta.clearLayers();
-    if(sta&&sta.checked){S.stations.forEach(s=>{const r=sRisk(s.h,S.off,i);const m=L.circleMarker([s.lat,s.lon],{renderer:S.canvas,radius:6,weight:2.5,color:C[cls(r)],fillColor:'#fff',fillOpacity:.95});m.bindTooltip('<b>'+s.name+'</b><br>bascule '+r.toFixed(2)+' · '+NAMES[cls(r)]+'<br>CAPE '+Math.round(s.h.cape[S.off+i]||0)+' · LI '+(s.h.lifted_index[S.off+i]==null?'—':s.h.lifted_index[S.off+i].toFixed(1)),{direction:'top'});m.addTo(S.sta);});}
+    if(sta&&sta.checked){S.stations.forEach(s=>{const r=stationRiskValue(s,S.off,i);addStationMarker(S,s,r,i);});}
     if(S.rad){S.map.removeLayer(S.rad);S.rad=null;}if(S.sat){S.map.removeLayer(S.sat);S.sat=null;}
     if(d.sat&&document.getElementById(d.sat)&&document.getElementById(d.sat).checked&&RV.sat.length){const f=rvFrame(RV.sat,i);S.sat=rvTileLayer(f,'satellite');if(S.sat)S.sat.addTo(S.map);}
     if(rad&&rad.checked&&RV.radar.length){const f=rvFrame(RV.radar,i);S.rad=rvTileLayer(f,'radar');if(S.rad)S.rad.addTo(S.map);}
@@ -335,6 +345,9 @@ function mountMap(S,containerId){const R=safeRegion(S.region);ensureStaticMapFal
   if(typeof L==='undefined'){mapStatus(S,'LOCAL','Leaflet indisponible · repli visuel actif',C[1]);return;}
   try{
     S.canvas=L.canvas({padding:.5});S.map=L.map(containerId,{zoomControl:true,preferCanvas:true,worldCopyJump:true,maxZoom:12,zoomSnap:.25,wheelPxPerZoomLevel:90});
+    if(!S.map.getPane('mvSurfacePane')){S.map.createPane('mvSurfacePane');S.map.getPane('mvSurfacePane').style.zIndex=420;S.map.getPane('mvSurfacePane').style.pointerEvents='none';}
+    if(!S.map.getPane('mvStationsPane')){S.map.createPane('mvStationsPane');S.map.getPane('mvStationsPane').style.zIndex=760;S.map.getPane('mvStationsPane').style.pointerEvents='auto';}
+    S.stationRenderer=L.svg({pane:'mvStationsPane',padding:.5});
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,opacity:.36,attribution:'&copy; OpenStreetMap'}).addTo(S.map);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,attribution:'&copy; OSM &copy; CARTO'}).addTo(S.map);
     S.surf=L.layerGroup().addTo(S.map);S.sta=L.layerGroup().addTo(S.map);S.net=L.layerGroup();
