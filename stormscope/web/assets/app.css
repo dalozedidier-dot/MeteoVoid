@@ -107,6 +107,15 @@ select.mvsel{font:inherit;font-size:13px;color:var(--ink);background:var(--panel
 .lyrs input{accent-color:var(--bolt)}
 .mapbox{position:relative;border:1px solid var(--line);border-radius:18px;overflow:hidden;height:600px}
 .mapbox .lf{position:absolute;inset:0}
+
+.map-static-fallback{position:absolute;inset:0;z-index:250;pointer-events:none;opacity:.92;background:radial-gradient(70% 60% at 50% 44%,rgba(116,180,255,.09),transparent 62%),linear-gradient(180deg,rgba(8,13,24,.25),rgba(8,13,24,.6))}
+.map-static-fallback svg{width:100%;height:100%;display:block}
+.map-static-fallback .mf-grid{fill-opacity:.18;stroke:rgba(116,180,255,.18);stroke-width:1}
+.map-static-fallback .mf-province{fill:none;stroke:rgba(234,240,250,.36);stroke-width:1.2;stroke-dasharray:4 5}
+.map-static-fallback .mf-station{fill:#fff;stroke:#74B4FF;stroke-width:2;filter:drop-shadow(0 0 8px rgba(116,180,255,.7))}
+.map-static-fallback .mf-label{font-family:var(--mono);font-size:11px;fill:rgba(234,240,250,.72)}
+.map-static-fallback .mf-watermark{font-family:var(--mono);font-size:10px;letter-spacing:.12em;fill:rgba(131,149,176,.75)}
+.mapbox.leaflet-ready .map-static-fallback{opacity:.28}
 .leaflet-container{background:#0a1120;font:inherit}
 .leaflet-popup-content-wrapper,.leaflet-tooltip{background:var(--panel);color:var(--ink);border:1px solid var(--line)}.leaflet-tooltip-top:before{border-top-color:var(--line)}
 .maprail{position:absolute;top:12px;right:12px;z-index:1000;background:rgba(9,13,23,.86);border:1px solid var(--line);border-radius:14px;padding:12px 14px;backdrop-filter:blur(8px);min-width:172px}

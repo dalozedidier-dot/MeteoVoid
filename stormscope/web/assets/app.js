@@ -191,59 +191,98 @@ function safeRegions(){return (typeof REGIONS!=="undefined"&&REGIONS&&REGIONS.be
 function safeRegion(key){const regs=safeRegions();return regs[key]||regs.belgium||defaultBelgiumRegion();}
 function safeProvinceGeoJson(){return (typeof BE_PROV!=="undefined"&&BE_PROV&&BE_PROV.type)?BE_PROV:{type:"FeatureCollection",features:[]};}
 function fallbackTimes(){const base=new Date();base.setMinutes(0,0,0);return Array.from({length:18},(_,i)=>new Date(base.getTime()+i*3600000).toISOString().slice(0,16));}
+
+function mapStatus(S, word, sub, color){const d=S.ids||{};const w=document.getElementById(d.word), ss=document.getElementById(d.sub);if(w){w.textContent=word; if(color) w.style.color=color;}if(ss)ss.textContent=sub;}
+function projectPoint(lat, lon, bbox, width, height){const x=((lon-bbox.w)/(bbox.e-bbox.w))*width;const y=(1-((lat-bbox.s)/(bbox.n-bbox.s)))*height;return [Math.max(0,Math.min(width,x)),Math.max(0,Math.min(height,y))];}
+function riskColor(v){return C[cls(v||0)];}
+function buildStaticMapSvg(S, R){const w=1000,h=520,b=R.bbox||defaultBelgiumRegion().bbox;let rects='',dots='',prov='';const grid=S.grid&&S.grid.length?S.grid:[];grid.forEach(p=>{const hh=(R.step||S.step||0.34)/2;const a=projectPoint(p[0]-hh,p[1]-hh,b,w,h),c=projectPoint(p[0]+hh,p[1]+hh,b,w,h);const x=Math.min(a[0],c[0]),y=Math.min(a[1],c[1]),rw=Math.abs(c[0]-a[0]),rh=Math.abs(c[1]-a[1]);let rr=0;try{rr=sRisk(p[2],S.off||0,S.i||0);}catch(e){rr=.24;}rects+=`<rect class="mf-grid" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(4,rw).toFixed(1)}" height="${Math.max(4,rh).toFixed(1)}" fill="${riskColor(rr)}"/>`;});
+if(R.prov&&typeof BE_PROV!=='undefined'&&BE_PROV&&BE_PROV.features){BE_PROV.features.forEach(f=>{const rings=((f.geometry||{}).coordinates||[])[0]||[];if(!rings.length)return;const pts=rings.map(pt=>projectPoint(pt[1],pt[0],b,w,h).map(v=>v.toFixed(1)).join(',')).join(' ');prov+=`<polyline class="mf-province" points="${pts}"/>`;});}
+(S.stations||[]).forEach(st=>{const q=projectPoint(st.lat,st.lon,b,w,h);let rr=.24;try{rr=sRisk(st.h,S.off||0,S.i||0);}catch(e){}dots+=`<circle class="mf-station" cx="${q[0].toFixed(1)}" cy="${q[1].toFixed(1)}" r="5.5" stroke="${riskColor(rr)}"/><text class="mf-label" x="${(q[0]+9).toFixed(1)}" y="${(q[1]-7).toFixed(1)}">${String(st.name||'station').replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]))}</text>`;});
+return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet"><defs><radialGradient id="mfGlow" cx="50%" cy="45%" r="70%"><stop offset="0" stop-color="#17304f"/><stop offset="1" stop-color="#07101f"/></radialGradient></defs><rect width="${w}" height="${h}" fill="url(#mfGlow)"/>${rects}${prov}${dots}<text class="mf-watermark" x="22" y="36">METEOVOID · CARTE LOCALE DE SECOURS</text></svg>`;}
+function ensureStaticMapFallback(S, containerId, R){const box=document.getElementById(containerId)?.closest('.mapbox');if(!box)return;let el=box.querySelector('.map-static-fallback');if(!el){el=document.createElement('div');el.className='map-static-fallback';box.insertBefore(el,box.firstChild);}S.fallbackEl=el;if(R)el.innerHTML=buildStaticMapSvg(S,R);}
+function markLeafletReady(S){const box=S.map&&S.map.getContainer()?S.map.getContainer().closest('.mapbox'):null;if(box)box.classList.add('leaflet-ready');}
+
 function fallbackHourly(lat,lon,times){const phase=((lat*7+lon*11)%6)/6;const cape=[],cin=[],li=[],pp=[],gust=[];times.forEach((_,i)=>{const wave=(Math.sin((i/17+phase)*Math.PI*2)+1)/2;const pulse=(Math.sin((i/8+phase)*Math.PI)+1)/2;cape.push(Math.round(80+900*wave));cin.push(Math.round(35+45*(1-pulse)));li.push(+(3.5-5.5*wave).toFixed(1));pp.push(Math.round(10+45*pulse));gust.push(Math.round(18+24*wave));});return{time:times,cape,convective_inhibition:cin,lifted_index:li,precipitation_probability:pp,wind_gusts_10m:gust};}
 function seedMapFallback(S,grid,stations,label){const times=fallbackTimes();S.off=0;S.hours=times;S.grid=grid.map(p=>[p[0],p[1],fallbackHourly(p[0],p[1],times)]);S.stations=stations.map(s=>({name:s.name,lat:s.lat,lon:s.lon,h:fallbackHourly(s.lat,s.lon,times)}));S.source=label||'local-fallback';const sl=document.getElementById(S.ids.time);if(sl){sl.max=times.length-1;sl.value=0;}S.i=0;}
 async function fetchJsonWithTimeout(url,ms){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),ms);try{const r=await fetch(url,{cache:"no-store",signal:controller.signal});if(!r.ok)throw new Error("HTTP "+r.status);return await r.json();}finally{clearTimeout(timer);}}
-async function mapLoad(S,key){const R=safeRegion(key);
-  S.region=key;S.step=R.step;(document.getElementById(S.ids.load)||{}).classList?.add('on');
-  if(S.map){S.map.setView(R.center,R.zoom);setTimeout(()=>S.map.invalidateSize(),30);}
-  if(S.prov){S.map.removeLayer(S.prov);if(R.prov)S.prov.addTo(S.map);}
-  let grid=[];for(let la=R.bbox.s+R.step/2;la<R.bbox.n;la+=R.step)for(let lo=R.bbox.w+R.step/2;lo<R.bbox.e;lo+=R.step)grid.push([+la.toFixed(3),+lo.toFixed(3)]);
-  const stations=R.stations.map(s=>({name:s[0],lat:s[1],lon:s[2]}));
-  const cap=Math.max(8,90-stations.length);if(grid.length>cap){const k=Math.ceil(grid.length/cap);grid=grid.filter((_,i)=>i%k===0);}
+async function mapLoad(S,key){let R=safeRegion(key);
+  try{
+    R=safeRegion(key);
+    S.region=key;S.step=R.step;(document.getElementById(S.ids.load)||{}).classList?.add('on');
+    if(S.map){S.map.setView(R.center,R.zoom);setTimeout(()=>S.map.invalidateSize(),30);}
+    let grid=[];for(let la=R.bbox.s+R.step/2;la<R.bbox.n;la+=R.step)for(let lo=R.bbox.w+R.step/2;lo<R.bbox.e;lo+=R.step)grid.push([+la.toFixed(3),+lo.toFixed(3)]);
+    const stations=R.stations.map(s=>({name:s[0],lat:s[1],lon:s[2]}));
+    const cap=Math.max(8,90-stations.length);if(grid.length>cap){const k=Math.ceil(grid.length/cap);grid=grid.filter((_,i)=>i%k===0);}
 
-  // Affichage immédiat : la carte ne reste plus vide si Open-Meteo, RainViewer
-  // ou un bloqueur réseau ralentit le chargement.
-  seedMapFallback(S,grid,stations,'local-fallback');
-  mapRender(S);
+    // Affichage immédiat : même si Leaflet, Open-Meteo ou les tuiles externes
+    // bloquent, on pose une carte locale visible avant tout appel réseau.
+    seedMapFallback(S,grid,stations,'local-fallback');
+    ensureStaticMapFallback(S,'carteMap',R);
+    mapStatus(S,'LOCAL','carte de secours active',C[1]);
+    mapRender(S);
 
-  const pts=grid.concat(stations.map(s=>[s.lat,s.lon]));
-  const url="https://api.open-meteo.com/v1/forecast?latitude="+pts.map(p=>p[0]).join(",")+"&longitude="+pts.map(p=>p[1]).join(",")+"&hourly=cape,convective_inhibition,lifted_index,precipitation_probability,wind_gusts_10m&forecast_days=2&timezone=auto";
-  try{const data=await fetchJsonWithTimeout(url,7000);const arr=Array.isArray(data)?data:[data];if(!arr.length||!arr[0].hourly||!arr[0].hourly.time)throw new Error('Open-Meteo payload invalide');const t=arr[0].hourly.time,nowIso=new Date().toISOString().slice(0,13);let off=t.findIndex(x=>x.slice(0,13)>=nowIso);if(off<0)off=0;S.off=off;S.hours=t.slice(off,off+18);S.grid=grid.map((p,i)=>[p[0],p[1],arr[i].hourly]);S.stations=stations.map((s,i)=>({name:s.name,lat:s.lat,lon:s.lon,h:arr[grid.length+i].hourly}));S.source='open-meteo-live';
-   const sl=document.getElementById(S.ids.time);if(sl){sl.max=S.hours.length-1;sl.value=0;}S.i=0;mapRender(S);
-  }catch(e){S.source='local-fallback';mapRender(S);}
-  (document.getElementById(S.ids.load)||{}).classList?.remove('on');
+    try{
+      if(S.prov){S.map.removeLayer(S.prov);if(R.prov)S.prov.addTo(S.map);}
+    }catch(e){/* La couche province ne doit jamais bloquer la carte. */}
+
+    const pts=grid.concat(stations.map(s=>[s.lat,s.lon]));
+    const url="https://api.open-meteo.com/v1/forecast?latitude="+pts.map(p=>p[0]).join(",")+"&longitude="+pts.map(p=>p[1]).join(",")+"&hourly=cape,convective_inhibition,lifted_index,precipitation_probability,wind_gusts_10m&forecast_days=2&timezone=auto";
+    try{const data=await fetchJsonWithTimeout(url,7000);const arr=Array.isArray(data)?data:[data];if(!arr.length||!arr[0].hourly||!arr[0].hourly.time)throw new Error('Open-Meteo payload invalide');const t=arr[0].hourly.time,nowIso=new Date().toISOString().slice(0,13);let off=t.findIndex(x=>x.slice(0,13)>=nowIso);if(off<0)off=0;S.off=off;S.hours=t.slice(off,off+18);S.grid=grid.map((p,i)=>[p[0],p[1],arr[i].hourly]);S.stations=stations.map((s,i)=>({name:s.name,lat:s.lat,lon:s.lon,h:arr[grid.length+i].hourly}));S.source='open-meteo-live';
+     const sl=document.getElementById(S.ids.time);if(sl){sl.max=S.hours.length-1;sl.value=0;}S.i=0;ensureStaticMapFallback(S,'carteMap',R);mapRender(S);
+    }catch(e){S.source='local-fallback';ensureStaticMapFallback(S,'carteMap',R);mapRender(S);}
+  }catch(e){
+    const R2=safeRegion(key);
+    seedMapFallback(S,gridFor(R2).slice(0,24),(R2.stations||[]).map(s=>({name:s[0],lat:s[1],lon:s[2]})),'emergency-fallback');
+    ensureStaticMapFallback(S,'carteMap',R2);
+    mapStatus(S,'LOCAL','repli visuel actif',C[1]);
+  }finally{
+    (document.getElementById(S.ids.load)||{}).classList?.remove('on');
+    if(S.map)setTimeout(()=>S.map.invalidateSize(),80);
+  }
 }
 function sRisk(h,off,i){return risk(h.cape[off+i],h.convective_inhibition[off+i],h.lifted_index[off+i],h.precipitation_probability[off+i],h.wind_gusts_10m[off+i]).r;}
-function mapRender(S){const i=S.i,d=S.ids;
-  S.surf.clearLayers();
-  if(document.getElementById(d.surf).checked){const hh=S.step/2;S.grid.forEach(p=>{const r=sRisk(p[2],S.off,i);L.rectangle([[p[0]-hh,p[1]-hh],[p[0]+hh,p[1]+hh]],{renderer:S.canvas,stroke:false,fillColor:C[cls(r)],fillOpacity:.10+.5*r}).addTo(S.surf);});}
-  S.sta.clearLayers();
-  if(document.getElementById(d.sta).checked){S.stations.forEach(s=>{const r=sRisk(s.h,S.off,i);const m=L.circleMarker([s.lat,s.lon],{renderer:S.canvas,radius:6,weight:2.5,color:C[cls(r)],fillColor:"#fff",fillOpacity:.95});m.bindTooltip("<b>"+s.name+"</b><br>bascule "+r.toFixed(2)+" · "+NAMES[cls(r)]+"<br>CAPE "+Math.round(s.h.cape[S.off+i]||0)+" · LI "+(s.h.lifted_index[S.off+i]==null?"—":s.h.lifted_index[S.off+i].toFixed(1)),{direction:"top"});m.addTo(S.sta);});}
-  if(S.rad){S.map.removeLayer(S.rad);S.rad=null;}if(S.sat){S.map.removeLayer(S.sat);S.sat=null;}
-  if(d.sat&&document.getElementById(d.sat)&&document.getElementById(d.sat).checked&&RV.sat.length){const f=rvFrame(RV.sat,i);if(f)S.sat=L.tileLayer(RV.host+f.path+"/256/{z}/{x}/{y}/0/0_0.png",{opacity:.5,zIndex:350}).addTo(S.map);}
-  if(document.getElementById(d.rad).checked&&RV.radar.length){const f=rvFrame(RV.radar,i);if(f)S.rad=L.tileLayer(RV.host+f.path+"/256/{z}/{x}/{y}/2/1_1.png",{opacity:.62,zIndex:400}).addTo(S.map);}
-  const rs=S.grid.map(p=>sRisk(p[2],S.off,i));const agg=rs.length?Math.max(...rs)*.6+rs.reduce((a,b)=>a+b,0)/rs.length*.4:0;
-  document.getElementById(d.word).textContent=NAMES[cls(agg)];document.getElementById(d.word).style.color=C[cls(agg)];
-  document.getElementById(d.sub).textContent="bascule "+agg.toFixed(2);
-  const iso=S.hours[i];document.getElementById(d.tl).textContent=i===0?"maintenant":"+"+i+" h · "+new Date(iso).toLocaleTimeString('fr-BE',{hour:'2-digit'});
-  if(d.eye)document.getElementById(d.eye).textContent=(safeRegion(S.region).label||"Belgique")+" · "+(i===0?"maintenant":"+"+i+" h");
+function mapRender(S){const i=S.i,d=S.ids,R=safeRegion(S.region);
+  try{
+    ensureStaticMapFallback(S,d.eye?'euMap':'carteMap',R);
+    S.surf.clearLayers();
+    const surf=document.getElementById(d.surf),sta=document.getElementById(d.sta),rad=document.getElementById(d.rad);
+    if(surf&&surf.checked){const hh=S.step/2;S.grid.forEach(p=>{const r=sRisk(p[2],S.off,i);L.rectangle([[p[0]-hh,p[1]-hh],[p[0]+hh,p[1]+hh]],{renderer:S.canvas,stroke:false,fillColor:C[cls(r)],fillOpacity:.10+.5*r}).addTo(S.surf);});}
+    S.sta.clearLayers();
+    if(sta&&sta.checked){S.stations.forEach(s=>{const r=sRisk(s.h,S.off,i);const m=L.circleMarker([s.lat,s.lon],{renderer:S.canvas,radius:6,weight:2.5,color:C[cls(r)],fillColor:'#fff',fillOpacity:.95});m.bindTooltip('<b>'+s.name+'</b><br>bascule '+r.toFixed(2)+' · '+NAMES[cls(r)]+'<br>CAPE '+Math.round(s.h.cape[S.off+i]||0)+' · LI '+(s.h.lifted_index[S.off+i]==null?'—':s.h.lifted_index[S.off+i].toFixed(1)),{direction:'top'});m.addTo(S.sta);});}
+    if(S.rad){S.map.removeLayer(S.rad);S.rad=null;}if(S.sat){S.map.removeLayer(S.sat);S.sat=null;}
+    if(d.sat&&document.getElementById(d.sat)&&document.getElementById(d.sat).checked&&RV.sat.length){const f=rvFrame(RV.sat,i);if(f)S.sat=L.tileLayer(RV.host+f.path+'/256/{z}/{x}/{y}/0/0_0.png',{opacity:.5,zIndex:350}).addTo(S.map);}
+    if(rad&&rad.checked&&RV.radar.length){const f=rvFrame(RV.radar,i);if(f)S.rad=L.tileLayer(RV.host+f.path+'/256/{z}/{x}/{y}/2/1_1.png',{opacity:.62,zIndex:400}).addTo(S.map);}
+    const rs=S.grid.map(p=>sRisk(p[2],S.off,i));const agg=rs.length?Math.max(...rs)*.6+rs.reduce((a,b)=>a+b,0)/rs.length*.4:0;
+    mapStatus(S,NAMES[cls(agg)],'bascule '+agg.toFixed(2)+(S.source==='local-fallback'?' · fallback local':''),C[cls(agg)]);
+    const iso=S.hours[i];const tl=document.getElementById(d.tl);if(tl)tl.textContent=i===0?'maintenant':'+'+i+' h · '+new Date(iso).toLocaleTimeString('fr-BE',{hour:'2-digit'});
+    if(d.eye)document.getElementById(d.eye).textContent=(safeRegion(S.region).label||'Belgique')+' · '+(i===0?'maintenant':'+'+i+' h');
+    markLeafletReady(S);
+  }catch(e){
+    ensureStaticMapFallback(S,d.eye?'euMap':'carteMap',R);
+    mapStatus(S,'LOCAL','repli visuel actif',C[1]);
+  }
 }
-function mountMap(S,containerId){if(S.booted){setTimeout(()=>S.map.invalidateSize(),100);return;}S.booted=true;
-  S.canvas=L.canvas({padding:.5});S.map=L.map(containerId,{zoomControl:true,preferCanvas:true,worldCopyJump:true});
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,opacity:.36,attribution:'&copy; OpenStreetMap'}).addTo(S.map);
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",{subdomains:"abcd",maxZoom:19,attribution:'&copy; OSM &copy; CARTO'}).addTo(S.map);
-  S.surf=L.layerGroup().addTo(S.map);S.sta=L.layerGroup().addTo(S.map);S.net=L.layerGroup();
-  S.prov=L.geoJSON(safeProvinceGeoJson(),{style:{color:'#7B8EA8',weight:1.4,opacity:.75,dashArray:"3 4",fill:false}});
-  const d=S.ids;
-  [d.surf,d.sta].forEach(id=>document.getElementById(id).addEventListener('change',()=>mapRender(S)));
-  document.getElementById(d.rad).addEventListener('change',()=>mapRender(S));
-  if(d.sat&&document.getElementById(d.sat))document.getElementById(d.sat).addEventListener('change',()=>mapRender(S));
-  if(d.net&&document.getElementById(d.net))document.getElementById(d.net).addEventListener('change',e=>{if(e.target.checked){S.net.clearLayers();RADAR_SITES.forEach(s=>{const m=L.circleMarker([s[1],s[2]],{renderer:S.canvas,radius:5,weight:2,color:'#F2B23E',fillColor:"#fff",fillOpacity:.9});m.bindTooltip("📡 "+s[0]+" · site radar (indicatif)",{direction:"top"});m.addTo(S.net);});S.net.addTo(S.map);}else S.map.removeLayer(S.net);});
-  document.getElementById(d.time).addEventListener('input',e=>{S.i=+e.target.value;mapRender(S);});
-  document.getElementById(d.play).addEventListener('click',()=>{const b=document.getElementById(d.play),sl=document.getElementById(d.time);if(S.play){clearInterval(S.play);S.play=null;b.innerHTML="&#9654;";return;}b.innerHTML="&#10074;&#10074;";S.play=setInterval(()=>{S.i=(S.i+1)%(S.hours.length||1);sl.value=S.i;mapRender(S);},900);});
-  if(d.region){const sel=document.getElementById(d.region);Object.entries(safeRegions()).forEach(([k,v])=>{const o=document.createElement('option');o.value=k;o.textContent=v.label;sel.appendChild(o);});sel.value=S.region;sel.addEventListener('change',()=>{if(S.play){clearInterval(S.play);S.play=null;document.getElementById(d.play).innerHTML="&#9654;";}mapLoad(S,sel.value);});}
-  setTimeout(()=>S.map.invalidateSize(),100);mapLoad(S,S.region);
+function mountMap(S,containerId){const R=safeRegion(S.region);ensureStaticMapFallback(S,containerId,R);
+  if(S.booted){setTimeout(()=>{if(S.map)S.map.invalidateSize();mapRender(S);},100);return;}S.booted=true;
+  if(typeof L==='undefined'){mapStatus(S,'LOCAL','Leaflet indisponible · repli visuel actif',C[1]);return;}
+  try{
+    S.canvas=L.canvas({padding:.5});S.map=L.map(containerId,{zoomControl:true,preferCanvas:true,worldCopyJump:true});
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,opacity:.36,attribution:'&copy; OpenStreetMap'}).addTo(S.map);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:19,attribution:'&copy; OSM &copy; CARTO'}).addTo(S.map);
+    S.surf=L.layerGroup().addTo(S.map);S.sta=L.layerGroup().addTo(S.map);S.net=L.layerGroup();
+    S.prov=L.geoJSON(safeProvinceGeoJson(),{style:{color:'#7B8EA8',weight:1.4,opacity:.75,dashArray:'3 4',fill:false}});
+    const d=S.ids;
+    [d.surf,d.sta].forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('change',()=>mapRender(S));});
+    const rad=document.getElementById(d.rad);if(rad)rad.addEventListener('change',()=>mapRender(S));
+    if(d.sat&&document.getElementById(d.sat))document.getElementById(d.sat).addEventListener('change',()=>mapRender(S));
+    if(d.net&&document.getElementById(d.net))document.getElementById(d.net).addEventListener('change',e=>{if(e.target.checked){S.net.clearLayers();RADAR_SITES.forEach(s=>{const m=L.circleMarker([s[1],s[2]],{renderer:S.canvas,radius:5,weight:2,color:'#F2B23E',fillColor:'#fff',fillOpacity:.9});m.bindTooltip('📡 '+s[0]+' · site radar (indicatif)',{direction:'top'});m.addTo(S.net);});S.net.addTo(S.map);}else S.map.removeLayer(S.net);});
+    const time=document.getElementById(d.time);if(time)time.addEventListener('input',e=>{S.i=+e.target.value;mapRender(S);});
+    const play=document.getElementById(d.play);if(play)play.addEventListener('click',()=>{const b=document.getElementById(d.play),sl=document.getElementById(d.time);if(S.play){clearInterval(S.play);S.play=null;b.innerHTML='&#9654;';return;}b.innerHTML='&#10074;&#10074;';S.play=setInterval(()=>{S.i=(S.i+1)%(S.hours.length||1);if(sl)sl.value=S.i;mapRender(S);},900);});
+    if(d.region){const sel=document.getElementById(d.region);if(sel){Object.entries(safeRegions()).forEach(([k,v])=>{const o=document.createElement('option');o.value=k;o.textContent=v.label;sel.appendChild(o);});sel.value=S.region;sel.addEventListener('change',()=>{if(S.play){clearInterval(S.play);S.play=null;const p=document.getElementById(d.play);if(p)p.innerHTML='&#9654;';}mapLoad(S,sel.value);});}}
+    setTimeout(()=>S.map.invalidateSize(),100);mapLoad(S,S.region);
+  }catch(e){
+    mapStatus(S,'LOCAL','Leaflet en erreur · repli visuel actif',C[1]);
+  }
 }
 const CARTE=makeMap({region:(PAGE.region||"belgium"),surf:"cL-surf",sta:"cL-sta",rad:"cL-rad",sat:"cL-sat",time:"cTime",play:"cPlay",tl:"cTl",word:"cWord",sub:"cSub",load:"cLoad"});
 const EU=makeMap({region:"europe",surf:"eL-surf",sta:"eL-sta",rad:"eL-rad",net:"eL-net",time:"eTime",play:"ePlay",tl:"eTl",word:"euWord",sub:"euSub",eye:"euEye",load:"eLoad",region_sel:true});

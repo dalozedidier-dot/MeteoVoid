@@ -20,5 +20,7 @@ def test_stormscope_map_has_immediate_fallback_and_safe_geojson(tmp_path: Path) 
     assert "fetchJsonWithTimeout(url,7000)" in app_js
     assert "local-fallback" in app_js
     assert "tile.openstreetmap.org" in app_js
-    assert "meteovoid-stormscope-static-v3" in sw_js
+    assert "map-static-fallback" in app_js
+    assert "repli visuel actif" in app_js
+    assert "meteovoid-stormscope-static-v4" in sw_js
     assert "networkFirst(event.request)" in sw_js
