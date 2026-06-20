@@ -107,6 +107,7 @@ select.mvsel{font:inherit;font-size:13px;color:var(--ink);background:var(--panel
 .lyrs input{accent-color:var(--bolt)}
 .mapbox{position:relative;border:1px solid var(--line);border-radius:18px;overflow:hidden;height:600px}
 .mapbox .lf{position:absolute;inset:0}
+.mv-risk-canvas{opacity:.92;filter:blur(.6px) saturate(1.12);mix-blend-mode:screen;will-change:transform}
 
 .map-static-fallback{position:absolute;inset:0;z-index:250;pointer-events:none;opacity:.92;background:radial-gradient(70% 60% at 50% 44%,rgba(116,180,255,.09),transparent 62%),linear-gradient(180deg,rgba(8,13,24,.25),rgba(8,13,24,.6))}
 .map-static-fallback svg{width:100%;height:100%;display:block}
