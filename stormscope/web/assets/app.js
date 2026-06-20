@@ -204,6 +204,12 @@ function markLeafletReady(S){const box=S.map&&S.map.getContainer()?S.map.getCont
 
 function fallbackHourly(lat,lon,times){const phase=((lat*7+lon*11)%6)/6;const cape=[],cin=[],li=[],pp=[],gust=[];times.forEach((_,i)=>{const wave=(Math.sin((i/17+phase)*Math.PI*2)+1)/2;const pulse=(Math.sin((i/8+phase)*Math.PI)+1)/2;cape.push(Math.round(80+900*wave));cin.push(Math.round(35+45*(1-pulse)));li.push(+(3.5-5.5*wave).toFixed(1));pp.push(Math.round(10+45*pulse));gust.push(Math.round(18+24*wave));});return{time:times,cape,convective_inhibition:cin,lifted_index:li,precipitation_probability:pp,wind_gusts_10m:gust};}
 function seedMapFallback(S,grid,stations,label){const times=fallbackTimes();S.off=0;S.hours=times;S.grid=grid.map(p=>[p[0],p[1],fallbackHourly(p[0],p[1],times)]);S.stations=stations.map(s=>({name:s.name,lat:s.lat,lon:s.lon,h:fallbackHourly(s.lat,s.lon,times)}));S.source=label||'local-fallback';const sl=document.getElementById(S.ids.time);if(sl){sl.max=times.length-1;sl.value=0;}S.i=0;}
+function apiSeries(values, fallback, n){const arr=Array.isArray(values)?values:[];const out=[];for(let i=0;i<n;i++){const v=arr[i];out.push(v==null?fallback:Number(v));}return out;}
+function apiConstant(value,n){return Array.from({length:n},()=>value==null?null:Number(value));}
+function apiHourlyFromMapItem(item,hours){const n=Math.max(hours.length,1);const score=Number(item.score||0);return{time:hours.map(h=>h.time||h.hour),meteovoid_score:apiSeries(item.scores,score,n),cape:apiConstant(item.cape_jkg,n),convective_inhibition:apiConstant(item.cin_jkg,n),lifted_index:apiConstant(item.lifted_index_c,n),precipitation_probability:apiConstant(item.precip_probability_pct,n),wind_gusts_10m:apiConstant(item.wind_gust_ms,n),dew_point_2m:apiConstant(item.dew_point_c,n),temperature_2m:apiConstant(item.temperature_c,n)};}
+function applyMapLivePayload(S,payload,R){const hours=(payload.hours||[]).slice(0,48);S.off=0;S.hours=hours.map(h=>h.time||h.hour||'');S.grid=(payload.grid||[]).filter(p=>p.lat!=null&&p.lon!=null).map(p=>[Number(p.lat),Number(p.lon),apiHourlyFromMapItem(p,hours)]);S.stations=(payload.stations||[]).filter(s=>s.lat!=null&&s.lon!=null).map(s=>({name:s.name||s.station_id||'station',lat:Number(s.lat),lon:Number(s.lon),source:'alert-watch',score:s.score,h:apiHourlyFromMapItem(s,hours)}));S.source='alert-watch-live';const sl=document.getElementById(S.ids.time);if(sl){sl.max=Math.max(S.hours.length-1,0);sl.value=0;}S.i=0;ensureStaticMapFallback(S,S.ids.eye?'euMap':'carteMap',R);mapRender(S);return S.grid.length>0||S.stations.length>0;}
+async function trySiteApiMap(S,key,R){if(!window.MeteoVoidSiteApi||!window.MeteoVoidSiteApi.loadMapLiveFromSiteApi)return false;const payload=await window.MeteoVoidSiteApi.loadMapLiveFromSiteApi('api/',key);if(!payload)return false;return applyMapLivePayload(S,payload,R);}
+
 async function fetchJsonWithTimeout(url,ms){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),ms);try{const r=await fetch(url,{cache:"no-store",signal:controller.signal});if(!r.ok)throw new Error("HTTP "+r.status);return await r.json();}finally{clearTimeout(timer);}}
 async function mapLoad(S,key){let R=safeRegion(key);
   try{
@@ -225,11 +231,13 @@ async function mapLoad(S,key){let R=safeRegion(key);
       if(S.prov){S.map.removeLayer(S.prov);if(R.prov)S.prov.addTo(S.map);}
     }catch(e){/* La couche province ne doit jamais bloquer la carte. */}
 
+    try{const siteOk=await trySiteApiMap(S,key,R);if(siteOk){return;}}catch(e){/* API du site indisponible : repli Open-Meteo. */}
+
     const pts=grid.concat(stations.map(s=>[s.lat,s.lon]));
     const url="https://api.open-meteo.com/v1/forecast?latitude="+pts.map(p=>p[0]).join(",")+"&longitude="+pts.map(p=>p[1]).join(",")+"&hourly=cape,convective_inhibition,lifted_index,precipitation_probability,wind_gusts_10m&forecast_days=2&timezone=auto";
     try{const data=await fetchJsonWithTimeout(url,7000);const arr=Array.isArray(data)?data:[data];if(!arr.length||!arr[0].hourly||!arr[0].hourly.time)throw new Error('Open-Meteo payload invalide');const t=arr[0].hourly.time,nowIso=new Date().toISOString().slice(0,13);let off=t.findIndex(x=>x.slice(0,13)>=nowIso);if(off<0)off=0;S.off=off;S.hours=t.slice(off,off+18);S.grid=grid.map((p,i)=>[p[0],p[1],arr[i].hourly]);S.stations=stations.map((s,i)=>({name:s.name,lat:s.lat,lon:s.lon,h:arr[grid.length+i].hourly}));S.source='open-meteo-live';
-     const sl=document.getElementById(S.ids.time);if(sl){sl.max=S.hours.length-1;sl.value=0;}S.i=0;ensureStaticMapFallback(S,'carteMap',R);mapRender(S);
-    }catch(e){S.source='local-fallback';ensureStaticMapFallback(S,'carteMap',R);mapRender(S);}
+     const sl=document.getElementById(S.ids.time);if(sl){sl.max=S.hours.length-1;sl.value=0;}S.i=0;ensureStaticMapFallback(S,S.ids.eye?'euMap':'carteMap',R);mapRender(S);
+    }catch(e){S.source='local-fallback';ensureStaticMapFallback(S,S.ids.eye?'euMap':'carteMap',R);mapRender(S);}
   }catch(e){
     const R2=safeRegion(key);
     seedMapFallback(S,gridFor(R2).slice(0,24),(R2.stations||[]).map(s=>({name:s[0],lat:s[1],lon:s[2]})),'emergency-fallback');
@@ -240,7 +248,7 @@ async function mapLoad(S,key){let R=safeRegion(key);
     if(S.map)setTimeout(()=>S.map.invalidateSize(),80);
   }
 }
-function sRisk(h,off,i){return risk(h.cape[off+i],h.convective_inhibition[off+i],h.lifted_index[off+i],h.precipitation_probability[off+i],h.wind_gusts_10m[off+i]).r;}
+function sRisk(h,off,i){if(h&&Array.isArray(h.meteovoid_score)){const v=h.meteovoid_score[off+i];if(v!=null&&!Number.isNaN(Number(v)))return clamp(Number(v));}return risk(h.cape[off+i],h.convective_inhibition[off+i],h.lifted_index[off+i],h.precipitation_probability[off+i],h.wind_gusts_10m[off+i]).r;}
 function mapRender(S){const i=S.i,d=S.ids,R=safeRegion(S.region);
   try{
     ensureStaticMapFallback(S,d.eye?'euMap':'carteMap',R);
@@ -253,7 +261,7 @@ function mapRender(S){const i=S.i,d=S.ids,R=safeRegion(S.region);
     if(d.sat&&document.getElementById(d.sat)&&document.getElementById(d.sat).checked&&RV.sat.length){const f=rvFrame(RV.sat,i);if(f)S.sat=L.tileLayer(RV.host+f.path+'/256/{z}/{x}/{y}/0/0_0.png',{opacity:.5,zIndex:350}).addTo(S.map);}
     if(rad&&rad.checked&&RV.radar.length){const f=rvFrame(RV.radar,i);if(f)S.rad=L.tileLayer(RV.host+f.path+'/256/{z}/{x}/{y}/2/1_1.png',{opacity:.62,zIndex:400}).addTo(S.map);}
     const rs=S.grid.map(p=>sRisk(p[2],S.off,i));const agg=rs.length?Math.max(...rs)*.6+rs.reduce((a,b)=>a+b,0)/rs.length*.4:0;
-    mapStatus(S,NAMES[cls(agg)],'bascule '+agg.toFixed(2)+(S.source==='local-fallback'?' · fallback local':''),C[cls(agg)]);
+    mapStatus(S,NAMES[cls(agg)],'bascule '+agg.toFixed(2)+(S.source==='alert-watch-live'?' · Alert Watch live':(S.source==='open-meteo-live'?' · Open-Meteo live':(S.source==='local-fallback'?' · fallback local':''))),C[cls(agg)]);
     const iso=S.hours[i];const tl=document.getElementById(d.tl);if(tl)tl.textContent=i===0?'maintenant':'+'+i+' h · '+new Date(iso).toLocaleTimeString('fr-BE',{hour:'2-digit'});
     if(d.eye)document.getElementById(d.eye).textContent=(safeRegion(S.region).label||'Belgique')+' · '+(i===0?'maintenant':'+'+i+' h');
     markLeafletReady(S);

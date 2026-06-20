@@ -10,8 +10,8 @@
  *   - En local (file://) ou hors run : pas d'api/ -> repli Open-Meteo.
  *   - Sur GitHub Pages avec un run publié : api/*.json peuplé -> API.
  *
- * Cet adaptateur N'EST PAS branché par défaut. Voir docs/INTEGRATION.md,
- * étape « Brancher l'API du site », pour l'activer (USE_SITE_API = true).
+ * Cet adaptateur est branché par Storm-scope : api/map_live.json et les
+ * endpoints Belgium Alert Watch passent avant tout recalcul navigateur.
  *
  * --- CONTRATS D'ENDPOINTS (vérifiés sur build à report-dir vide ; confirmer
  *     les champs marqués (?) contre un run réel avant mise en production) ---
@@ -94,5 +94,15 @@ async function loadModelFromSiteApi(base='api/'){
   };
 }
 
+
+async function loadMapLiveFromSiteApi(base='api/', region='belgium'){
+  if(region !== 'belgium') return null;
+  const payload = await getJSON(base+'map_live.json');
+  if(!payload || payload.contract !== 'meteovoid_belgium_map_live_v1') return null;
+  if(!Array.isArray(payload.hours) || !payload.hours.length) return null;
+  if(!Array.isArray(payload.grid) && !Array.isArray(payload.stations)) return null;
+  return payload;
+}
+
 /* Exposé global pour app.js */
-window.MeteoVoidSiteApi = { loadModelFromSiteApi, getJSON };
+window.MeteoVoidSiteApi = { loadModelFromSiteApi, loadMapLiveFromSiteApi, getJSON };

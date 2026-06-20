@@ -22,5 +22,9 @@ def test_stormscope_map_has_immediate_fallback_and_safe_geojson(tmp_path: Path) 
     assert "tile.openstreetmap.org" in app_js
     assert "map-static-fallback" in app_js
     assert "repli visuel actif" in app_js
-    assert "meteovoid-stormscope-static-v4" in sw_js
+    assert "meteovoid-stormscope-static-v5" in sw_js
     assert "networkFirst(event.request)" in sw_js
+    assert "trySiteApiMap" in app_js
+    assert "alert-watch-live" in app_js
+    adapter_js = (site_dir / "assets" / "site-api-adapter.js").read_text(encoding="utf-8")
+    assert "loadMapLiveFromSiteApi" in adapter_js

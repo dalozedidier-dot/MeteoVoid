@@ -235,6 +235,7 @@ def test_build_index_produces_site_and_api(tmp_path: Path) -> None:
         "validation",
         "radar",
         "europe",
+        "map_live",
         "index",
     ]:
         api_file = site_dir / "api" / f"{name}.json"
@@ -245,6 +246,21 @@ def test_build_index_produces_site_and_api(tmp_path: Path) -> None:
     assert set(vm) == {"meta", "simple", "operational", "heat", "expert", "bulletin"}
     assert len(vm["operational"]["blocks"]) == 7
     assert vm["operational"]["timeline"]["hours"]
+
+
+def test_map_live_api_exposes_alert_watch_map_payload(tmp_path: Path) -> None:
+    report_dir = _minimal_report_dir(tmp_path)
+    site_dir = tmp_path / "site"
+
+    site.build_index(report_dir, site_dir)
+
+    payload = json.loads((site_dir / "api" / "map_live.json").read_text(encoding="utf-8"))
+    assert payload["contract"] == "meteovoid_belgium_map_live_v1"
+    assert payload["source"] == "belgium_alert_watch"
+    assert payload["hours"]
+    assert payload["stations"]
+    assert payload["stations"][0]["scores"]
+    assert payload["summary"]["station_count"] >= 1
 
 
 def test_latest_api_has_expected_shape(tmp_path: Path) -> None:

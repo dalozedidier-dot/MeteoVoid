@@ -22,6 +22,7 @@ done client side in vanilla JS, so the layout stays easy to evolve.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import math
 import os
@@ -2440,7 +2441,174 @@ def _build_europe_model_legacy(report_dir: Path, vm: dict[str, Any]) -> dict[str
     }
 
 
-def build_api(vm: dict[str, Any], site_dir: Path) -> None:
+def _read_csv_rows(path: Path) -> list[dict[str, str]]:
+    """Read an optional CSV artifact without making the public build fragile."""
+    if not path.exists():
+        return []
+    try:
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            return [dict(row) for row in csv.DictReader(handle)]
+    except (OSError, csv.Error, UnicodeDecodeError):
+        return []
+
+
+def _series_from_base(base: Any, hours: list[dict[str, Any]]) -> list[float]:
+    """Project a static point score on the current Alert Watch hourly envelope."""
+    b = _clamp01(base)
+    if not hours:
+        return [round(b, 3)]
+    drivers = []
+    for row in hours:
+        if not isinstance(row, dict):
+            continue
+        drivers.append(_clamp01(row.get("max_score") or row.get("score") or row.get("mean_score")))
+    peak = max(drivers) if drivers else 0.0
+    if peak <= 0:
+        return [round(b, 3) for _ in hours]
+    out = []
+    for driver in drivers:
+        factor = 0.5 + 0.5 * (driver / peak)
+        out.append(round(_clamp01(b * factor), 3))
+    return out
+
+
+def _constant_series(value: Any, count: int) -> list[float | None]:
+    v = _num(value)
+    return [round(float(v), 3) if v is not None else None for _ in range(max(count, 1))]
+
+
+def _build_map_live_api(vm: dict[str, Any], report_dir: Path) -> dict[str, Any]:
+    """Build the map-first contract consumed by Storm-scope.
+
+    The browser should not need to recalculate the Belgium map from Open-Meteo
+    when the Belgium Alert Watch workflow has already published validated
+    artifacts. This endpoint exposes the latest run as a map-ready payload.
+    """
+    meta = vm["meta"]
+    timeline = vm["operational"].get("timeline", {})
+    raw_hours = timeline.get("hours") if isinstance(timeline.get("hours"), list) else []
+    hours = []
+    for row in raw_hours[:48]:
+        if not isinstance(row, dict):
+            continue
+        score = _round(row.get("max_score") or row.get("score") or row.get("mean_score"), 3)
+        hours.append(
+            {
+                "time": row.get("time"),
+                "hour": row.get("hour"),
+                "score": score,
+                "mean_score": _round(row.get("mean_score"), 3),
+                "max_score": _round(row.get("max_score"), 3),
+                "severity": row.get("severity") or "normal",
+                "class": row.get("class") or _meta(row.get("severity"))["class"],
+            }
+        )
+    if not hours:
+        generated = str(meta.get("generated_at") or "")[:13]
+        severity = vm["simple"].get("severity", {})
+        severity = severity if isinstance(severity, dict) else {}
+        hours = [
+            {
+                "time": generated,
+                "hour": _hour_label(generated),
+                "score": vm["simple"].get("model_score") or 0.0,
+                "severity": severity.get("key") or "normal",
+                "class": severity.get("class") or "calm",
+            }
+        ]
+
+    grid_rows = _read_csv_rows(report_dir / "native_convective_grid.csv")
+    if not grid_rows:
+        grid_rows = _read_csv_rows(report_dir / "weather_layers_grid.csv")
+
+    grid: list[dict[str, Any]] = []
+    for row in grid_rows:
+        lat = _num(row.get("lat"))
+        lon = _num(row.get("lon"))
+        if lat is None or lon is None:
+            continue
+        base_score = (
+            _num(row.get("storm_formation_score"))
+            or _num(row.get("native_convective_score"))
+            or vm["simple"].get("model_score")
+            or 0.0
+        )
+        grid.append(
+            {
+                "lat": lat,
+                "lon": lon,
+                "score": _round(base_score, 3),
+                "scores": _series_from_base(base_score, hours),
+                "level": row.get("storm_formation_level") or row.get("native_convective_level"),
+                "native_convective_score": _round(row.get("native_convective_score"), 3),
+                "storm_formation_score": _round(row.get("storm_formation_score"), 3),
+                "cape_jkg": _round(row.get("cape_j_kg"), 1),
+                "cin_jkg": _round(row.get("cin_j_kg"), 1),
+                "lifted_index_c": _round(row.get("lifted_index_c"), 1),
+                "dew_point_c": _round(row.get("dew_point_c"), 1),
+                "humidity_pct": _round(row.get("humidity_pct"), 1),
+                "nearest_station": row.get("nearest_station"),
+            }
+        )
+
+    stations: list[dict[str, Any]] = []
+    for station in vm["expert"].get("stations", []):
+        if not isinstance(station, dict):
+            continue
+        lat = _num(station.get("lat"))
+        lon = _num(station.get("lon"))
+        if lat is None or lon is None:
+            continue
+        score = _num(station.get("score")) or _num(station.get("convective_risk_score")) or 0.0
+        drivers = station.get("drivers") if isinstance(station.get("drivers"), dict) else {}
+        stations.append(
+            {
+                "station_id": station.get("station_id"),
+                "name": station.get("name"),
+                "region": station.get("region"),
+                "lat": lat,
+                "lon": lon,
+                "score": _round(score, 3),
+                "scores": _series_from_base(score, hours),
+                "severity": (
+                    station.get("severity", {}).get("key")
+                    if isinstance(station.get("severity"), dict)
+                    else station.get("severity")
+                ),
+                "worst_time": station.get("worst_time"),
+                "heat_stress_score": station.get("heat_stress_score"),
+                "convective_risk_score": station.get("convective_risk_score"),
+                "temperature_c": drivers.get("temperature_c"),
+                "dew_point_c": drivers.get("dew_point_c"),
+                "precip_probability_pct": drivers.get("precip_prob_pct"),
+                "wind_gust_ms": drivers.get("wind_gust_ms"),
+                "signals": station.get("signals") or [],
+            }
+        )
+
+    return {
+        "contract": "meteovoid_belgium_map_live_v1",
+        "generated_at": meta.get("generated_at"),
+        "run_id": meta.get("run_id"),
+        "region": "belgium",
+        "source": "belgium_alert_watch",
+        "mode": "latest_published_run",
+        "disclaimer": meta.get("disclaimer"),
+        "hours": hours,
+        "grid": grid,
+        "stations": stations,
+        "summary": {
+            "model_score": vm["simple"].get("model_score"),
+            "operational_level": vm["simple"].get("operational_level"),
+            "main_zone": vm["simple"].get("main_zone"),
+            "critical_window": vm["simple"].get("critical_window"),
+            "grid_count": len(grid),
+            "station_count": len(stations),
+        },
+    }
+
+
+def build_api(vm: dict[str, Any], site_dir: Path, report_dir: Path | None = None) -> None:
     """Write the clean static JSON API consumed by the page and external clients."""
     api_dir = site_dir / "api"
     meta = vm["meta"]
@@ -2563,6 +2731,8 @@ def build_api(vm: dict[str, Any], site_dir: Path) -> None:
         },
     )
     _write_json(api_dir / "watch.json", _build_alert_watch_api(vm))
+    if report_dir is not None:
+        _write_json(api_dir / "map_live.json", _build_map_live_api(vm, report_dir))
     _write_json(
         api_dir / "data_quality.json",
         {"generated_at": generated_at, **(vm["expert"].get("data_quality") or {})},
@@ -2587,6 +2757,7 @@ def build_api(vm: dict[str, Any], site_dir: Path) -> None:
                 "official_geodata": "api/official_geodata.json",
                 "convective_live": "api/convective_live.json",
                 "watch": "api/watch.json",
+                "map_live": "api/map_live.json",
                 "data_quality": "api/data_quality.json",
                 "europe": "api/europe.json",
             },
@@ -3001,7 +3172,7 @@ def build_index(report_dir: Path, site_dir: Path) -> dict[str, Any]:
     site_dir.mkdir(parents=True, exist_ok=True)
     _copy_outputs(report_dir, site_dir)
     vm = build_view_model(report_dir)
-    build_api(vm, site_dir)
+    build_api(vm, site_dir, report_dir)
 
     bootstrap = json.dumps(vm, ensure_ascii=False).replace("</", "<\\/")
     provinces = json.dumps(_load_belgium_provinces_geojson(report_dir), ensure_ascii=False).replace(
