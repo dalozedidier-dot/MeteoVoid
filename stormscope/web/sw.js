@@ -1,4 +1,4 @@
-const CACHE_NAME = "meteovoid-stormscope-static-v6-live-map";
+const CACHE_NAME = "meteovoid-stormscope-static-v5-live-map";
 const STATIC_ASSETS = [
   "./",
   "./index.html",
