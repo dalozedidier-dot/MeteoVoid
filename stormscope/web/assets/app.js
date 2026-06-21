@@ -28,94 +28,38 @@ function risk(cape,cin,li,pp,gust){cape=cape||0;cin=cin||0;li=(li==null?4:li);pp
 function humidex(t,td){if(t==null||td==null)return null;const e=6.11*Math.exp(5417.7530*(1/273.16-1/(273.15+td)));return t+0.5555*(e-10);}
 function hxClass(h){return h==null?0:h<30?0:h<40?1:h<45?2:3;}
 
-/* ---------------- Open-Meteo guardrail: cache + quota cooldown ---------------- */
-const OM={prefix:'meteovoid-openmeteo-cache-v4:',cooldownKey:'meteovoid-openmeteo-quota-cooldown-until',last:null,quotaCooldownMs:6*60*60*1000};
-function lsGet(k){try{return localStorage.getItem(k);}catch(e){return null;}}
-function lsSet(k,v){try{localStorage.setItem(k,v);return true;}catch(e){return false;}}
-function omHash(str){let h=2166136261;for(let i=0;i<str.length;i++){h^=str.charCodeAt(i);h+=((h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24));}return (h>>>0).toString(36);}
-function omKey(url){return OM.prefix+omHash(url);}
-function omRead(url,ttl,allowStale){try{const raw=lsGet(omKey(url));if(!raw)return null;const o=JSON.parse(raw);if(!o||!o.data||!o.savedAt)return null;const age=Date.now()-Number(o.savedAt);if(!allowStale&&age>ttl)return null;return{data:o.data,savedAt:Number(o.savedAt),ageMs:age,stale:age>ttl,label:o.label||'open-meteo'};}catch(e){return null;}}
-function omWrite(url,data,label){lsSet(omKey(url),JSON.stringify({savedAt:Date.now(),label:label||'open-meteo',data}));}
-function omCooldownUntil(){return Number(lsGet(OM.cooldownKey)||0);}
-function omSetCooldown(){const until=Date.now()+OM.quotaCooldownMs;lsSet(OM.cooldownKey,String(until));return until;}
-function omIsQuotaPayload(data){return !!(data&&data.error&&String(data.reason||data.message||'').toLowerCase().includes('limit'));}
-function omLooksQuotaError(e){return /429|quota|limit|daily api request limit/i.test(String(e&&e.message||e||''));}
-function omAge(ms){const m=Math.max(0,Math.round((ms||0)/60000));if(m<1)return 'à jour';if(m<60)return m+' min';return Math.round(m/60)+' h';}
-function openMeteoMetaText(meta){if(!meta)return 'Open-Meteo';if(meta.quota)return 'quota Open-Meteo dépassé · données figées '+omAge(meta.ageMs);if(meta.stale)return 'cache Open-Meteo · '+omAge(meta.ageMs);if(meta.cached)return 'cache Open-Meteo · '+omAge(meta.ageMs);return 'Open-Meteo à jour';}
-async function openMeteoFetchJson(url,ms,ttl,label,loader){const fresh=omRead(url,ttl,false);if(fresh){OM.last={cached:true,stale:false,quota:false,savedAt:fresh.savedAt,ageMs:fresh.ageMs,label};return fresh.data;}const stale=omRead(url,ttl,true);const until=omCooldownUntil();if(until>Date.now()){if(stale){OM.last={cached:true,stale:true,quota:true,savedAt:stale.savedAt,ageMs:Date.now()-stale.savedAt,label};return stale.data;}const err=new Error("quota Open-Meteo en pause jusqu'à "+new Date(until).toLocaleTimeString('fr-BE',{hour:'2-digit',minute:'2-digit'}));err.quota=true;throw err;}try{const data=await (loader?loader():fetchJsonWithTimeout(url,ms));if(omIsQuotaPayload(data)){omSetCooldown();const err=new Error(data.reason||'Daily API request limit exceeded');err.quota=true;throw err;}omWrite(url,data,label);OM.last={cached:false,stale:false,quota:false,savedAt:Date.now(),ageMs:0,label};return data;}catch(e){if(omLooksQuotaError(e)||e.quota)omSetCooldown();if(stale){OM.last={cached:true,stale:true,quota:!!(e.quota||omLooksQuotaError(e)),savedAt:stale.savedAt,ageMs:Date.now()-stale.savedAt,label,error:String(e&&e.message||e)};return stale.data;}throw e;}}
-function dashboardFromSitePayload(payload,R){const hours=(payload&&payload.hours||[]).slice(0,48);if(!hours.length)return null;const hh=hours.map(h=>h.time||h.hour||'');const grid=(payload.grid||[]).filter(p=>p.lat!=null&&p.lon!=null).map(p=>[Number(p.lat),Number(p.lon),apiHourlyFromMapItem(p,hours)]);const stations=(payload.stations||[]).filter(s=>s.lat!=null&&s.lon!=null).map(s=>({name:s.name||s.station_id||'station',lat:Number(s.lat),lon:Number(s.lon),source:'alert-watch',score:s.score,h:apiHourlyFromMapItem(s,hours)}));if(!grid.length&&!stations.length)return null;return{hours:hh,off:0,label:R.label,grid,stations,source:'alert-watch-live',cacheMeta:null};}
-async function loadDashboardFromSiteApi(key,R){if(!window.MeteoVoidSiteApi||!window.MeteoVoidSiteApi.loadMapLiveFromSiteApi)return null;const payload=await window.MeteoVoidSiteApi.loadMapLiveFromSiteApi('api/',key);return dashboardFromSitePayload(payload,R);}
-function showDashboardOffline(e){
-  if(!DASH)seedDashboardFallback((PAGE&&PAGE.region)||'belgium',e||new Error('source indisponible'));
-  renderVeille();renderHours();renderChaleur();renderNet();renderExpert();
-}
-
-/* ---------------- resilient local/static data fallback ---------------- */
-const COUNTRY_API={france:'country_france.json',germany:'country_germany.json',netherlands:'country_netherlands.json',spain:'country_spain.json',switzerland:'country_switzerland.json',denmark:'country_denmark.json'};
-function escHtml(s){return String(s==null?'':s).replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));}
-async function siteJson(path){
-  if(window.MeteoVoidSiteApi&&window.MeteoVoidSiteApi.getJSON)return await window.MeteoVoidSiteApi.getJSON(path);
-  try{const r=await fetch(path,{cache:'no-store'});return r.ok?await r.json():null;}catch(e){return null;}
-}
-function fallbackGridForRegion(R){let grid=gridFor(R);const stations=(R.stations||[]).map(s=>({name:s[0],lat:s[1],lon:s[2]}));const cap=mapPointCap?mapPointCap(R,stations.length):Math.max(8,90-stations.length);if(grid.length>cap){const k=Math.ceil(grid.length/cap);grid=grid.filter((_,i)=>i%k===0);}return {grid,stations};}
-function hFromDrivers(score,drivers,times){drivers=drivers||{};const n=times.length||18;const hourly=Array.isArray(drivers.hourly)?drivers.hourly:[];const sc=Array.from({length:n},(_,i)=>{const hv=hourly[i]&&hourly[i].s;return hv==null?Number(score||0):Number(hv);});return{time:times,meteovoid_score:sc,cape:apiConstant(drivers.cape_jkg,n),convective_inhibition:apiConstant(Math.abs(Number(drivers.cin_jkg||drivers.cin||65)),n),lifted_index:apiConstant(drivers.lifted_index??drivers.lifted_index_c,n),precipitation_probability:apiConstant(drivers.precip_prob_pct??drivers.precip_probability_pct,n),wind_gusts_10m:apiConstant(drivers.wind_gust_ms!=null?Number(drivers.wind_gust_ms)*3.6:drivers.wind_gusts_10m,n),dew_point_2m:apiConstant(drivers.dew_point_c,n),temperature_2m:apiConstant(drivers.temperature_c,n)};}
-function dashboardFromCountryPayload(payload,R,key){
-  if(!payload||!Array.isArray(payload.stations)||!payload.stations.length)return null;
-  const maxN=Math.max(18,...payload.stations.map(s=>Array.isArray(s.hourly)?s.hourly.length:0));
-  const times=fallbackTimes(maxN).slice(0,Math.min(48,maxN));
-  const stations=payload.stations.filter(s=>s.lat!=null&&s.lon!=null).map(s=>({name:s.name||s.station_id||'station',lat:Number(s.lat),lon:Number(s.lon),score:Number(s.score||0),source:'api-country',h:hFromDrivers(s.score,{...(s.drivers||{}),hourly:s.hourly},times)}));
-  if(!stations.length)return null;
-  return{hours:times,off:0,label:payload.label||R.label||key,source:'country-static-api',cacheMeta:null,grid:stations.map(s=>[s.lat,s.lon,s.h]),stations};
-}
-async function loadDashboardFromCountryApi(key,R){const file=COUNTRY_API[key];if(!file)return null;const payload=await siteJson('api/'+file);return dashboardFromCountryPayload(payload,R,key);}
-function seedDashboardFallback(key,reason){
-  const R=safeRegion(key),fg=fallbackGridForRegion(R),times=fallbackTimes(18),quota=!!(reason&&reason.quota)||omCooldownUntil()>Date.now()||omLooksQuotaError(reason);
-  DASH={hours:times,off:0,label:R.label,source:quota?'quota-local-fallback':'local-fallback',cacheMeta:{cached:true,stale:true,quota,ageMs:0,error:String(reason&&reason.message||reason||'source indisponible')},grid:fg.grid.map(p=>[p[0],p[1],fallbackHourly(p[0],p[1],times)]),stations:fg.stations.map(st=>({name:st.name,lat:st.lat,lon:st.lon,source:'mode-degrade',score:null,h:fallbackHourly(st.lat,st.lon,times)}))};
-}
-function dashboardSourceText(){if(!DASH)return 'Source indisponible.';if(DASH.source==='alert-watch-live')return 'Source : Alert Watch local.';if(DASH.source==='country-static-api')return 'Source : API locale pays, sans appel Open-Meteo direct.';if(DASH.source==='quota-local-fallback')return 'Open-Meteo a dépassé son quota : mode de secours local, radar séparé.';if(DASH.source==='local-fallback')return 'Source : mode de secours local, données modèle indisponibles.';if(DASH.cacheMeta)return 'Source : '+openMeteoMetaText(DASH.cacheMeta)+'.';return 'Source : '+(DASH.source||'inconnue')+'.';}
-
 
 
 let DASH=null;
 function gridFor(R){const g=[],b=R.bbox,st=R.step;for(let la=b.s+st/2;la<b.n;la+=st)for(let lo=b.w+st/2;lo<b.e;lo+=st)g.push([+la.toFixed(3),+lo.toFixed(3)]);return g;}
-async function loadDashboard(key){const R=REGIONS[key]||REGIONS.belgium;
-  try{const apiDash=await loadDashboardFromSiteApi(key,R);if(apiDash){DASH=apiDash;renderVeille();renderHours();renderChaleur();renderNet();renderExpert();return;}}catch(e){/* API locale absente ou incomplète. */}
-  try{const countryDash=await loadDashboardFromCountryApi(key,R);if(countryDash){DASH=countryDash;renderVeille();renderHours();renderChaleur();renderNet();renderExpert();return;}}catch(e){/* API pays absente : repli contrôlé. */}
-  if(omCooldownUntil()>Date.now()){seedDashboardFallback(key,Object.assign(new Error('quota Open-Meteo en pause'),{quota:true}));renderVeille();renderHours();renderChaleur();renderNet();renderExpert();return;}
+async function loadDashboard(key){const R=REGIONS[key]||REGIONS.belgium;DASH=null;
   let grid=gridFor(R);const stations=R.stations.map(s=>({name:s[0],lat:s[1],lon:s[2]}));
-  const cap=mapPointCap?mapPointCap(R,stations.length):Math.max(8,90-stations.length);if(grid.length>cap){const k=Math.ceil(grid.length/cap);grid=grid.filter((_,i)=>i%k===0);}
+  const cap=Math.max(8,90-stations.length);if(grid.length>cap){const k=Math.ceil(grid.length/cap);grid=grid.filter((_,i)=>i%k===0);}
   const pts=grid.concat(stations.map(s=>[s.lat,s.lon]));
   const url="https://api.open-meteo.com/v1/forecast?latitude="+pts.map(p=>p[0]).join(",")+"&longitude="+pts.map(p=>p[1]).join(",")+"&hourly=cape,convective_inhibition,lifted_index,precipitation_probability,wind_gusts_10m,temperature_2m,dew_point_2m&forecast_days=2&timezone=auto";
-  try{
-    const data=await openMeteoFetchJson(url,7000,LIVE_REFRESH_MS.dashboard,'dashboard');const arr=Array.isArray(data)?data:[data];
-    if(!arr.length||!arr[0].hourly||!arr[0].hourly.time)throw new Error('Open-Meteo payload invalide');
-    const t=arr[0].hourly.time,nowIso=new Date().toISOString().slice(0,13);let off=t.findIndex(x=>x.slice(0,13)>=nowIso);if(off<0)off=0;
-    DASH={hours:t.slice(off,off+18),off,label:R.label,source:(OM.last&&OM.last.cached)?'open-meteo-cache':'open-meteo-live',cacheMeta:OM.last,
-      grid:grid.map((p,i)=>[p[0],p[1],arr[i].hourly]),
-      stations:stations.map((s,i)=>({name:s.name,lat:s.lat,lon:s.lon,h:arr[grid.length+i].hourly}))};
-  }catch(e){seedDashboardFallback(key,e);}
+  const data=await(await fetch(url,{cache:"no-store"})).json();const arr=Array.isArray(data)?data:[data];
+  const t=arr[0].hourly.time,nowIso=new Date().toISOString().slice(0,13);let off=t.findIndex(x=>x.slice(0,13)>=nowIso);if(off<0)off=0;
+  DASH={hours:t.slice(off,off+18),off,label:R.label,
+    grid:grid.map((p,i)=>[p[0],p[1],arr[i].hourly]),
+    stations:stations.map((s,i)=>({name:s.name,lat:s.lat,lon:s.lon,h:arr[grid.length+i].hourly}))};
   renderVeille();renderHours();renderChaleur();renderNet();renderExpert();
 }
-function seriesVal(h,key,idx){const a=h&&h[key];return Array.isArray(a)?a[idx]:null;}
-function sampleRisk(sample,i){const h=Array.isArray(sample)?sample[2]:sample.h;const idx=(DASH.off||0)+i;if(h&&Array.isArray(h.meteovoid_score)){const v=h.meteovoid_score[idx];if(v!=null&&!Number.isNaN(Number(v)))return clamp(Number(v));}return risk(seriesVal(h,'cape',idx),seriesVal(h,'convective_inhibition',idx),seriesVal(h,'lifted_index',idx),seriesVal(h,'precipitation_probability',idx),seriesVal(h,'wind_gusts_10m',idx)).r;}
-function dashSamples(){return (DASH.grid&&DASH.grid.length)?DASH.grid:(DASH.stations||[]);}
-function aggAt(i){const rs=dashSamples().map(p=>sampleRisk(p,i)).filter(x=>x!=null&&!Number.isNaN(x));return rs.length?Math.max(...rs)*.6+rs.reduce((a,b)=>a+b,0)/rs.length*.4:0;}
-function meanAt(key,i){const idx=(DASH.off||0)+i;const v=dashSamples().map(p=>seriesVal(Array.isArray(p)?p[2]:p.h,key,idx)).filter(x=>x!=null&&!Number.isNaN(Number(x))).map(Number);return v.length?v.reduce((a,b)=>a+b,0)/v.length:0;}
+function aggAt(i){const rs=DASH.grid.map(p=>risk(p[2].cape[DASH.off+i],p[2].convective_inhibition[DASH.off+i],p[2].lifted_index[DASH.off+i],p[2].precipitation_probability[DASH.off+i],p[2].wind_gusts_10m[DASH.off+i]).r);return rs.length?Math.max(...rs)*.6+rs.reduce((a,b)=>a+b,0)/rs.length*.4:0;}
+function meanAt(key,i){const v=DASH.grid.map(p=>p[2][key][DASH.off+i]).filter(x=>x!=null);return v.length?v.reduce((a,b)=>a+b,0)/v.length:0;}
 
 /* ---- Veille ---- */
 function renderVeille(){if(!$('vWord')||!DASH)return;const rg=$('vRegion');if(rg)rg.textContent=DASH.label;const s=aggAt(0),c=cls(s);
   document.getElementById('vWord').textContent=NAMES[c].toUpperCase();
   document.getElementById('vAxis').textContent=s.toFixed(2)+" · "+NAMES[c].toLowerCase();
   // most exposed station
-  const ex=(DASH.stations||[]).map(st=>({n:st.name,r:stationRiskValue(st,DASH.off,0)})).sort((a,b)=>b.r-a.r)[0]||{n:'—',r:0};
+  const ex=DASH.stations.map(st=>({n:st.name,r:risk(st.h.cape[DASH.off],st.h.convective_inhibition[DASH.off],st.h.lifted_index[DASH.off],st.h.precipitation_probability[DASH.off],st.h.wind_gusts_10m[DASH.off]).r})).sort((a,b)=>b.r-a.r)[0];
   // peak hour
   let pk=0,pkv=0;DASH.hours.forEach((_,i)=>{const a=aggAt(i);if(a>pkv){pkv=a;pk=i;}});
   const pkHour=new Date(DASH.hours[pk]).toLocaleTimeString('fr-BE',{hour:'2-digit'});
   const tNow=Math.round(meanAt('temperature_2m',0));
-  const meta=dashboardSourceText();
-  document.getElementById('vRead').innerHTML=(c>=2
+  document.getElementById('vRead').innerHTML=c>=2
     ?`Ingrédients réunis : la fenêtre est ouverte. Zone la plus exposée : <em>${ex.n}</em>, pic vers <em>${pkHour}</em>. Anticipation modèle, pas confirmation radar.`
-    :`L'énergie ${c>=1?'s'+"'"+'accumule sous un couvercle qui tient encore':'reste faible'}. Zone la plus exposée : <em>${ex.n}</em>${c>=1?`, pic possible vers <em>${pkHour}</em>`:''}. Anticipation, pas confirmation radar.`)+` ${meta}`;
+    :`L'énergie ${c>=1?'s'+"'"+'accumule sous un couvercle qui tient encore':'reste faible'}. Zone la plus exposée : <em>${ex.n}</em>${c>=1?`, pic possible vers <em>${pkHour}</em>`:''}. Anticipation, pas confirmation radar.`;
   const cur=document.getElementById('cur');cur.style.left=(s*100)+'%';
   // cross-section
   const H=422,lidY=176,top=H-(s*H*0.92);
@@ -123,7 +67,7 @@ function renderVeille(){if(!$('vWord')||!DASH)return;const rg=$('vRegion');if(rg
   rect.setAttribute('y',top);rect.setAttribute('height',H-top);dot.setAttribute('cy',top);g.style.transform='scaleY(0)';
   if(reduce)g.style.transform='scaleY(1)';else requestAnimationFrame(()=>{g.style.transition='transform 1.2s cubic-bezier(.2,.85,.2,1)';g.style.transform='scaleY(1)';});
   if(top<lidY){const f=()=>{lit.style.opacity='1';setTimeout(()=>lit.style.opacity='.2',90);setTimeout(()=>lit.style.opacity='.85',190);setTimeout(()=>lit.style.opacity='.25',320);};reduce?lit.style.opacity='.85':setTimeout(f,1250);}else lit.style.opacity='0';
-  const hxVals=(DASH.stations||[]).map(st=>humidex(seriesVal(st.h,'temperature_2m',DASH.off||0),seriesVal(st.h,'dew_point_2m',DASH.off||0))).filter(x=>x!=null);const hxNow=Math.round(hxVals.length?Math.max(...hxVals):0);
+  const hxNow=Math.round(Math.max(...DASH.stations.map(st=>humidex(st.h.temperature_2m[DASH.off],st.h.dew_point_2m[DASH.off])||0)));
   document.getElementById('vChips').innerHTML=
     `<div class="chip"><span class="k">Pic</span><span class="v mono">${pkHour} h</span></div>`+
     `<div class="chip"><span class="k">Zone</span><span class="v">${ex.n.split(' / ')[0]}</span></div>`+
@@ -144,7 +88,7 @@ function renderHours(){const bars=$('bars');if(!bars||!DASH)return;bars.innerHTM
 function animBars(sel,vals){const f=document.querySelectorAll(sel+' .bar-fill');f.forEach((el,i)=>{el.style.height='0';requestAnimationFrame(()=>setTimeout(()=>el.style.height=(vals[i]*100)+'%',60+i*34));});}
 /* ---- Chaleur ---- */
 function renderChaleur(){if(!$('hxBig')||!DASH)return;
-  const hxByHour=DASH.hours.map((_,i)=>{const vals=(DASH.stations||[]).map(st=>humidex(seriesVal(st.h,'temperature_2m',(DASH.off||0)+i),seriesVal(st.h,'dew_point_2m',(DASH.off||0)+i))).filter(x=>x!=null);return vals.length?Math.max(...vals):0;});
+  const hxByHour=DASH.hours.map((_,i)=>Math.max(...DASH.stations.map(st=>humidex(st.h.temperature_2m[DASH.off+i],st.h.dew_point_2m[DASH.off+i])||0)));
   const mx=Math.round(Math.max(...hxByHour)),mc=hxClass(mx);
   document.getElementById('hxBig').textContent=mx;document.getElementById('hxBig').style.color=C[mc];
   const labels=['Confort','Inconfort','Forte gêne','Danger'];const cmf=document.getElementById('hxCmf');
@@ -163,7 +107,7 @@ function renderNet(){const net=$('net');if(!net||!DASH)return;net.innerHTML='';
   const off=source.off||0,idx=source.i||0;
   const list=(source.stations||[]).map(st=>({n:st.name,r:stationRiskValue(st,off,idx)})).sort((a,b)=>b.r-a.r);
   const meta=document.getElementById('netMeta');
-  if(meta)meta.textContent=list.length+' stations · '+(mapLive?'Alert Watch live':(DASH.source==='country-static-api'?'API locale pays':(DASH.source==='quota-local-fallback'?'mode secours quota':(DASH.source==='open-meteo-cache'?'Open-Meteo cache':(DASH.source==='local-fallback'?'mode secours':'live')))));
+  if(meta)meta.textContent=list.length+' stations · '+(mapLive?'Alert Watch live':'live');
   list.forEach(d=>{const c=cls(d.r);const el=document.createElement('div');el.className='det';
     el.innerHTML=`<span class="dot" style="background:${C[c]};box-shadow:0 0 10px ${C[c]}"></span><div><div class="nm">${d.n}</div><div class="lv">${NAMES[c]}</div></div><div class="sc">${d.r.toFixed(2)}</div>`;net.appendChild(el);});
 }
@@ -185,11 +129,6 @@ function renderExpert(){if(!$('comp')||!DASH)return;const i=0;const cape=meanAt(
 
 /* ---------------- bulletin ---------------- */
 let BULL=null;
-function makeFallbackBulletin(reason){
-  const key=(PAGE&&PAGE.region)||'belgium',R=safeRegion(key),days=14,n=days*24,times=fallbackTimes(n),base=R.center||[50.8,4.3],h=fallbackHourly(base[0],base[1],times),daily={time:[],temperature_2m_max:[],temperature_2m_min:[],precipitation_probability_max:[],weather_code:[],sunshine_duration:[]},dayRisk={};
-  for(let d=0;d<days;d++){const a=d*24,b=a+24,ts=h.temperature_2m.slice(a,b),pp=h.precipitation_probability.slice(a,b),rs=h.cape.slice(a,b).map((_,j)=>risk(h.cape[a+j],h.convective_inhibition[a+j],h.lifted_index[a+j],h.precipitation_probability[a+j],h.wind_gusts_10m[a+j]).r);const date=times[a].slice(0,10);daily.time.push(date);daily.temperature_2m_max.push(Math.max(...ts));daily.temperature_2m_min.push(Math.min(...ts));daily.precipitation_probability_max.push(Math.max(...pp));daily.weather_code.push(Math.max(...pp)>55?61:2);daily.sunshine_duration.push(Math.max(2,9-Math.max(...pp)/14)*3600);dayRisk[date]=Math.max(...rs);}
-  BULL={d:{hourly:{time:times,temperature_2m:h.temperature_2m,precipitation_probability:h.precipitation_probability,weather_code:times.map((_,i)=>h.precipitation_probability[i]>55?61:2),cape:h.cape,convective_inhibition:h.convective_inhibition,lifted_index:h.lifted_index,wind_gusts_10m:h.wind_gusts_10m},daily},dayRisk,source:(reason&&reason.quota)||omCooldownUntil()>Date.now()?'quota-local-fallback':'local-fallback',fallbackReason:String(reason&&reason.message||reason||'source indisponible')};
-}
 function wcat(c){if(c<=1)return'clear';if(c===2)return'partly';if(c===3)return'cloud';if(c===45||c===48)return'fog';if(c>=95)return'storm';if((c>=71&&c<=77)||c===85||c===86)return'snow';return'rain';}
 function wicon(c){const k=wcat(c),A='#F2B23E',B='#8395B0',R='#74B4FF',S='#EE4F5C';
  const sun=`<circle cx="12" cy="12" r="5" fill="${A}"/>`+[0,45,90,135,180,225,270,315].map(a=>{const r=a*Math.PI/180,x1=12+Math.cos(r)*8,y1=12+Math.sin(r)*8,x2=12+Math.cos(r)*10.5,y2=12+Math.sin(r)*10.5;return `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}" stroke="${A}" stroke-width="1.6" stroke-linecap="round"/>`;}).join('');
@@ -207,15 +146,14 @@ function wicon(c){const k=wcat(c),A='#F2B23E',B='#8395B0',R='#74B4FF',S='#EE4F5C
 async function ensureBulletin(){if(BULL){renderBulletin();return;}await loadBulletin();}
 async function loadBulletin(){
  const url="https://api.open-meteo.com/v1/forecast?latitude="+(PAGE.center?PAGE.center[0]:50.799)+"&longitude="+(PAGE.center?PAGE.center[1]:4.358)+"&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,weather_code,sunshine_duration&hourly=temperature_2m,precipitation_probability,weather_code,cape,convective_inhibition,lifted_index,wind_gusts_10m&forecast_days=14&timezone=auto";
- if(omCooldownUntil()>Date.now()){makeFallbackBulletin(Object.assign(new Error('quota Open-Meteo en pause'),{quota:true}));renderBulletin();return;}
- try{const d=await openMeteoFetchJson(url,9000,LIVE_REFRESH_MS.bulletin,'bulletin');if(!d||!d.hourly||!d.daily)throw new Error('Open-Meteo payload invalide');const dayRisk={};
+ try{const d=await(await fetch(url,{cache:"no-store"})).json();const dayRisk={};
   d.hourly.time.forEach((t,i)=>{const day=t.slice(0,10);const r=risk(d.hourly.cape[i],d.hourly.convective_inhibition[i],d.hourly.lifted_index[i],d.hourly.precipitation_probability[i],d.hourly.wind_gusts_10m[i]).r;if(!(day in dayRisk)||r>dayRisk[day])dayRisk[day]=r;});
-  BULL={d,dayRisk,cacheMeta:OM.last,source:(OM.last&&OM.last.cached)?'open-meteo-cache':'open-meteo-live'};renderBulletin();
- }catch(e){makeFallbackBulletin(e);renderBulletin();}}
+  BULL={d,dayRisk};renderBulletin();
+ }catch(e){document.getElementById('bullParts').innerHTML='<div class="part">indices indisponibles</div>';}}
 function hIdx(date,hh){return BULL.d.hourly.time.indexOf(date+'T'+hh+':00');}
 function dayRiskFor(date){return BULL.dayRisk[date]||0;}
 function renderBulletin(){renderParts();renderDays();renderChart();}
-function renderParts(){if(!$('bullParts'))return;const bl=$('bullLoc');if(bl)bl.textContent=(PAGE.label||'Belgique')+' · '+(BULL.source==='quota-local-fallback'?'mode secours quota':(BULL.source==='local-fallback'?'mode secours':(BULL.source==='open-meteo-cache'?'cache Open-Meteo':'live')));const d=BULL.d,today=d.daily.time[0];
+function renderParts(){if(!$('bullParts'))return;const bl=$('bullLoc');if(bl)bl.textContent=(PAGE.label||'Belgique')+' · live';const d=BULL.d,today=d.daily.time[0];
  document.getElementById('bullToday').textContent="Aujourd'hui · "+new Date(today).toLocaleDateString('fr-BE',{weekday:'long',day:'2-digit',month:'2-digit'});
  const parts=[['Matinée','09'],['Après-midi','15'],['Soirée','20'],['Nuit','23']];
  document.getElementById('bullParts').innerHTML=parts.map(([lab,hh])=>{let i=hIdx(today,hh);if(i<0)i=0;const t=Math.round(d.hourly.temperature_2m[i]),pp=d.hourly.precipitation_probability[i]||0,wc=d.hourly.weather_code[i];
@@ -245,7 +183,7 @@ function renderChart(){if(!$('bullChart'))return;const d=BULL.d,days=d.daily.tim
 
 /* ---------------- maps (Carte = Belgique, Europe = régions) ---------------- */
 
-const LIVE_REFRESH_MS={rainviewer:5*60*1000,mapFast:60*1000,mapSlow:30*60*1000,mapFallback:30*60*1000,dashboard:30*60*1000,bulletin:6*60*60*1000};
+const LIVE_REFRESH_MS={rainviewer:5*60*1000,mapFast:60*1000,mapSlow:10*60*1000,mapFallback:2*60*1000,dashboard:10*60*1000};
 const RV={host:"https://tilecache.rainviewer.com",radar:[],sat:[],past:0,lastUpdate:null,lastError:null,loading:null};
 async function refreshRainViewer(force=false){
   if(RV.loading&&!force)return RV.loading;
@@ -277,19 +215,19 @@ function rvTileLayer(frame,kind){
 }
 
 function makeMap(o){ // o: {map:null,...,ids}
-  return {map:null,canvas:null,stationRenderer:null,surf:null,sta:null,rad:null,sat:null,net:null,prov:null,grid:[],stations:[],hours:[],off:0,i:0,step:.18,region:o.region,play:null,refresh:null,booted:false,ids:o,source:'pending',cacheMeta:null,lastMapRefresh:null};
+  return {map:null,canvas:null,stationRenderer:null,surf:null,sta:null,rad:null,sat:null,net:null,prov:null,grid:[],stations:[],hours:[],off:0,i:0,step:.18,region:o.region,play:null,refresh:null,booted:false,ids:o,source:'pending',lastMapRefresh:null};
 }
 function defaultBelgiumRegion(){return {label:"Belgique",center:[50.6,4.6],zoom:8,bbox:{w:2.55,s:49.45,e:6.35,n:51.55},step:0.18,prov:true,stations:[["Uccle / Bruxelles",50.799,4.358],["Jodoigne",50.724,4.87],["Namur",50.467,4.872],["Liège",50.633,5.58],["Charleroi",50.411,4.445],["Mons",50.454,3.957],["Gand",51.054,3.717],["Anvers",51.219,4.403],["Hasselt",50.931,5.333],["Arlon",49.683,5.817]]};}
 function safeRegions(){return (typeof REGIONS!=="undefined"&&REGIONS&&REGIONS.belgium)?REGIONS:{belgium:defaultBelgiumRegion()};}
 function safeRegion(key){const regs=safeRegions();return regs[key]||regs.belgium||defaultBelgiumRegion();}
 function safeProvinceGeoJson(){return (typeof BE_PROV!=="undefined"&&BE_PROV&&BE_PROV.type)?BE_PROV:{type:"FeatureCollection",features:[]};}
-function fallbackTimes(n=18){const base=new Date();base.setMinutes(0,0,0);return Array.from({length:n},(_,i)=>new Date(base.getTime()+i*3600000).toISOString().slice(0,16));}
+function fallbackTimes(){const base=new Date();base.setMinutes(0,0,0);return Array.from({length:18},(_,i)=>new Date(base.getTime()+i*3600000).toISOString().slice(0,16));}
 
 function mapStatus(S, word, sub, color){const d=S.ids||{};const w=document.getElementById(d.word), ss=document.getElementById(d.sub);if(w){w.textContent=word; if(color) w.style.color=color;}if(ss)ss.textContent=sub;}
 function clockLabel(dt){return dt?dt.toLocaleTimeString('fr-BE',{hour:'2-digit',minute:'2-digit'}):'—';}
 function ageLabel(dt){if(!dt)return 'âge inconnu';const m=Math.max(0,Math.round((Date.now()-dt.getTime())/60000));return m<1?'à jour':m+' min';}
-function sourceText(S){return S.source==='alert-watch-live'?'Alert Watch live':S.source==='country-static-api'?'API locale pays':S.source==='quota-local-fallback'?'mode secours quota':S.source==='open-meteo-live'?'Open-Meteo live':S.source==='open-meteo-cache'?'Open-Meteo cache':S.source==='local-fallback'?'fallback local':S.source==='emergency-fallback'?'repli local':S.source||'source en attente';}
-function mapFreshness(S){const parts=[sourceText(S)];if(S.cacheMeta&&S.cacheMeta.cached)parts.push(openMeteoMetaText(S.cacheMeta));if(S.lastMapRefresh)parts.push('maj '+clockLabel(S.lastMapRefresh),ageLabel(S.lastMapRefresh));if(RV.lastUpdate)parts.push('radar '+clockLabel(RV.lastUpdate));return parts.join(' · ');}
+function sourceText(S){return S.source==='alert-watch-live'?'Alert Watch live':S.source==='open-meteo-live'?'Open-Meteo live':S.source==='local-fallback'?'fallback local':S.source==='emergency-fallback'?'repli local':S.source||'source en attente';}
+function mapFreshness(S){const parts=[sourceText(S)];if(S.lastMapRefresh)parts.push('maj '+clockLabel(S.lastMapRefresh),ageLabel(S.lastMapRefresh));if(RV.lastUpdate)parts.push('radar '+clockLabel(RV.lastUpdate));return parts.join(' · ');}
 function projectPoint(lat, lon, bbox, width, height){const x=((lon-bbox.w)/(bbox.e-bbox.w))*width;const y=(1-((lat-bbox.s)/(bbox.n-bbox.s)))*height;return [Math.max(0,Math.min(width,x)),Math.max(0,Math.min(height,y))];}
 function riskColor(v){return C[cls(v||0)];}
 function buildStaticMapSvg(S, R){const w=1000,h=520,b=R.bbox||defaultBelgiumRegion().bbox;let rects='',dots='',prov='';const grid=S.grid&&S.grid.length?S.grid:[];grid.forEach(p=>{const hh=(R.step||S.step||0.34)/2;const a=projectPoint(p[0]-hh,p[1]-hh,b,w,h),c=projectPoint(p[0]+hh,p[1]+hh,b,w,h);const x=Math.min(a[0],c[0]),y=Math.min(a[1],c[1]),rw=Math.abs(c[0]-a[0]),rh=Math.abs(c[1]-a[1]);let rr=0;try{rr=sRisk(p[2],S.off||0,S.i||0);}catch(e){rr=.24;}rects+=`<rect class="mf-grid" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(4,rw).toFixed(1)}" height="${Math.max(4,rh).toFixed(1)}" fill="${riskColor(rr)}"/>`;});
@@ -299,14 +237,13 @@ return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet"><defs><
 function ensureStaticMapFallback(S, containerId, R){const box=document.getElementById(containerId)?.closest('.mapbox');if(!box)return;let el=box.querySelector('.map-static-fallback');if(!el){el=document.createElement('div');el.className='map-static-fallback';box.insertBefore(el,box.firstChild);}S.fallbackEl=el;if(R)el.innerHTML=buildStaticMapSvg(S,R);}
 function markLeafletReady(S){const box=S.map&&S.map.getContainer()?S.map.getContainer().closest('.mapbox'):null;if(box)box.classList.add('leaflet-ready');}
 
-function fallbackHourly(lat,lon,times){const phase=((lat*7+lon*11)%6)/6;const cape=[],cin=[],li=[],pp=[],gust=[],temp=[],dew=[];times.forEach((_,i)=>{const wave=(Math.sin((i/17+phase)*Math.PI*2)+1)/2;const pulse=(Math.sin((i/8+phase)*Math.PI)+1)/2;const day=(Math.sin(((i%24)-7)/24*Math.PI*2)+1)/2;const t=16+10*day+3*wave;cape.push(Math.round(80+900*wave));cin.push(Math.round(35+45*(1-pulse)));li.push(+(3.5-5.5*wave).toFixed(1));pp.push(Math.round(10+45*pulse));gust.push(Math.round(18+24*wave));temp.push(+t.toFixed(1));dew.push(+(t-5-4*(1-pulse)).toFixed(1));});return{time:times,cape,convective_inhibition:cin,lifted_index:li,precipitation_probability:pp,wind_gusts_10m:gust,temperature_2m:temp,dew_point_2m:dew};}
-function seedMapFallback(S,grid,stations,label){const times=fallbackTimes();S.off=0;S.hours=times;S.grid=grid.map(p=>[p[0],p[1],fallbackHourly(p[0],p[1],times)]);S.stations=stations.map(s=>({name:s.name,lat:s.lat,lon:s.lon,h:fallbackHourly(s.lat,s.lon,times)}));S.source=label||'local-fallback';S.cacheMeta=null;const sl=document.getElementById(S.ids.time);if(sl){sl.max=times.length-1;sl.value=0;}S.i=0;}
+function fallbackHourly(lat,lon,times){const phase=((lat*7+lon*11)%6)/6;const cape=[],cin=[],li=[],pp=[],gust=[];times.forEach((_,i)=>{const wave=(Math.sin((i/17+phase)*Math.PI*2)+1)/2;const pulse=(Math.sin((i/8+phase)*Math.PI)+1)/2;cape.push(Math.round(80+900*wave));cin.push(Math.round(35+45*(1-pulse)));li.push(+(3.5-5.5*wave).toFixed(1));pp.push(Math.round(10+45*pulse));gust.push(Math.round(18+24*wave));});return{time:times,cape,convective_inhibition:cin,lifted_index:li,precipitation_probability:pp,wind_gusts_10m:gust};}
+function seedMapFallback(S,grid,stations,label){const times=fallbackTimes();S.off=0;S.hours=times;S.grid=grid.map(p=>[p[0],p[1],fallbackHourly(p[0],p[1],times)]);S.stations=stations.map(s=>({name:s.name,lat:s.lat,lon:s.lon,h:fallbackHourly(s.lat,s.lon,times)}));S.source=label||'local-fallback';const sl=document.getElementById(S.ids.time);if(sl){sl.max=times.length-1;sl.value=0;}S.i=0;}
 function apiSeries(values, fallback, n){const arr=Array.isArray(values)?values:[];const out=[];for(let i=0;i<n;i++){const v=arr[i];out.push(v==null?fallback:Number(v));}return out;}
 function apiConstant(value,n){return Array.from({length:n},()=>value==null?null:Number(value));}
 function apiHourlyFromMapItem(item,hours){const n=Math.max(hours.length,1);const score=Number(item.score||0);return{time:hours.map(h=>h.time||h.hour),meteovoid_score:apiSeries(item.scores,score,n),cape:apiConstant(item.cape_jkg,n),convective_inhibition:apiConstant(item.cin_jkg,n),lifted_index:apiConstant(item.lifted_index_c,n),precipitation_probability:apiConstant(item.precip_probability_pct,n),wind_gusts_10m:apiConstant(item.wind_gust_ms,n),dew_point_2m:apiConstant(item.dew_point_c,n),temperature_2m:apiConstant(item.temperature_c,n)};}
-function applyMapLivePayload(S,payload,R){const hours=(payload.hours||[]).slice(0,48);S.off=0;S.hours=hours.map(h=>h.time||h.hour||'');S.grid=(payload.grid||[]).filter(p=>p.lat!=null&&p.lon!=null).map(p=>[Number(p.lat),Number(p.lon),apiHourlyFromMapItem(p,hours)]);S.stations=(payload.stations||[]).filter(s=>s.lat!=null&&s.lon!=null).map(s=>({name:s.name||s.station_id||'station',lat:Number(s.lat),lon:Number(s.lon),source:'alert-watch',score:s.score,h:apiHourlyFromMapItem(s,hours)}));S.source='alert-watch-live';S.cacheMeta=null;S.lastMapRefresh=new Date();const sl=document.getElementById(S.ids.time);if(sl){sl.max=Math.max(S.hours.length-1,0);sl.value=0;}S.i=0;ensureStaticMapFallback(S,S.ids.eye?'euMap':'carteMap',R);mapRender(S);if(S===CARTE&&document.getElementById('net'))renderNet();return S.grid.length>0||S.stations.length>0;}
+function applyMapLivePayload(S,payload,R){const hours=(payload.hours||[]).slice(0,48);S.off=0;S.hours=hours.map(h=>h.time||h.hour||'');S.grid=(payload.grid||[]).filter(p=>p.lat!=null&&p.lon!=null).map(p=>[Number(p.lat),Number(p.lon),apiHourlyFromMapItem(p,hours)]);S.stations=(payload.stations||[]).filter(s=>s.lat!=null&&s.lon!=null).map(s=>({name:s.name||s.station_id||'station',lat:Number(s.lat),lon:Number(s.lon),source:'alert-watch',score:s.score,h:apiHourlyFromMapItem(s,hours)}));S.source='alert-watch-live';S.lastMapRefresh=new Date();const sl=document.getElementById(S.ids.time);if(sl){sl.max=Math.max(S.hours.length-1,0);sl.value=0;}S.i=0;ensureStaticMapFallback(S,S.ids.eye?'euMap':'carteMap',R);mapRender(S);if(S===CARTE&&document.getElementById('net'))renderNet();return S.grid.length>0||S.stations.length>0;}
 async function trySiteApiMap(S,key,R){if(!window.MeteoVoidSiteApi||!window.MeteoVoidSiteApi.loadMapLiveFromSiteApi)return false;const payload=await window.MeteoVoidSiteApi.loadMapLiveFromSiteApi('api/',key);if(!payload)return false;return applyMapLivePayload(S,payload,R);}
-async function tryCountryApiMap(S,key,R){const dash=await loadDashboardFromCountryApi(key,R);if(!dash)return false;S.off=dash.off;S.hours=dash.hours;S.grid=dash.grid;S.stations=dash.stations;S.source=dash.source;S.cacheMeta=null;S.lastMapRefresh=new Date();const sl=document.getElementById(S.ids.time);if(sl){sl.max=Math.max(S.hours.length-1,0);sl.value=0;}S.i=0;ensureStaticMapFallback(S,S.ids.eye?'euMap':'carteMap',R);mapRender(S);return true;}
 
 async function fetchJsonWithTimeout(url,ms){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),ms);try{const r=await fetch(url,{cache:"no-store",signal:controller.signal});if(!r.ok)throw new Error("HTTP "+r.status);return await r.json();}finally{clearTimeout(timer);}}
 function mapPointCap(R,stationCount){
@@ -318,7 +255,7 @@ function mapPointCap(R,stationCount){
 function scheduleMapAutoRefresh(S,key){
   if(S.refresh)clearTimeout(S.refresh);
   if(!S.booted)return;
-  const delay=S.source==='alert-watch-live'?LIVE_REFRESH_MS.mapFast:((S.source==='open-meteo-live'||S.source==='open-meteo-cache')?LIVE_REFRESH_MS.mapSlow:LIVE_REFRESH_MS.mapFallback);
+  const delay=S.source==='alert-watch-live'?LIVE_REFRESH_MS.mapFast:(S.source==='open-meteo-live'?LIVE_REFRESH_MS.mapSlow:LIVE_REFRESH_MS.mapFallback);
   S.refresh=setTimeout(()=>{
     if(document.hidden){scheduleMapAutoRefresh(S,key);return;}
     mapLoad(S,key,{silent:true,preferSiteOnly:S.source==='alert-watch-live'}).catch(()=>scheduleMapAutoRefresh(S,key));
@@ -347,16 +284,14 @@ async function mapLoad(S,key,opts={}){let R=safeRegion(key);const silent=!!opts.
       if(S.prov){S.map.removeLayer(S.prov);if(R.prov)S.prov.addTo(S.map);}
     }catch(e){/* La couche province ne doit jamais bloquer la carte. */}
 
-    try{const siteOk=await trySiteApiMap(S,key,R);if(siteOk){return;}}catch(e){/* API du site indisponible. */}
-    try{const countryOk=await tryCountryApiMap(S,key,R);if(countryOk){return;}}catch(e){/* API pays indisponible. */}
+    try{const siteOk=await trySiteApiMap(S,key,R);if(siteOk){return;}}catch(e){/* API du site indisponible : repli Open-Meteo. */}
     if(silent&&opts.preferSiteOnly&&S.grid.length){const rs=S.grid.map(p=>sRisk(p[2],S.off,S.i));const agg=rs.length?Math.max(...rs)*.6+rs.reduce((a,b)=>a+b,0)/rs.length*.4:0;mapStatus(S,NAMES[cls(agg)],'attente nouvelle donnée · '+mapFreshness(S),C[cls(agg)]);return;}
-    if(omCooldownUntil()>Date.now()){S.source='quota-local-fallback';S.cacheMeta={cached:true,stale:true,quota:true,ageMs:0};S.lastMapRefresh=S.lastMapRefresh||new Date();ensureStaticMapFallback(S,containerId,R);mapRender(S);return;}
 
     const pts=grid.concat(stations.map(s=>[s.lat,s.lon]));
     const url="https://api.open-meteo.com/v1/forecast?latitude="+pts.map(p=>p[0]).join(",")+"&longitude="+pts.map(p=>p[1]).join(",")+"&hourly=cape,convective_inhibition,lifted_index,precipitation_probability,wind_gusts_10m,temperature_2m,dew_point_2m&forecast_days=2&timezone=auto";
-    try{const data=await openMeteoFetchJson(url,7000,LIVE_REFRESH_MS.mapSlow,'map',()=>fetchJsonWithTimeout(url,7000));const arr=Array.isArray(data)?data:[data];if(!arr.length||!arr[0].hourly||!arr[0].hourly.time)throw new Error('Open-Meteo payload invalide');const t=arr[0].hourly.time,nowIso=new Date().toISOString().slice(0,13);let off=t.findIndex(x=>x.slice(0,13)>=nowIso);if(off<0)off=0;S.off=off;S.hours=t.slice(off,off+18);S.grid=grid.map((p,i)=>[p[0],p[1],arr[i].hourly]);S.stations=stations.map((s,i)=>({name:s.name,lat:s.lat,lon:s.lon,h:arr[grid.length+i].hourly}));S.source=(OM.last&&OM.last.cached)?'open-meteo-cache':'open-meteo-live';S.cacheMeta=OM.last;S.lastMapRefresh=new Date((OM.last&&OM.last.savedAt)||Date.now());
+    try{const data=await fetchJsonWithTimeout(url,7000);const arr=Array.isArray(data)?data:[data];if(!arr.length||!arr[0].hourly||!arr[0].hourly.time)throw new Error('Open-Meteo payload invalide');const t=arr[0].hourly.time,nowIso=new Date().toISOString().slice(0,13);let off=t.findIndex(x=>x.slice(0,13)>=nowIso);if(off<0)off=0;S.off=off;S.hours=t.slice(off,off+18);S.grid=grid.map((p,i)=>[p[0],p[1],arr[i].hourly]);S.stations=stations.map((s,i)=>({name:s.name,lat:s.lat,lon:s.lon,h:arr[grid.length+i].hourly}));S.source='open-meteo-live';S.lastMapRefresh=new Date();
      const sl=document.getElementById(S.ids.time);if(sl){sl.max=S.hours.length-1;sl.value=0;}S.i=0;ensureStaticMapFallback(S,containerId,R);mapRender(S);
-    }catch(e){if(!silent||!S.grid.length){S.source='local-fallback';S.cacheMeta=null;S.lastMapRefresh=S.lastMapRefresh||new Date();ensureStaticMapFallback(S,containerId,R);mapRender(S);}else{mapStatus(S,(e&&e.quota)||omCooldownUntil()>Date.now()?'QUOTA':'LIVE',mapFreshness(S)+' · refresh en attente',C[1]);}}
+    }catch(e){if(!silent||!S.grid.length){S.source='local-fallback';S.lastMapRefresh=S.lastMapRefresh||new Date();ensureStaticMapFallback(S,containerId,R);mapRender(S);}else{mapStatus(S,'LIVE',mapFreshness(S)+' · refresh en attente',C[1]);}}
   }catch(e){
     const R2=safeRegion(key),cid=S.ids.eye?'euMap':'carteMap';
     if(!silent||!S.grid.length){seedMapFallback(S,gridFor(R2).slice(0,24),(R2.stations||[]).map(s=>({name:s[0],lat:s[1],lon:s[2]})),'emergency-fallback');S.lastMapRefresh=new Date();ensureStaticMapFallback(S,cid,R2);mapStatus(S,'LOCAL','repli visuel actif',C[1]);}
@@ -366,12 +301,12 @@ async function mapLoad(S,key,opts={}){let R=safeRegion(key);const silent=!!opts.
     scheduleMapAutoRefresh(S,key);
   }
 }
-function sRisk(h,off,i){const idx=(off||0)+(i||0);if(h&&Array.isArray(h.meteovoid_score)){const v=h.meteovoid_score[idx];if(v!=null&&!Number.isNaN(Number(v)))return clamp(Number(v));}return risk(seriesVal(h,'cape',idx),seriesVal(h,'convective_inhibition',idx),seriesVal(h,'lifted_index',idx),seriesVal(h,'precipitation_probability',idx),seriesVal(h,'wind_gusts_10m',idx)).r;}
+function sRisk(h,off,i){if(h&&Array.isArray(h.meteovoid_score)){const v=h.meteovoid_score[off+i];if(v!=null&&!Number.isNaN(Number(v)))return clamp(Number(v));}return risk(h.cape[off+i],h.convective_inhibition[off+i],h.lifted_index[off+i],h.precipitation_probability[off+i],h.wind_gusts_10m[off+i]).r;}
 function arrVal(a,idx){return Array.isArray(a)?a[idx]:null;}
 function stationRiskValue(st,off,i){try{return sRisk(st.h,off||0,i||0);}catch(e){return clamp(Number(st.score||0));}}
 function stationSourceLabel(st){return st.source==='alert-watch'?'Alert Watch':(st.source||'Open-Meteo');}
 function fmtNum(v,digits,suffix){if(v==null||Number.isNaN(Number(v)))return '—';return Number(v).toFixed(digits)+(suffix||'');}
-function stationPopupHtml(st,r,off,i){const idx=(off||0)+(i||0),h=st.h||{},c=cls(r);return `<div class="mv-station-popup"><div class="mv-sp-title">${escHtml(st.name||'station')}</div><div class="mv-sp-state" style="color:${C[c]}">${NAMES[c]} · ${r.toFixed(2)}</div><div class="mv-sp-grid"><span>CAPE</span><b>${fmtNum(seriesVal(h,'cape',idx),0,' J/kg')}</b><span>CIN</span><b>${fmtNum(seriesVal(h,'convective_inhibition',idx),0,'')}</b><span>LI</span><b>${fmtNum(seriesVal(h,'lifted_index',idx),1,'')}</b><span>Rafales</span><b>${fmtNum(seriesVal(h,'wind_gusts_10m',idx),0,'')}</b></div><div class="mv-sp-src">${escHtml(stationSourceLabel(st))}</div></div>`;}
+function stationPopupHtml(st,r,off,i){const idx=(off||0)+(i||0),h=st.h||{},c=cls(r);return `<div class="mv-station-popup"><div class="mv-sp-title">${String(st.name||'station').replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]))}</div><div class="mv-sp-state" style="color:${C[c]}">${NAMES[c]} · ${r.toFixed(2)}</div><div class="mv-sp-grid"><span>CAPE</span><b>${fmtNum(arrVal(h.cape,idx),0,' J/kg')}</b><span>CIN</span><b>${fmtNum(arrVal(h.convective_inhibition,idx),0,'')}</b><span>LI</span><b>${fmtNum(arrVal(h.lifted_index,idx),1,'')}</b><span>Rafales</span><b>${fmtNum(arrVal(h.wind_gusts_10m,idx),0,'')}</b></div><div class="mv-sp-src">${stationSourceLabel(st)}</div></div>`;}
 function addStationMarker(S,st,r,i){const c=cls(r),col=C[c];const marker=L.circleMarker([st.lat,st.lon],{renderer:S.stationRenderer||S.canvas,pane:'mvStationsPane',interactive:true,bubblingMouseEvents:false,radius:c>=2?8:7,weight:2.4,color:'#EAF0FA',opacity:.96,fillColor:col,fillOpacity:.94,className:'mv-station-marker'});marker.bindTooltip('<b>'+st.name+'</b><br>bascule '+r.toFixed(2)+' · '+NAMES[c],{direction:'top',sticky:true});marker.bindPopup(stationPopupHtml(st,r,S.off,i),{maxWidth:260,closeButton:true});marker.on('mouseover',()=>{try{marker.setStyle({radius:c>=2?10:9,weight:3.2});marker.bringToFront();}catch(e){}});marker.on('mouseout',()=>{try{marker.setStyle({radius:c>=2?8:7,weight:2.4});}catch(e){}});marker.addTo(S.sta);return marker;}
 function hexToRgb(h){h=h.replace('#','');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];}
 const RGB=C.map(hexToRgb);
@@ -438,7 +373,7 @@ document.addEventListener('visibilitychange',()=>{
   if(document.hidden)return;
   refreshRainViewer(true);
   [CARTE,EU].forEach(S=>{if(S.booted)mapLoad(S,S.region,{silent:true});});
-  if(PAGE.kind!=='europe'&&PAGE.kind!=='methode')loadDashboard(PAGE.region).catch(showDashboardOffline);
+  if(PAGE.kind!=='europe'&&PAGE.kind!=='methode')loadDashboard(PAGE.region).catch(()=>{});
 });
 
 /* ---------------- router ---------------- */
@@ -455,7 +390,7 @@ function route(){const avail=views.filter(v=>document.getElementById('view-'+v))
 addEventListener('hashchange',route);
 
 /* boot */
-if(PAGE.kind==='europe'||PAGE.kind==='methode'){}else{loadDashboard(PAGE.region).catch(showDashboardOffline);setInterval(()=>{if(!document.hidden)loadDashboard(PAGE.region).catch(showDashboardOffline);},LIVE_REFRESH_MS.dashboard);}
+if(PAGE.kind==='europe'||PAGE.kind==='methode'){}else{loadDashboard(PAGE.region).catch(()=>{document.getElementById('vWord').textContent='HORS-LIGNE';document.getElementById('vRead').textContent='Réseau Open-Meteo injoignable — réessaie plus tard.';});setInterval(()=>{if(!document.hidden)loadDashboard(PAGE.region).catch(()=>{});},LIVE_REFRESH_MS.dashboard);}
 route();
 
 /* MeteoVoid offline/static cache + minimal a11y hardening. */
