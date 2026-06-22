@@ -22,7 +22,7 @@ dependencies = [
 
 [project.optional-dependencies]
 live = [
-  "redis>=5,<8",
+  "redis>=5,<9",
   "fastapi>=0.110,<1",
   "uvicorn[standard]>=0.29,<1",
   "psycopg2-binary>=2.9,<3",
