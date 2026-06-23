@@ -35,6 +35,7 @@ from .convective_live_inputs import (
     augment_hourly_with_real_derived_fields,
     station_real_input_summary,
 )
+from .europe_sources import public_profile_for_country
 from .scoring import compute_composite_score
 
 DEFAULT_CONFIG = Path("config/european_country_radar_sites.yaml")
@@ -438,6 +439,8 @@ def build_country_detection(
         },
     )
 
+    source_profile = public_profile_for_country(country_key)
+
     return {
         "contract": "meteovoid_country_followup_v1",
         "country": country_key,
@@ -450,6 +453,7 @@ def build_country_detection(
         "bbox": bbox,
         "zoom": cfg.get("zoom", 6),
         "operational_level": level,
+        "source_stack": source_profile,
         "summary": {
             "station_count": len(detections),
             "max_score": round(max_score, 3),
@@ -462,6 +466,9 @@ def build_country_detection(
                 else ("proxy" if data_mode == "offline_demo" else "missing_or_surface_only")
             ),
             "native_convective_fields": native_convective,
+            "forecast_primary": source_profile.get("forecast_primary"),
+            "national_observations": source_profile.get("national_observations"),
+            "historical_validation": source_profile.get("historical_validation"),
         },
         "stations": detections,
         "weather": _country_weather(detections),

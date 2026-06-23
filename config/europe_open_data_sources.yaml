@@ -1,68 +1,239 @@
 # MeteoVoid Europe open-data source registry.
-# This file is descriptive first: integrations should promote a source from
-# "candidate" to "active" only after tests, cache rules and attribution are added.
-version: 1
+# Sources are promoted gradually. Forecast, observations, radar observed,
+# nowcast and historical validation remain separate contracts.
+version: 2
 policy:
   primary_forecast: open_meteo
   browser_fallback: open_meteo
+  historical_validation: meteostat
   per_country_sources_are_optional: true
-  rule: "One visible source state per map: forecast, radar observed and nowcast remain separate."
+  rule: "One visible source state per map: forecast, observed radar and nowcast remain separate."
+
 sources:
   open_meteo:
+    label: "Open-Meteo"
     status: active
     scope: europe
     auth: none
+    priority: 10
+    core_usable: true
+    implementation: "active_forecast_backbone"
+    api_base: "https://api.open-meteo.com/v1/forecast"
+    documentation: "https://open-meteo.com/en/docs"
     role:
       - forecast
-      - historical_weather
+      - hourly_model_fields
+      - convective_indices_when_available
+      - historical_weather_candidate
       - air_quality_candidate
       - marine_candidate
-    notes: "Default Europe-wide forecast source already used by Storm-scope."
+    update_interval_minutes: 60
+    license_note: "Open source API; check Open-Meteo terms for usage volume and attribution."
+    notes: "Default Europe-wide model source already used by Storm-scope. No API key."
+
   brightsky_dwd:
-    status: candidate
+    label: "Bright Sky / DWD"
+    status: active_enrichment
     scope: germany
     auth: none
+    priority: 20
+    core_usable: true
+    implementation: "country_enrichment_ready"
+    api_base: "https://api.brightsky.dev"
+    documentation: "https://brightsky.dev/docs/"
     role:
-      - observations
-      - mosmix_forecast
-    notes: "Useful to validate or enrich Germany pages with DWD data."
+      - germany_observations
+      - dwd_station_data
+      - mosmix_forecast_candidate
+      - cross_border_validation
+    update_interval_minutes: 30
+    license_note: "Uses DWD open data through Bright Sky; keep provider attribution visible."
+    notes: "Useful for Germany and for east/north-east Belgium upstream validation."
+
   meteoswiss_open_data:
-    status: candidate
+    label: "MeteoSwiss Open Data"
+    status: official_candidate
     scope: switzerland
     auth: none_or_public_catalog
+    priority: 25
+    core_usable: false
+    implementation: "registry_and_status_only"
+    api_base: "https://data.geo.admin.ch"
+    documentation: "https://www.meteoswiss.admin.ch/services-and-publications/service/open-data.html"
     role:
-      - stations
-      - gridded_products
-      - official_forecasts
-    notes: "Should be integrated server-side because STAC/GRIB products need normalization."
-  meteo_gr_stations:
-    status: candidate
-    scope: greece
-    auth: none
-    role:
-      - station_observations
-    notes: "Candidate for a future Greece page, with health checks required."
-  climate_pulse:
-    status: candidate
-    scope: europe
-    auth: public_api_when_available
-    role:
-      - aggregator
-      - websocket_candidate
-    notes: "Useful as a second opinion, not as primary truth until contract is pinned."
+      - swiss_station_data
+      - swiss_radar_candidate
+      - icon_ch_forecast_candidate
+      - alpine_validation
+    update_interval_minutes: 10
+    license_note: "Official MeteoSwiss open data; STAC/GRIB products need server-side normalization."
+    notes: "Strong candidate for Switzerland, but not promoted until station/radar schemas are normalized."
+
   meteostat:
-    status: candidate
+    label: "Meteostat"
+    status: active_validation_candidate
     scope: europe_global
     auth: library_or_api
+    priority: 30
+    core_usable: true
+    implementation: "historical_validation_registry"
+    documentation: "https://meteostat.net/"
     role:
-      - station_lookup
       - historical_observations
-    notes: "Good for validation and station metadata, not direct alerting by itself."
+      - station_lookup
+      - climatology
+      - seasonal_thresholds
+      - retrospective_validation
+    update_interval_minutes: 1440
+    license_note: "Historical data source; verify attribution and cache policy per deployment."
+    notes: "Useful for dynamic thresholds, false-positive reduction and historical validation."
+
+  meteo_france_open_data:
+    label: "Météo-France open data"
+    status: official_candidate
+    scope: france
+    auth: public_portal_or_product_dependent
+    priority: 35
+    core_usable: false
+    implementation: "candidate_only"
+    documentation: "https://meteo.data.gouv.fr/"
+    role:
+      - france_official_candidate
+      - aramis_radar_candidate
+      - station_observations_candidate
+      - upstream_belgium_validation
+    update_interval_minutes: null
+    license_note: "Official data portal candidate. Product-specific terms and formats must be pinned."
+    notes: "France page remains Open-Meteo first until the official portal contract is pinned."
+
+  climate_pulse:
+    label: "Climate Pulse"
+    status: aggregator_candidate
+    scope: europe
+    auth: public_api_when_available
+    priority: 65
+    core_usable: false
+    implementation: "not_core"
+    role:
+      - second_opinion_candidate
+      - websocket_candidate
+      - copernicus_context
+    notes: "Potential European second opinion, not a primary MeteoVoid signal."
+
   frost_met_norway:
-    status: candidate
+    label: "Frost / MET Norway"
+    status: candidate_requires_token
     scope: norway
     auth: token_required_in_many_setups
+    priority: 70
+    core_usable: false
+    implementation: "not_core"
     role:
       - historical_observations
       - official_station_data
-    notes: "Needs secrets handling before CI/live integration."
+    notes: "Keep for future Norway page; needs secrets handling."
+
+country_profiles:
+  europe:
+    label: "Europe"
+    strategy: "Open-Meteo supplies the shared forecast layer; national sources enrich country pages only when they are explicit and testable."
+    forecast_primary: open_meteo
+    historical_validation: meteostat
+    official_candidate:
+      - brightsky_dwd
+      - meteoswiss_open_data
+      - meteo_france_open_data
+
+  belgium:
+    label: "Belgique"
+    strategy: "Belgium Alert Watch remains the operational source; Open-Meteo supplies model fields and Meteostat can help later with historical calibration."
+    forecast_primary: open_meteo
+    historical_validation: meteostat
+    radar_candidate: opera_ord
+
+  germany:
+    label: "Allemagne"
+    strategy: "Open-Meteo for model continuity, Bright Sky/DWD for national observations and cross-border validation."
+    forecast_primary: open_meteo
+    national_observations: brightsky_dwd
+    national_forecast: brightsky_dwd
+    historical_validation: meteostat
+    note: "Bright Sky is promoted as usable enrichment, but not as a replacement for the unified map model."
+
+  switzerland:
+    label: "Suisse"
+    strategy: "Open-Meteo for continuity, MeteoSwiss as official candidate for stations, radar and ICON-CH once normalized server-side."
+    forecast_primary: open_meteo
+    official_candidate: meteoswiss_open_data
+    radar_candidate: meteoswiss_open_data
+    historical_validation: meteostat
+
+  france:
+    label: "France"
+    strategy: "Open-Meteo remains active. Météo-France open data is kept as official candidate instead of relying on fragile scrapers."
+    forecast_primary: open_meteo
+    official_candidate: meteo_france_open_data
+    historical_validation: meteostat
+
+  netherlands:
+    label: "Pays-Bas"
+    strategy: "Open-Meteo active; national KNMI radar remains in the radar registry. Meteostat can support historical validation."
+    forecast_primary: open_meteo
+    historical_validation: meteostat
+
+  spain:
+    label: "Espagne"
+    strategy: "Open-Meteo active; AEMET radar remains in the radar registry and upstream corridor analysis."
+    forecast_primary: open_meteo
+    historical_validation: meteostat
+
+  italy:
+    label: "Italie"
+    strategy: "Open-Meteo active; regional ARPA/aggregator sources remain candidates, not core sources."
+    forecast_primary: open_meteo
+    historical_validation: meteostat
+
+  austria:
+    label: "Autriche"
+    strategy: "Open-Meteo active; national source enrichment can be added later after schema and attribution are pinned."
+    forecast_primary: open_meteo
+    historical_validation: meteostat
+
+  denmark:
+    label: "Danemark"
+    strategy: "Open-Meteo active; national radar registry remains display/status first."
+    forecast_primary: open_meteo
+    historical_validation: meteostat
+
+  uk:
+    label: "Royaume-Uni"
+    strategy: "Open-Meteo active; national source enrichment remains candidate only."
+    forecast_primary: open_meteo
+    historical_validation: meteostat
+
+experimental_sources:
+  - id: open_meteo_forks
+    label: "Forks Open-Meteo"
+    status: experimental
+    category: forks
+    reason: "The official Open-Meteo API is used directly; forks are not core inputs."
+  - id: meteociel_api
+    label: "Météociel API non officielle"
+    status: scraper_candidate
+    category: scraper
+    reason: "Useful for exploration only; fragile contract and attribution risks."
+  - id: hacf_meteofrance_api
+    label: "Client non public Météo-France"
+    status: scraper_candidate
+    category: unofficial_client
+    reason: "Do not make it a core source while official meteo.data.gouv.fr products exist."
+  - id: k_meteofrance
+    label: "Scraper observations Météo-France"
+    status: scraper_candidate
+    category: scraper
+    reason: "Potential prototype source only; not stable enough for operational pages."
+  - id: meteostations_gr_api
+    label: "Stations météo Grèce"
+    status: candidate
+    category: future_country_page
+    reason: "Interesting when a Greece page exists, not needed for the current country set."

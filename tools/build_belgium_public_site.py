@@ -35,6 +35,10 @@ _SRC = Path(__file__).resolve().parents[1] / "src"
 if _SRC.exists() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 from meteovoid.europe_country import build_all_countries  # noqa: E402
+from meteovoid.europe_sources import (  # noqa: E402
+    build_europe_sources_api,
+    public_profile_for_country,
+)
 from meteovoid.radar_sources import build_source_registry  # noqa: E402
 
 # Artifacts copied verbatim into reports/latest/ so the expert view (iframes) and
@@ -2933,27 +2937,7 @@ def build_api(vm: dict[str, Any], site_dir: Path, report_dir: Path | None = None
         api_dir / "europe.json",
         build_europe_model(site_dir / "reports" / "latest", vm),
     )
-    _write_json(
-        api_dir / "europe_sources.json",
-        {
-            "generated_at": generated_at,
-            "contract": "meteovoid_europe_open_data_sources_v1",
-            "active_primary": "open_meteo",
-            "rule": (
-                "Forecast, observed radar and nowcast are separate timelines; "
-                "candidate national sources need schema, cache, attribution and tests."
-            ),
-            "sources": {
-                "open_meteo": {"status": "active", "scope": "europe", "auth": "none"},
-                "brightsky_dwd": {"status": "candidate", "scope": "germany", "auth": "none"},
-                "meteoswiss_open_data": {"status": "candidate", "scope": "switzerland"},
-                "meteostations_gr_api": {"status": "candidate", "scope": "greece"},
-                "climate_pulse": {"status": "candidate", "scope": "europe_aggregator"},
-                "meteostat": {"status": "candidate", "scope": "history_validation"},
-                "frost_met_norway": {"status": "candidate", "scope": "norway"},
-            },
-        },
-    )
+    _write_json(api_dir / "europe_sources.json", build_europe_sources_api())
 
     _write_json(
         api_dir / "index.json",
@@ -3295,6 +3279,9 @@ def _prepare_stormscope_html(html: str, *, default_view: str = "veille") -> str:
     watch_script = '<script src="assets/alert-watch-panels.js"></script>'
     if watch_script not in html and app_script in html:
         html = html.replace(app_script, app_script + "\n" + watch_script)
+    europe_sources_script = '<script src="assets/europe-sources-panel.js"></script>'
+    if europe_sources_script not in html and app_script in html:
+        html = html.replace(app_script, app_script + "\n" + europe_sources_script)
     if default_view and default_view != "veille" and "METEOVOID_DEFAULT_VIEW" not in html:
         safe_view = default_view.replace("'", "")
         jump = (
@@ -4989,6 +4976,8 @@ def build_europe_model(report_dir: Path, vm: dict[str, Any]) -> dict[str, Any]:
                 for s in sources
             ],
         }
+        payload["open_data_stack"] = public_profile_for_country(country)
+        payload["source_strategy"] = payload["open_data_stack"].get("strategy")
         payload["completeness_score"] = _country_completeness(payload)
         countries.append(payload)
         for source in payload["sources"]:

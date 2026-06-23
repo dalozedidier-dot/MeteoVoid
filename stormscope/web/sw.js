@@ -1,4 +1,4 @@
-const CACHE_NAME = "meteovoid-stormscope-static-v6-unified-live-state";
+const CACHE_NAME = "meteovoid-stormscope-static-v7-unified-live-state-europe-sources";
 const STATIC_ASSETS = [
   "./",
   "./index.html",
@@ -9,6 +9,7 @@ const STATIC_ASSETS = [
   "./assets/regions.js",
   "./assets/site-api-adapter.js",
   "./assets/alert-watch-panels.js",
+  "./assets/europe-sources-panel.js",
 ];
 
 self.addEventListener("install", (event) => {
