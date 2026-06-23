@@ -2568,9 +2568,7 @@ def _station_rows_from_csv(report_dir: Path) -> list[dict[str, Any]]:
                 "lat": lat,
                 "lon": lon,
                 "severity": {"key": row.get("severity") or "normal"},
-                "signals": str(row.get("signals") or "").split("; ")
-                if row.get("signals")
-                else [],
+                "signals": str(row.get("signals") or "").split("; ") if row.get("signals") else [],
             }
         )
     return out
