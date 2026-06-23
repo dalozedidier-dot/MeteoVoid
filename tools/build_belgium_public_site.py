@@ -2571,9 +2571,7 @@ def _build_map_live_api(vm: dict[str, Any], report_dir: Path) -> dict[str, Any]:
     raw_hours = timeline.get("hours") if isinstance(timeline.get("hours"), list) else []
     if not raw_hours:
         raw_hours = (
-            timeline_json.get("timeline")
-            if isinstance(timeline_json.get("timeline"), list)
-            else []
+            timeline_json.get("timeline") if isinstance(timeline_json.get("timeline"), list) else []
         )
 
     hours = []
@@ -2609,9 +2607,7 @@ def _build_map_live_api(vm: dict[str, Any], report_dir: Path) -> dict[str, Any]:
             }
         ]
 
-    report_stations = [
-        s for s in (report.get("stations") or []) if isinstance(s, dict)
-    ]
+    report_stations = [s for s in (report.get("stations") or []) if isinstance(s, dict)]
     station_hourly_by_name: dict[str, list[dict[str, Any]]] = {}
     station_hourly_by_id: dict[str, list[dict[str, Any]]] = {}
     for station in report_stations:
@@ -2673,9 +2669,7 @@ def _build_map_live_api(vm: dict[str, Any], report_dir: Path) -> dict[str, Any]:
         score = _num(station.get("score")) or _num(station.get("convective_risk_score")) or 0.0
         drivers = station.get("drivers") if isinstance(station.get("drivers"), dict) else {}
         hourly_rows = (
-            station.get("hourly_risk")
-            if isinstance(station.get("hourly_risk"), list)
-            else []
+            station.get("hourly_risk") if isinstance(station.get("hourly_risk"), list) else []
         )
         stations.append(
             {
@@ -2707,10 +2701,10 @@ def _build_map_live_api(vm: dict[str, Any], report_dir: Path) -> dict[str, Any]:
                 "hourly": {
                     "time": [h.get("time") for h in hours],
                     "scores": (
-                    _hourly_scores(hourly_rows, hours, score)
-                    if hourly_rows
-                    else _series_from_base(score, hours)
-                ),
+                        _hourly_scores(hourly_rows, hours, score)
+                        if hourly_rows
+                        else _series_from_base(score, hours)
+                    ),
                     "convective_risk_score": _hourly_values(
                         hourly_rows,
                         "convective_risk_score",
@@ -2777,16 +2771,14 @@ def _build_map_live_api(vm: dict[str, Any], report_dir: Path) -> dict[str, Any]:
                 "label": "radar observé",
                 "provider": "RainViewer / radars nationaux selon disponibilité",
                 "description": (
-                    "Frames observées ou nowcast court terme, "
-                    "séparées de la prévision +48h."
+                    "Frames observées ou nowcast court terme, séparées de la prévision +48h."
                 ),
                 "max_reasonable_horizon_hours": 2,
             },
             "nowcast_short_term": {
                 "label": "nowcast court terme",
                 "description": (
-                    "Réservé aux produits pySTEPS/OPERA "
-                    "quand des frames machine sont disponibles."
+                    "Réservé aux produits pySTEPS/OPERA quand des frames machine sont disponibles."
                 ),
                 "available": bool(vm["expert"].get("radar_stack", {}).get("status") == "available"),
             },
