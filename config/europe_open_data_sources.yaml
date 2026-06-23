@@ -1,0 +1,68 @@
+# MeteoVoid Europe open-data source registry.
+# This file is descriptive first: integrations should promote a source from
+# "candidate" to "active" only after tests, cache rules and attribution are added.
+version: 1
+policy:
+  primary_forecast: open_meteo
+  browser_fallback: open_meteo
+  per_country_sources_are_optional: true
+  rule: "One visible source state per map: forecast, radar observed and nowcast remain separate."
+sources:
+  open_meteo:
+    status: active
+    scope: europe
+    auth: none
+    role:
+      - forecast
+      - historical_weather
+      - air_quality_candidate
+      - marine_candidate
+    notes: "Default Europe-wide forecast source already used by Storm-scope."
+  brightsky_dwd:
+    status: candidate
+    scope: germany
+    auth: none
+    role:
+      - observations
+      - mosmix_forecast
+    notes: "Useful to validate or enrich Germany pages with DWD data."
+  meteoswiss_open_data:
+    status: candidate
+    scope: switzerland
+    auth: none_or_public_catalog
+    role:
+      - stations
+      - gridded_products
+      - official_forecasts
+    notes: "Should be integrated server-side because STAC/GRIB products need normalization."
+  meteo_gr_stations:
+    status: candidate
+    scope: greece
+    auth: none
+    role:
+      - station_observations
+    notes: "Candidate for a future Greece page, with health checks required."
+  climate_pulse:
+    status: candidate
+    scope: europe
+    auth: public_api_when_available
+    role:
+      - aggregator
+      - websocket_candidate
+    notes: "Useful as a second opinion, not as primary truth until contract is pinned."
+  meteostat:
+    status: candidate
+    scope: europe_global
+    auth: library_or_api
+    role:
+      - station_lookup
+      - historical_observations
+    notes: "Good for validation and station metadata, not direct alerting by itself."
+  frost_met_norway:
+    status: candidate
+    scope: norway
+    auth: token_required_in_many_setups
+    role:
+      - historical_observations
+      - official_station_data
+    notes: "Needs secrets handling before CI/live integration."

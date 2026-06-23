@@ -235,6 +235,7 @@ def test_build_index_produces_site_and_api(tmp_path: Path) -> None:
         "validation",
         "radar",
         "europe",
+        "europe_sources",
         "map_live",
         "index",
     ]:
@@ -255,11 +256,14 @@ def test_map_live_api_exposes_alert_watch_map_payload(tmp_path: Path) -> None:
     site.build_index(report_dir, site_dir)
 
     payload = json.loads((site_dir / "api" / "map_live.json").read_text(encoding="utf-8"))
-    assert payload["contract"] == "meteovoid_belgium_map_live_v1"
+    assert payload["contract"] == "meteovoid_belgium_map_live_v2"
+    assert payload["compat_contract"] == "meteovoid_belgium_map_live_v1"
     assert payload["source"] == "belgium_alert_watch"
     assert payload["hours"]
     assert payload["stations"]
     assert payload["stations"][0]["scores"]
+    assert payload["timeline"]["forecast_model"]["label"] == "prévision modèle"
+    assert payload["timeline"]["radar_observed"]["label"] == "radar observé"
     assert payload["summary"]["station_count"] >= 1
 
 

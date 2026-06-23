@@ -98,7 +98,7 @@ async function loadModelFromSiteApi(base='api/'){
 async function loadMapLiveFromSiteApi(base='api/', region='belgium'){
   if(region !== 'belgium') return null;
   const payload = await getJSON(base+'map_live.json');
-  if(!payload || payload.contract !== 'meteovoid_belgium_map_live_v1') return null;
+  if(!payload || !['meteovoid_belgium_map_live_v1','meteovoid_belgium_map_live_v2'].includes(payload.contract)) return null;
   if(!Array.isArray(payload.hours) || !payload.hours.length) return null;
   if(!Array.isArray(payload.grid) && !Array.isArray(payload.stations)) return null;
   return payload;

@@ -2453,7 +2453,12 @@ def _read_csv_rows(path: Path) -> list[dict[str, str]]:
 
 
 def _series_from_base(base: Any, hours: list[dict[str, Any]]) -> list[float]:
-    """Project a static point score on the current Alert Watch hourly envelope."""
+    """Project a static point score on the current Alert Watch hourly envelope.
+
+    This remains only a last-resort fallback. The normal map contract now uses
+    station ``hourly_risk`` from ``belgium_alert_report.json`` whenever it is
+    available, so the browser play button animates real hourly model values.
+    """
     b = _clamp01(base)
     if not hours:
         return [round(b, 3)]
@@ -2472,35 +2477,121 @@ def _series_from_base(base: Any, hours: list[dict[str, Any]]) -> list[float]:
     return out
 
 
+def _norm_key(value: Any) -> str:
+    return str(value or "").strip().casefold().replace(" / ", " ").replace("-", " ")
+
+
 def _constant_series(value: Any, count: int) -> list[float | None]:
     v = _num(value)
     return [round(float(v), 3) if v is not None else None for _ in range(max(count, 1))]
 
 
+def _hourly_values(
+    rows: list[dict[str, Any]],
+    key: str,
+    hours: list[dict[str, Any]],
+    fallback: Any = None,
+    digits: int = 3,
+) -> list[float | None]:
+    by_time = {str(row.get("time") or ""): row for row in rows if isinstance(row, dict)}
+    out: list[float | None] = []
+    for hour in hours:
+        stamp = str(hour.get("time") or "") if isinstance(hour, dict) else ""
+        row = by_time.get(stamp, {})
+        value = row.get(key, fallback) if isinstance(row, dict) else fallback
+        rounded = _round(value, digits)
+        out.append(rounded)
+    return out or _constant_series(fallback, max(len(hours), 1))
+
+
+def _hourly_scores(
+    rows: list[dict[str, Any]], hours: list[dict[str, Any]], fallback: Any
+) -> list[float]:
+    values = _hourly_values(rows, "score", hours, fallback, 3)
+    return [round(_clamp01(v), 3) for v in values]
+
+
+def _nearest_station_series(
+    nearest: Any,
+    station_hourly_by_name: dict[str, list[dict[str, Any]]],
+    station_hourly_by_id: dict[str, list[dict[str, Any]]],
+) -> list[dict[str, Any]]:
+    key = _norm_key(nearest)
+    if key in station_hourly_by_name:
+        return station_hourly_by_name[key]
+    if key in station_hourly_by_id:
+        return station_hourly_by_id[key]
+    # Some grid rows only contain the short city name, while stations may contain
+    # labels like "Jodoigne / Brabant wallon". Use a conservative contains match.
+    for name, rows in station_hourly_by_name.items():
+        if key and (key in name or name in key):
+            return rows
+    return []
+
+
+def _blend_hourly_scores(
+    base_score: Any,
+    station_rows: list[dict[str, Any]],
+    hours: list[dict[str, Any]],
+) -> list[float]:
+    """Create a grid series from the nearest station's real hourly curve.
+
+    The grid files are currently spatial snapshots. To avoid the old fake global
+    projection, each grid point now follows the hourly curve of its nearest
+    station, while preserving part of its own spatial intensity. This is honest:
+    the output carries ``hourly_source`` so the UI and reports know it is
+    nearest-station driven until native hourly gridded files exist.
+    """
+    b = _clamp01(base_score)
+    if not station_rows:
+        return _series_from_base(b, hours)
+    station_scores = _hourly_scores(station_rows, hours, b)
+    peak = max(station_scores) if station_scores else 0.0
+    if peak <= 0:
+        return [round(b, 3) for _ in hours]
+    out = []
+    for score in station_scores:
+        # 65% true nearest-station hourly signal, 35% local grid snapshot.
+        out.append(round(_clamp01(0.65 * score + 0.35 * b), 3))
+    return out
+
+
 def _build_map_live_api(vm: dict[str, Any], report_dir: Path) -> dict[str, Any]:
     """Build the map-first contract consumed by Storm-scope.
 
-    The browser should not need to recalculate the Belgium map from Open-Meteo
-    when the Belgium Alert Watch workflow has already published validated
-    artifacts. This endpoint exposes the latest run as a map-ready payload.
+    The browser reads this endpoint as the single live state for Belgium. It now
+    contains real hourly station series from ``hourly_risk`` and grid series
+    derived from the nearest station hourly curve. Radar frames stay explicitly
+    separate from the forecast timeline.
     """
     meta = vm["meta"]
+    report = _load_json(report_dir / "belgium_alert_report.json")
+    timeline_json = _load_json(report_dir / "risk_timeseries.json")
     timeline = vm["operational"].get("timeline", {})
     raw_hours = timeline.get("hours") if isinstance(timeline.get("hours"), list) else []
+    if not raw_hours:
+        raw_hours = (
+            timeline_json.get("timeline")
+            if isinstance(timeline_json.get("timeline"), list)
+            else []
+        )
+
     hours = []
     for row in raw_hours[:48]:
         if not isinstance(row, dict):
             continue
+        stamp = row.get("time") or row.get("hour")
         score = _round(row.get("max_score") or row.get("score") or row.get("mean_score"), 3)
         hours.append(
             {
-                "time": row.get("time"),
-                "hour": row.get("hour"),
+                "time": stamp,
+                "hour": row.get("hour") or _hour_label(stamp),
                 "score": score,
                 "mean_score": _round(row.get("mean_score"), 3),
                 "max_score": _round(row.get("max_score"), 3),
                 "severity": row.get("severity") or "normal",
                 "class": row.get("class") or _meta(row.get("severity"))["class"],
+                "timeline_type": "forecast_model",
             }
         )
     if not hours:
@@ -2514,8 +2605,21 @@ def _build_map_live_api(vm: dict[str, Any], report_dir: Path) -> dict[str, Any]:
                 "score": vm["simple"].get("model_score") or 0.0,
                 "severity": severity.get("key") or "normal",
                 "class": severity.get("class") or "calm",
+                "timeline_type": "forecast_model",
             }
         ]
+
+    report_stations = [
+        s for s in (report.get("stations") or []) if isinstance(s, dict)
+    ]
+    station_hourly_by_name: dict[str, list[dict[str, Any]]] = {}
+    station_hourly_by_id: dict[str, list[dict[str, Any]]] = {}
+    for station in report_stations:
+        rows = station.get("hourly_risk") if isinstance(station.get("hourly_risk"), list) else []
+        if not rows:
+            continue
+        station_hourly_by_name[_norm_key(station.get("name"))] = rows
+        station_hourly_by_id[_norm_key(station.get("station_id"))] = rows
 
     grid_rows = _read_csv_rows(report_dir / "native_convective_grid.csv")
     if not grid_rows:
@@ -2533,12 +2637,16 @@ def _build_map_live_api(vm: dict[str, Any], report_dir: Path) -> dict[str, Any]:
             or vm["simple"].get("model_score")
             or 0.0
         )
+        nearest_rows = _nearest_station_series(
+            row.get("nearest_station"), station_hourly_by_name, station_hourly_by_id
+        )
+        grid_scores = _blend_hourly_scores(base_score, nearest_rows, hours)
         grid.append(
             {
                 "lat": lat,
                 "lon": lon,
                 "score": _round(base_score, 3),
-                "scores": _series_from_base(base_score, hours),
+                "scores": grid_scores,
                 "level": row.get("storm_formation_level") or row.get("native_convective_level"),
                 "native_convective_score": _round(row.get("native_convective_score"), 3),
                 "storm_formation_score": _round(row.get("storm_formation_score"), 3),
@@ -2548,11 +2656,14 @@ def _build_map_live_api(vm: dict[str, Any], report_dir: Path) -> dict[str, Any]:
                 "dew_point_c": _round(row.get("dew_point_c"), 1),
                 "humidity_pct": _round(row.get("humidity_pct"), 1),
                 "nearest_station": row.get("nearest_station"),
+                "hourly_source": (
+                    "nearest_station_hourly_risk" if nearest_rows else "global_timeline_fallback"
+                ),
             }
         )
 
     stations: list[dict[str, Any]] = []
-    for station in vm["expert"].get("stations", []):
+    for station in report_stations or vm["expert"].get("stations", []):
         if not isinstance(station, dict):
             continue
         lat = _num(station.get("lat"))
@@ -2561,6 +2672,11 @@ def _build_map_live_api(vm: dict[str, Any], report_dir: Path) -> dict[str, Any]:
             continue
         score = _num(station.get("score")) or _num(station.get("convective_risk_score")) or 0.0
         drivers = station.get("drivers") if isinstance(station.get("drivers"), dict) else {}
+        hourly_rows = (
+            station.get("hourly_risk")
+            if isinstance(station.get("hourly_risk"), list)
+            else []
+        )
         stations.append(
             {
                 "station_id": station.get("station_id"),
@@ -2569,31 +2685,112 @@ def _build_map_live_api(vm: dict[str, Any], report_dir: Path) -> dict[str, Any]:
                 "lat": lat,
                 "lon": lon,
                 "score": _round(score, 3),
-                "scores": _series_from_base(score, hours),
+                "scores": (
+                    _hourly_scores(hourly_rows, hours, score)
+                    if hourly_rows
+                    else _series_from_base(score, hours)
+                ),
                 "severity": (
                     station.get("severity", {}).get("key")
                     if isinstance(station.get("severity"), dict)
                     else station.get("severity")
                 ),
                 "worst_time": station.get("worst_time"),
-                "heat_stress_score": station.get("heat_stress_score"),
-                "convective_risk_score": station.get("convective_risk_score"),
-                "temperature_c": drivers.get("temperature_c"),
-                "dew_point_c": drivers.get("dew_point_c"),
-                "precip_probability_pct": drivers.get("precip_prob_pct"),
-                "wind_gust_ms": drivers.get("wind_gust_ms"),
+                "heat_stress_score": _round(station.get("heat_stress_score"), 3),
+                "convective_risk_score": _round(station.get("convective_risk_score"), 3),
+                "temperature_c": station.get("max_temperature_c") or drivers.get("temperature_c"),
+                "dew_point_c": station.get("max_dew_point_c") or drivers.get("dew_point_c"),
+                "precip_probability_pct": station.get("max_precip_probability_pct")
+                or drivers.get("precip_prob_pct"),
+                "wind_gust_ms": station.get("max_wind_gust_ms") or drivers.get("wind_gust_ms"),
                 "signals": station.get("signals") or [],
+                "hourly": {
+                    "time": [h.get("time") for h in hours],
+                    "scores": (
+                    _hourly_scores(hourly_rows, hours, score)
+                    if hourly_rows
+                    else _series_from_base(score, hours)
+                ),
+                    "convective_risk_score": _hourly_values(
+                        hourly_rows,
+                        "convective_risk_score",
+                        hours,
+                        station.get("convective_risk_score"),
+                        3,
+                    ),
+                    "heat_stress_score": _hourly_values(
+                        hourly_rows,
+                        "heat_stress_score",
+                        hours,
+                        station.get("heat_stress_score"),
+                        3,
+                    ),
+                    "temperature_c": _hourly_values(
+                        hourly_rows,
+                        "temperature_c",
+                        hours,
+                        station.get("max_temperature_c"),
+                        1,
+                    ),
+                    "dew_point_c": _hourly_values(
+                        hourly_rows,
+                        "dew_point_c",
+                        hours,
+                        station.get("max_dew_point_c"),
+                        1,
+                    ),
+                    "precip_probability_pct": _hourly_values(
+                        hourly_rows,
+                        "precip_probability_pct",
+                        hours,
+                        station.get("max_precip_probability_pct"),
+                        1,
+                    ),
+                    "wind_gust_ms": _hourly_values(
+                        hourly_rows,
+                        "wind_gust_ms",
+                        hours,
+                        station.get("max_wind_gust_ms"),
+                        1,
+                    ),
+                },
             }
         )
 
     return {
-        "contract": "meteovoid_belgium_map_live_v1",
+        "contract": "meteovoid_belgium_map_live_v2",
+        "compat_contract": "meteovoid_belgium_map_live_v1",
         "generated_at": meta.get("generated_at"),
         "run_id": meta.get("run_id"),
         "region": "belgium",
         "source": "belgium_alert_watch",
         "mode": "latest_published_run",
         "disclaimer": meta.get("disclaimer"),
+        "timeline": {
+            "default": "forecast_model",
+            "forecast_model": {
+                "label": "prévision modèle",
+                "hours": hours,
+                "description": "Scores horaires du workflow Belgium Alert Watch.",
+            },
+            "radar_observed": {
+                "label": "radar observé",
+                "provider": "RainViewer / radars nationaux selon disponibilité",
+                "description": (
+                    "Frames observées ou nowcast court terme, "
+                    "séparées de la prévision +48h."
+                ),
+                "max_reasonable_horizon_hours": 2,
+            },
+            "nowcast_short_term": {
+                "label": "nowcast court terme",
+                "description": (
+                    "Réservé aux produits pySTEPS/OPERA "
+                    "quand des frames machine sont disponibles."
+                ),
+                "available": bool(vm["expert"].get("radar_stack", {}).get("status") == "available"),
+            },
+        },
         "hours": hours,
         "grid": grid,
         "stations": stations,
@@ -2604,6 +2801,9 @@ def _build_map_live_api(vm: dict[str, Any], report_dir: Path) -> dict[str, Any]:
             "critical_window": vm["simple"].get("critical_window"),
             "grid_count": len(grid),
             "station_count": len(stations),
+            "hour_count": len(hours),
+            "station_hourly_source": "belgium_alert_report.stations[].hourly_risk",
+            "grid_hourly_source": "native grid snapshot + nearest station hourly_risk",
         },
     }
 
@@ -2741,6 +2941,27 @@ def build_api(vm: dict[str, Any], site_dir: Path, report_dir: Path | None = None
         api_dir / "europe.json",
         build_europe_model(site_dir / "reports" / "latest", vm),
     )
+    _write_json(
+        api_dir / "europe_sources.json",
+        {
+            "generated_at": generated_at,
+            "contract": "meteovoid_europe_open_data_sources_v1",
+            "active_primary": "open_meteo",
+            "rule": (
+                "Forecast, observed radar and nowcast are separate timelines; "
+                "candidate national sources need schema, cache, attribution and tests."
+            ),
+            "sources": {
+                "open_meteo": {"status": "active", "scope": "europe", "auth": "none"},
+                "brightsky_dwd": {"status": "candidate", "scope": "germany", "auth": "none"},
+                "meteoswiss_open_data": {"status": "candidate", "scope": "switzerland"},
+                "meteostations_gr_api": {"status": "candidate", "scope": "greece"},
+                "climate_pulse": {"status": "candidate", "scope": "europe_aggregator"},
+                "meteostat": {"status": "candidate", "scope": "history_validation"},
+                "frost_met_norway": {"status": "candidate", "scope": "norway"},
+            },
+        },
+    )
 
     _write_json(
         api_dir / "index.json",
@@ -2760,6 +2981,7 @@ def build_api(vm: dict[str, Any], site_dir: Path, report_dir: Path | None = None
                 "map_live": "api/map_live.json",
                 "data_quality": "api/data_quality.json",
                 "europe": "api/europe.json",
+                "europe_sources": "api/europe_sources.json",
             },
             "disclaimer": meta.get("disclaimer"),
         },
