@@ -517,3 +517,36 @@ def test_model_map_selectors_are_actually_wired(tmp_path: Path) -> None:
     france_html = (site_dir / "france.html").read_text(encoding="utf-8")
     assert "cNwpChanged" in france_html
     assert "Open-Meteo · champ modèle réel" in france_html
+
+
+def test_map_live_api_uses_csv_timeline_when_json_is_absent(tmp_path: Path) -> None:
+    report_dir = tmp_path / "report"
+    site_dir = tmp_path / "site"
+    report_dir.mkdir()
+    (report_dir / "risk_timeline.csv").write_text(
+        "time,mean_score,max_score,severity,station_count\n"
+        "2026-06-19T00:00,0.21,0.45,watch,2\n"
+        "2026-06-19T01:00,0.12,0.30,normal,2\n",
+        encoding="utf-8",
+    )
+    (report_dir / "risk_by_station.csv").write_text(
+        "station_id,name,region,score,severity,heat_stress_score,convective_risk_score,"
+        "max_temperature_c,max_dew_point_c,max_precip_probability_pct,max_wind_gust_ms,signals\n"
+        "BE_UCCLE,Uccle / Bruxelles,belgium_center,0.61,medium,1.0,0.53,34,21,85,14,signal\n",
+        encoding="utf-8",
+    )
+    (report_dir / "native_convective_grid.csv").write_text(
+        "lat,lon,storm_formation_score,native_convective_score,"
+        "cape_j_kg,cin_j_kg,lifted_index_c,nearest_station\n"
+        "50.8,4.36,0.72,0.41,1200,10,-3,Uccle\n",
+        encoding="utf-8",
+    )
+
+    site.build_index(report_dir, site_dir)
+
+    payload = json.loads((site_dir / "api" / "map_live.json").read_text(encoding="utf-8"))
+    assert [hour["score"] for hour in payload["hours"]] == [0.45, 0.3]
+    assert payload["stations"][0]["name"] == "Uccle / Bruxelles"
+    assert payload["stations"][0]["lat"] == 50.7989
+    assert payload["stations"][0]["scores"][0] != payload["stations"][0]["scores"][1]
+    assert payload["grid"][0]["scores"][0] != payload["grid"][0]["scores"][1]

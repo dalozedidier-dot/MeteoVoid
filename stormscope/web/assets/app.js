@@ -24,6 +24,8 @@ tick();setInterval(tick,30000);
 /* ---------------- shared model ---------------- */
 const C=['#54BE96','#74B4FF','#F2B23E','#EE4F5C'],NAMES=['Stable','Latent','Transition','Bascule'];
 const cls=r=>r<0.25?0:r<0.5?1:r<0.72?2:3, clamp=v=>Math.max(0,Math.min(1,v));
+function numberOrNull(v){if(v==null||v==='')return null;const n=Number(v);return Number.isFinite(n)?n:null;}
+function hasUsableSeries(values){const nums=(values||[]).map(numberOrNull).filter(v=>v!=null);if(!nums.length)return false;return Math.max(...nums)>0.001&&(Math.max(...nums)-Math.min(...nums)>0.002||nums.length===1);}
 function risk(cape,cin,li,pp,gust){cape=cape||0;cin=cin||0;li=(li==null?4:li);pp=pp||0;gust=gust||0;const charge=clamp(cape/2500),liB=clamp((4-li)/14),energy=clamp(.6*charge+.4*liB),cap=clamp(1-cin/150),trig=clamp(.55*(pp/100)+.30*cap+.15*clamp((gust-10)/25));return{r:clamp(energy*(.45+.55*trig)),energy,trig,charge,cap,liB};}
 function humidex(t,td){if(t==null||td==null)return null;const e=6.11*Math.exp(5417.7530*(1/273.16-1/(273.15+td)));return t+0.5555*(e-10);}
 function hxClass(h){return h==null?0:h<30?0:h<40?1:h<45?2:3;}
@@ -45,7 +47,20 @@ async function getMapLivePayload(region='belgium', force=false){
 }
 function dashboardFromMapLivePayload(payload,R){
   const hours=(payload.hours||[]).slice(0,48);
-  const out={hours:hours.map(h=>h.time||h.hour||''),off:0,label:R.label,source:'alert-watch-live',timeline:payload.timeline||{},grid:[],stations:[]};
+  const hourScores=hours.map(h=>numberOrNull(h.score??h.max_score??h.mean_score));
+  const out={
+    hours:hours.map(h=>h.time||h.hour||''),
+    hour_scores:hourScores,
+    hour_mean_scores:hours.map(h=>numberOrNull(h.mean_score)),
+    hour_max_scores:hours.map(h=>numberOrNull(h.max_score??h.score)),
+    hour_severity:hours.map(h=>h.severity||'normal'),
+    off:0,
+    label:R.label,
+    source:'alert-watch-live',
+    timeline:payload.timeline||{},
+    grid:[],
+    stations:[]
+  };
   out.grid=(payload.grid||[]).filter(p=>p.lat!=null&&p.lon!=null).map(p=>[Number(p.lat),Number(p.lon),apiHourlyFromMapItem(p,hours)]);
   out.stations=(payload.stations||[]).filter(s=>s.lat!=null&&s.lon!=null).map(s=>({name:s.name||s.station_id||'station',lat:Number(s.lat),lon:Number(s.lon),source:'alert-watch',score:s.score,h:apiHourlyFromMapItem(s,hours),signals:s.signals||[]}));
   return out;
@@ -104,14 +119,18 @@ function renderVeille(){if(!$('vWord')||!DASH)return;const rg=$('vRegion');if(rg
 }
 /* ---- Heures ---- */
 function renderHours(){const bars=$('bars');if(!bars||!DASH)return;bars.innerHTML='';
-  const vals=DASH.hours.map((_,i)=>aggAt(i));let pk=vals.indexOf(Math.max(...vals));
-  DASH.hours.forEach((iso,i)=>{const hh=new Date(iso).toLocaleTimeString('fr-BE',{hour:'2-digit'});const v=vals[i];
+  const gridVals=DASH.hours.map((_,i)=>aggAt(i));
+  const vals=hasUsableSeries(DASH.hour_scores)?DASH.hour_scores.map(v=>clamp(numberOrNull(v)||0)):gridVals;
+  let pk=vals.indexOf(Math.max(...vals));
+  DASH.hours.forEach((iso,i)=>{const hh=new Date(iso).toLocaleTimeString('fr-BE',{hour:'2-digit'});const v=vals[i]??0;
     const col=document.createElement('div');col.className='col'+(i===pk?' peak':'');
+    col.title=`${hh} h · score ${Number(v).toFixed(2)} · ${sourceText(DASH)}`;
     col.innerHTML=`<svg class="bolt" viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg><div class="bar-track"><div class="bar-fill" style="height:0"></div></div><div class="hh">${hh}</div>`;
     bars.appendChild(col);const f=col.querySelector('.bar-fill');f.style.background=C[cls(v)];f.style.boxShadow=i===pk?`0 0 18px ${C[cls(v)]}`:'none';});
   animBars('#bars',vals);
   const pkHour=new Date(DASH.hours[pk]).toLocaleTimeString('fr-BE',{hour:'2-digit'});
-  document.getElementById('hNote').innerHTML=`<span>⚡ <b>${pkHour} h</b> pic de bascule (${vals[pk].toFixed(2)})</span><span>Score = max·0.6 + moyenne·0.4 sur la grille belge</span>`;
+  const mode=hasUsableSeries(DASH.hour_scores)?'série horaire Alert Watch':'agrégation de la grille affichée';
+  document.getElementById('hNote').innerHTML=`<span>⚡ <b>${pkHour} h</b> pic de bascule (${vals[pk].toFixed(2)})</span><span>${mode} · ${sourceText(DASH)}</span>`;
 }
 function animBars(sel,vals){const f=document.querySelectorAll(sel+' .bar-fill');f.forEach((el,i)=>{el.style.height='0';requestAnimationFrame(()=>setTimeout(()=>el.style.height=(vals[i]*100)+'%',60+i*34));});}
 /* ---- Chaleur ---- */
@@ -124,7 +143,7 @@ function renderChaleur(){if(!$('hxBig')||!DASH)return;
   document.getElementById('hxSub').textContent='Humidex = ressenti combinant température et humidité.';
   const bars=document.getElementById('heatBars');bars.innerHTML='';const norm=hxByHour.map(h=>clamp((h-18)/32));
   DASH.hours.forEach((iso,i)=>{const hh=new Date(iso).toLocaleTimeString('fr-BE',{hour:'2-digit'});const c=hxClass(hxByHour[i]);
-    const col=document.createElement('div');col.className='col';col.innerHTML=`<svg class="bolt" viewBox="0 0 24 24"></svg><div class="bar-track"><div class="bar-fill" style="height:0"></div></div><div class="hh">${hh}</div>`;
+    const col=document.createElement('div');col.className='col';col.title=`${hh} h · humidex ${Math.round(hxByHour[i]||0)} · ${sourceText(DASH)}`;col.innerHTML=`<svg class="bolt" viewBox="0 0 24 24"></svg><div class="bar-track"><div class="bar-fill" style="height:0"></div></div><div class="hh">${hh}</div>`;
     bars.appendChild(col);const f=col.querySelector('.bar-fill');f.style.background=C[c];});
   animBars('#heatBars',norm);
 }
@@ -275,7 +294,7 @@ function apiSeries(values, fallback, n){const arr=Array.isArray(values)?values:[
 function apiConstant(value,n){return Array.from({length:n},()=>value==null?null:Number(value));}
 function itemSeries(item,n,names,fallback){const hourly=item&&item.hourly?item.hourly:{};for(const name of names){if(Array.isArray(hourly[name]))return apiSeries(hourly[name],fallback,n);if(Array.isArray(item[name]))return apiSeries(item[name],fallback,n);}return apiConstant(fallback,n);}
 function apiHourlyFromMapItem(item,hours){const n=Math.max(hours.length,1);const score=Number(item.score||0);return{time:hours.map(h=>h.time||h.hour),meteovoid_score:itemSeries(item,n,['scores','meteovoid_score'],score),cape:itemSeries(item,n,['cape_jkg','cape'],item.cape_jkg),convective_inhibition:itemSeries(item,n,['cin_jkg','convective_inhibition'],item.cin_jkg),lifted_index:itemSeries(item,n,['lifted_index_c','lifted_index'],item.lifted_index_c),precipitation_probability:itemSeries(item,n,['precip_probability_pct','precipitation_probability'],item.precip_probability_pct),wind_gusts_10m:itemSeries(item,n,['wind_gust_ms','wind_gusts_10m'],item.wind_gust_ms),dew_point_2m:itemSeries(item,n,['dew_point_c','dew_point_2m'],item.dew_point_c),temperature_2m:itemSeries(item,n,['temperature_c','temperature_2m'],item.temperature_c)};}
-function applyMapLivePayload(S,payload,R){const hours=(payload.hours||[]).slice(0,48);S.off=0;S.hours=hours.map(h=>h.time||h.hour||'');S.grid=(payload.grid||[]).filter(p=>p.lat!=null&&p.lon!=null).map(p=>[Number(p.lat),Number(p.lon),apiHourlyFromMapItem(p,hours)]);S.stations=(payload.stations||[]).filter(s=>s.lat!=null&&s.lon!=null).map(s=>({name:s.name||s.station_id||'station',lat:Number(s.lat),lon:Number(s.lon),source:'alert-watch',score:s.score,signals:s.signals||[],h:apiHourlyFromMapItem(s,hours)}));S.source='alert-watch-live';S.timeline=payload.timeline||{};S.lastMapRefresh=new Date();const sl=document.getElementById(S.ids.time);if(sl){sl.max=Math.max(S.hours.length-1,0);sl.value=0;}S.i=0;ensureStaticMapFallback(S,S.ids.eye?'euMap':'carteMap',R);mapRender(S);if(S===CARTE){installDashboardFromMapLive(payload,R);}return S.grid.length>0||S.stations.length>0;}
+function applyMapLivePayload(S,payload,R){const hours=(payload.hours||[]).slice(0,48);S.off=0;S.hours=hours.map(h=>h.time||h.hour||'');S.hour_scores=hours.map(h=>numberOrNull(h.score??h.max_score??h.mean_score));S.grid=(payload.grid||[]).filter(p=>p.lat!=null&&p.lon!=null).map(p=>[Number(p.lat),Number(p.lon),apiHourlyFromMapItem(p,hours)]);S.stations=(payload.stations||[]).filter(s=>s.lat!=null&&s.lon!=null).map(s=>({name:s.name||s.station_id||'station',lat:Number(s.lat),lon:Number(s.lon),source:'alert-watch',score:s.score,signals:s.signals||[],h:apiHourlyFromMapItem(s,hours)}));S.source='alert-watch-live';S.timeline=payload.timeline||{};S.lastMapRefresh=new Date();const sl=document.getElementById(S.ids.time);if(sl){sl.max=Math.max(S.hours.length-1,0);sl.value=0;}S.i=0;ensureStaticMapFallback(S,S.ids.eye?'euMap':'carteMap',R);mapRender(S);if(S===CARTE){installDashboardFromMapLive(payload,R);}return S.grid.length>0||S.stations.length>0;}
 async function trySiteApiMap(S,key,R){const payload=await getMapLivePayload(key,false);if(!payload)return false;return applyMapLivePayload(S,payload,R);}
 
 async function fetchJsonWithTimeout(url,ms){const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),ms);try{const r=await fetch(url,{cache:"no-store",signal:controller.signal});if(!r.ok)throw new Error("HTTP "+r.status);return await r.json();}finally{clearTimeout(timer);}}

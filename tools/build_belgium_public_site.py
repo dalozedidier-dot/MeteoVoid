@@ -2485,6 +2485,97 @@ def _norm_key(value: Any) -> str:
     return str(value or "").strip().casefold().replace(" / ", " ").replace("-", " ")
 
 
+def _station_catalog_by_key() -> dict[str, dict[str, Any]]:
+    """Return known station metadata keyed by id and normalized names.
+
+    Some GitHub Pages builds are created from HTML/CSV artifacts only. In that
+    case ``belgium_alert_report.json`` is absent, but ``risk_by_station.csv``
+    still contains scores. This catalog restores coordinates so the public
+    ``api/map_live.json`` can remain linked to the same stations as the UI.
+    """
+    candidates = [
+        Path("config/stations_belgium.yaml"),
+        Path(__file__).resolve().parents[1] / "config" / "stations_belgium.yaml",
+    ]
+    payload: dict[str, Any] = {}
+    for candidate in candidates:
+        if not candidate.exists():
+            continue
+        try:
+            import yaml  # type: ignore[import-untyped]
+
+            loaded = yaml.safe_load(candidate.read_text(encoding="utf-8"))
+        except Exception:
+            loaded = None
+        if isinstance(loaded, dict):
+            payload = loaded
+            break
+    by_key: dict[str, dict[str, Any]] = {}
+    for station in payload.get("stations", []) if isinstance(payload, dict) else []:
+        if not isinstance(station, dict):
+            continue
+        item = dict(station)
+        keys = {
+            _norm_key(item.get("id")),
+            _norm_key(item.get("name")),
+            _norm_key(str(item.get("name") or "").split("/")[0]),
+        }
+        for key in keys:
+            if key:
+                by_key[key] = item
+    return by_key
+
+
+def _station_catalog_match(
+    row: dict[str, Any], catalog: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
+    keys = [
+        _norm_key(row.get("station_id")),
+        _norm_key(row.get("name")),
+        _norm_key(str(row.get("name") or "").split("/")[0]),
+    ]
+    for key in keys:
+        if key in catalog:
+            return catalog[key]
+    for key in keys:
+        if not key:
+            continue
+        for cat_key, item in catalog.items():
+            if key in cat_key or cat_key in key:
+                return item
+    return {}
+
+
+def _station_rows_from_csv(report_dir: Path) -> list[dict[str, Any]]:
+    """Build station rows from ``risk_by_station.csv`` when JSON is missing."""
+    rows = _read_csv_rows(report_dir / "risk_by_station.csv")
+    if not rows:
+        return []
+    catalog = _station_catalog_by_key()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        match = _station_catalog_match(row, catalog)
+        lat = _num(row.get("lat")) or _num(match.get("lat"))
+        lon = _num(row.get("lon")) or _num(match.get("lon"))
+        if lat is None or lon is None:
+            continue
+        out.append(
+            {
+                **row,
+                "station_id": row.get("station_id") or match.get("id"),
+                "name": row.get("name") or match.get("name"),
+                "region": row.get("region") or match.get("region"),
+                "lat": lat,
+                "lon": lon,
+                "severity": {"key": row.get("severity") or "normal"},
+                "signals": str(row.get("signals") or "").split("; ")
+                if row.get("signals")
+                else [],
+            }
+        )
+    return out
+
+
 def _constant_series(value: Any, count: int) -> list[float | None]:
     v = _num(value)
     return [round(float(v), 3) if v is not None else None for _ in range(max(count, 1))]
@@ -2577,6 +2668,8 @@ def _build_map_live_api(vm: dict[str, Any], report_dir: Path) -> dict[str, Any]:
         raw_hours = (
             timeline_json.get("timeline") if isinstance(timeline_json.get("timeline"), list) else []
         )
+    if not raw_hours:
+        raw_hours = _read_csv_rows(report_dir / "risk_timeline.csv")
 
     hours = []
     for row in raw_hours[:48]:
@@ -2612,6 +2705,8 @@ def _build_map_live_api(vm: dict[str, Any], report_dir: Path) -> dict[str, Any]:
         ]
 
     report_stations = [s for s in (report.get("stations") or []) if isinstance(s, dict)]
+    if not report_stations:
+        report_stations = _station_rows_from_csv(report_dir)
     station_hourly_by_name: dict[str, list[dict[str, Any]]] = {}
     station_hourly_by_id: dict[str, list[dict[str, Any]]] = {}
     for station in report_stations:
