@@ -37,6 +37,13 @@ def test_stormscope_is_global_public_interface(tmp_path: Path) -> None:
 
     europe_html = (site_dir / "europe.html").read_text(encoding="utf-8")
     methodology_html = (site_dir / "methodology.html").read_text(encoding="utf-8")
+    accueil_html = (site_dir / "accueil.html").read_text(encoding="utf-8")
+    assert "MeteoVoid accueil stormscope portal" in accueil_html
+    assert "Entrer · Belgique en direct" in accueil_html
+    assert "Tour d'Europe" in accueil_html
+    assert 'href="index.html"' in accueil_html
+    assert 'href="sources.html"' in accueil_html
+
     bulletin_html = (site_dir / "bulletin.html").read_text(encoding="utf-8")
 
     assert "#europe" in europe_html

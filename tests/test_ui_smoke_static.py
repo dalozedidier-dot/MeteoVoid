@@ -14,6 +14,7 @@ from pathlib import Path
 
 def assert_site(site_dir: Path) -> None:
     required_pages = [
+        "accueil.html",
         "index.html",
         "carte.html",
         "reseau.html",
@@ -33,6 +34,10 @@ def assert_site(site_dir: Path) -> None:
         assert path.exists(), f"missing page: {page}"
         html = path.read_text(encoding="utf-8")
         assert "MeteoVoid" in html
+    accueil_html = (site_dir / "accueil.html").read_text(encoding="utf-8")
+    assert "MeteoVoid accueil stormscope portal" in accueil_html
+    assert "Entrer · Belgique en direct" in accueil_html
+    assert "api/watch.json" in accueil_html
     app_js = (site_dir / "assets" / "app.js").read_text(encoding="utf-8")
     assert "map-static-fallback" in app_js
     assert "country-contract-live" in app_js

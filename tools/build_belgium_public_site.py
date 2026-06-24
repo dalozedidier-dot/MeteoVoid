@@ -3683,6 +3683,7 @@ def _write_stormscope_public_pages(
 
     page_views = {
         "index.html": "veille",
+        "accueil.html": "veille",
         "europe.html": "europe",
         "methodology.html": "methode",
         "france.html": "veille",
@@ -3858,7 +3859,7 @@ def build_index(
     _write_deep_platform_pages(site_dir)
     readme_body = (
         "# MeteoVoid Belgique\n\nSite statique généré automatiquement.\n"
-        "Storm-scope est l’interface publique globale : `index.html`, `classic.html`, "
+        "Storm-scope est l’interface publique globale : `accueil.html`, `index.html`, `classic.html`, "
         "`europe.html`, `methodology.html`, les pages pays et les alias `bulletin.html`, "
         "`carte.html`, `expert.html`, `chaleur.html`, `reseau.html` utilisent tous "
         "la même interface à éclairs. Les artefacts bruts restent disponibles sous "
