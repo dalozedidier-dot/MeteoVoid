@@ -180,6 +180,7 @@ a{color:inherit;text-decoration:none}
   box-shadow:0 0 24px rgba(53,224,206,.5);
   transition:height 1.4s cubic-bezier(.3,0,.1,1),background 1s;
   border-radius:0 0 17px 17px;
+  z-index:1;
 }
 .col-charge::before{
   content:"";position:absolute;inset:0;opacity:.5;
@@ -191,10 +192,12 @@ a{color:inherit;text-decoration:none}
   background:repeating-linear-gradient(45deg,rgba(138,154,171,.16) 0 6px,rgba(138,154,171,.04) 6px 12px);
   border-top:1px solid rgba(138,154,171,.4);border-bottom:1px solid rgba(138,154,171,.2);
   transition:bottom 1.4s cubic-bezier(.3,0,.1,1);
+  z-index:2;pointer-events:none;
 }
 .col-seuil{
   position:absolute;left:-8px;right:-8px;height:2px;background:var(--bolt);
   box-shadow:0 0 12px var(--bolt);transition:bottom 1.4s cubic-bezier(.3,0,.1,1);
+  z-index:3;pointer-events:none;
 }
 .col-seuil b{
   position:absolute;right:calc(100% + 8px);top:-7px;white-space:nowrap;
@@ -656,14 +659,17 @@ function render(d){
   set('mTrig',trig,'%');
 
   // colonne de bascule
-  const charge=clamp01((cape||0)/2500)*100;
-  const lid = cin!=null?clamp01(cin/160):0.32;
-  const lidBottom=Math.max(charge+4, 100-lid*55); // couvercle au-dessus de la charge
+  // La jauge doit représenter le même score que le verdict :
+  // BASCULE commence à 0.68, donc la charge doit franchir ce seuil.
+  // CAPE/CIN restent visibles dans les métriques, mais ne déplacent plus
+  // la ligne de seuil au-dessus de la charge.
+  const thresholdBottom=68;
+  const charge=score*100;
   const ch=document.getElementById('colCharge');
   ch.style.height=charge+'%';
   ch.classList.toggle('hot',score>0.5);
-  document.getElementById('colLid').style.bottom=Math.min(lidBottom,90)+'%';
-  document.getElementById('colSeuil').style.bottom=Math.min(lidBottom,90)+'%';
+  document.getElementById('colLid').style.bottom=thresholdBottom+'%';
+  document.getElementById('colSeuil').style.bottom=thresholdBottom+'%';
 
   // prochaines heures (24h)
   const hc=document.getElementById('hours'); hc.innerHTML='';
