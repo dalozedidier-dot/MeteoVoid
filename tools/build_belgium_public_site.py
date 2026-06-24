@@ -34,6 +34,7 @@ from typing import Any
 _SRC = Path(__file__).resolve().parents[1] / "src"
 if _SRC.exists() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
+from meteovoid.deep_platform import build_deep_platform_api  # noqa: E402
 from meteovoid.europe_country import build_all_countries  # noqa: E402
 from meteovoid.europe_sources import (  # noqa: E402
     build_europe_sources_api,
@@ -3192,8 +3193,10 @@ def build_api(vm: dict[str, Any], site_dir: Path, report_dir: Path | None = None
     )
     _write_json(api_dir / "live_smoke.json", vm["expert"].get("live_smoke") or {})
     _write_json(api_dir / "watch.json", _build_alert_watch_api(vm))
+    map_live_payload: dict[str, Any] | None = None
     if report_dir is not None:
-        _write_json(api_dir / "map_live.json", _build_map_live_api(vm, report_dir))
+        map_live_payload = _build_map_live_api(vm, report_dir)
+        _write_json(api_dir / "map_live.json", map_live_payload)
     _write_json(
         api_dir / "data_quality.json",
         {"generated_at": generated_at, **(vm["expert"].get("data_quality") or {})},
@@ -3203,6 +3206,25 @@ def build_api(vm: dict[str, Any], site_dir: Path, report_dir: Path | None = None
         build_europe_model(site_dir / "reports" / "latest", vm),
     )
     _write_json(api_dir / "europe_sources.json", build_europe_sources_api())
+
+    if report_dir is not None:
+        deep_api = build_deep_platform_api(report_dir, map_live_payload)
+        countries_payload = deep_api.get("countries", {})
+        countries_dir = api_dir / "countries"
+        countries = countries_payload.get("countries")
+        if isinstance(countries, dict):
+            for country_key, country_payload in countries.items():
+                _write_json(countries_dir / str(country_key) / "map_live.json", country_payload)
+        _write_json(countries_dir / "index.json", countries_payload)
+        _write_json(api_dir / "validation_summary.json", deep_api.get("validation_summary", {}))
+        _write_json(api_dir / "explain.json", deep_api.get("explain", {}))
+        _write_json(api_dir / "corridors.json", deep_api.get("corridors", {}))
+        _write_json(api_dir / "events.json", deep_api.get("events", {}))
+        _write_json(api_dir / "radar_machine.json", deep_api.get("radar_machine", {}))
+        _write_json(api_dir / "temporal_layers.json", deep_api.get("temporal_layers", {}))
+        _write_json(api_dir / "signal_confidence.json", deep_api.get("signal_confidence", {}))
+        _write_json(api_dir / "station_quality_map.json", deep_api.get("station_quality_map", {}))
+        _write_json(api_dir / "platform.json", deep_api.get("platform", {}))
 
     _write_json(
         api_dir / "index.json",
@@ -3224,6 +3246,16 @@ def build_api(vm: dict[str, Any], site_dir: Path, report_dir: Path | None = None
                 "data_quality": "api/data_quality.json",
                 "europe": "api/europe.json",
                 "europe_sources": "api/europe_sources.json",
+                "country_contracts": "api/countries/index.json",
+                "validation_summary": "api/validation_summary.json",
+                "explain": "api/explain.json",
+                "corridors": "api/corridors.json",
+                "events": "api/events.json",
+                "radar_machine": "api/radar_machine.json",
+                "temporal_layers": "api/temporal_layers.json",
+                "signal_confidence": "api/signal_confidence.json",
+                "station_quality_map": "api/station_quality_map.json",
+                "platform": "api/platform.json",
             },
             "disclaimer": meta.get("disclaimer"),
         },
@@ -3548,6 +3580,9 @@ def _prepare_stormscope_html(html: str, *, default_view: str = "veille") -> str:
     europe_sources_script = '<script src="assets/europe-sources-panel.js"></script>'
     if europe_sources_script not in html and app_script in html:
         html = html.replace(app_script, app_script + "\n" + europe_sources_script)
+    deep_platform_script = '<script src="assets/deep-platform-panels.js"></script>'
+    if deep_platform_script not in html and app_script in html:
+        html = html.replace(app_script, app_script + "\n" + deep_platform_script)
     if default_view and default_view != "veille" and "METEOVOID_DEFAULT_VIEW" not in html:
         safe_view = default_view.replace("'", "")
         jump = (
@@ -3624,6 +3659,10 @@ def _write_stormscope_public_pages(
         "expert.html": "expert",
         "chaleur.html": "chaleur",
         "reseau.html": "reseau",
+        "sources.html": "methode",
+        "validation.html": "expert",
+        "events.html": "expert",
+        "corridors.html": "europe",
     }
     for filename, view in alias_routes.items():
         _write_stormscope_page(site_dir, filename, default_view=view, pkg_web=pkg_web)
@@ -3633,6 +3672,66 @@ def _write_stormscope_public_pages(
         if href.endswith(".html") and not (site_dir / href).exists():
             _write_stormscope_page(site_dir, href, default_view="europe", pkg_web=pkg_web)
     return True
+
+
+def _write_deep_platform_pages(site_dir: Path) -> None:
+    """Write public entry pages for the deeper platform contracts."""
+
+    def page(title: str, subtitle: str, endpoint: str, body: str) -> str:
+        return f"""<!doctype html>
+<html lang="fr"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{title}</title><style>
+body{{margin:0;background:#090d17;color:#eaf0fa;font-family:Inter,Segoe UI,Arial,sans-serif;line-height:1.58}}
+main{{max-width:980px;margin:0 auto;padding:32px 20px 64px}}a{{color:#74b4ff}}
+.card{{border:1px solid #23314a;border-radius:18px;background:#111a2c;padding:18px;margin:14px 0}}
+.muted{{color:#8395b0}}code{{background:#172238;border-radius:7px;padding:2px 6px}}
+</style></head><body><main><p><a href="index.html">← MeteoVoid</a></p>
+<h1>{title}</h1><p class="muted">{subtitle}</p>
+<div class="card"><strong>API :</strong> <code>{endpoint}</code></div>{body}
+</main></body></html>
+"""
+
+    pages = {
+        "sources.html": page(
+            "Sources MeteoVoid",
+            "Sources actives, candidates officielles et sources expérimentales séparées.",
+            "api/europe_sources.json",
+            '<div class="card"><h2>Règle</h2><p>Open-Meteo reste le socle Europe. Les sources nationales enrichissent seulement les pays où leur contrat est clair.</p></div>',
+        ),
+        "validation.html": page(
+            "Validation MeteoVoid",
+            "Validation H-24, H-12, H-6, H-3 et mémoire des événements vérifiés.",
+            "api/validation_summary.json",
+            '<div class="card"><h2>Règle</h2><p>Publier les réussites, les faux positifs et les événements ratés.</p></div>',
+        ),
+        "signal.html": page(
+            "Explication du signal",
+            "Pourquoi le score monte, ce qui manque encore et ce qui reste potentiel.",
+            "api/explain.json",
+            '<div class="card"><h2>Principe</h2><p>Expliquer la convergence ou l’incohérence entre modèle, stations, radar, foudre, sources officielles et qualité des données.</p></div>',
+        ),
+        "corridors.html": page(
+            "Corridors amont",
+            "Routes météo vers la Belgique : nord France, Manche, Pays-Bas, Allemagne ouest.",
+            "api/corridors.json",
+            '<div class="card"><h2>Objectif</h2><p>Mesurer un signal avant son entrée en Belgique.</p></div>',
+        ),
+        "events.html": page(
+            "Mémoire des événements",
+            "Journal des cas météo, signaux bien vus, faux positifs et événements ratés.",
+            "api/events.json",
+            '<div class="card"><h2>Règle</h2><p>Conserver prévisions, confirmation radar/foudre et verdict observé.</p></div>',
+        ),
+        "radar-machine.html": page(
+            "Radar machine",
+            "État OPERA ORD, wradlib, métriques radar et future conversion en tuiles.",
+            "api/radar_machine.json",
+            '<div class="card"><h2>Pipeline</h2><p>OPERA HDF5 → wradlib → métriques → tuiles → couche observée.</p></div>',
+        ),
+    }
+    for filename, html in pages.items():
+        (site_dir / filename).write_text(html, encoding="utf-8")
 
 
 def build_index(
@@ -3673,6 +3772,7 @@ def build_index(
 
     _write_methodology_page(site_dir)
     stormscope_installed = _write_stormscope_public_pages(site_dir, country_links)
+    _write_deep_platform_pages(site_dir)
     readme_body = (
         "# MeteoVoid Belgique\n\nSite statique généré automatiquement.\n"
         "Storm-scope est l’interface publique globale : `index.html`, `classic.html`, "

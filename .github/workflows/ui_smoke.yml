@@ -1,0 +1,35 @@
+name: UI Smoke
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "stormscope/**"
+      - "tools/build_belgium_public_site.py"
+      - "src/meteovoid/**"
+      - "tests/test_ui_smoke_static.py"
+
+permissions:
+  contents: read
+
+jobs:
+  ui-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[live,viz]"
+      - name: Build static site
+        run: |
+          mkdir -p _ci_out/belgium_alert _site
+          python tools/build_belgium_public_site.py --report-dir _ci_out/belgium_alert --site-dir _site
+      - name: Static UI smoke assertions
+        run: |
+          python tests/test_ui_smoke_static.py _site
