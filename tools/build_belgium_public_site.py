@@ -1559,7 +1559,6 @@ def _build_bulletin(vm: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-
 def _copy_if_exists(src: Path, dst: Path) -> None:
     if src.exists() and src.is_file():
         dst.parent.mkdir(parents=True, exist_ok=True)
@@ -1631,9 +1630,7 @@ def _load_live_smoke(report_dir: Path) -> dict[str, Any]:
     )
     stats = source.get("stats") if isinstance(source.get("stats"), dict) else {}
     meteo = source.get("meteo") if isinstance(source.get("meteo"), dict) else {}
-    incoherence = (
-        source.get("incoherence") if isinstance(source.get("incoherence"), dict) else {}
-    )
+    incoherence = source.get("incoherence") if isinstance(source.get("incoherence"), dict) else {}
     generated_at = (
         source.get("ts_ingest_iso")
         or source.get("ts_iso")
@@ -1695,6 +1692,7 @@ def _load_live_smoke(report_dir: Path) -> dict[str, Any]:
         },
         "artefacts": artefacts,
     }
+
 
 def build_view_model(report_dir: Path) -> dict[str, Any]:
     report = _load_json(report_dir / "belgium_alert_report.json")
@@ -2011,13 +2009,9 @@ def _build_alert_watch_api(vm: dict[str, Any]) -> dict[str, Any]:
         expert.get("upstream_watch") if isinstance(expert.get("upstream_watch"), dict) else {}
     )
     validation = expert.get("validation") if isinstance(expert.get("validation"), dict) else {}
-    live_smoke = (
-        expert.get("live_smoke") if isinstance(expert.get("live_smoke"), dict) else {}
-    )
+    live_smoke = expert.get("live_smoke") if isinstance(expert.get("live_smoke"), dict) else {}
     opera_status = (
-        expert.get("opera_ord_status")
-        if isinstance(expert.get("opera_ord_status"), dict)
-        else {}
+        expert.get("opera_ord_status") if isinstance(expert.get("opera_ord_status"), dict) else {}
     )
 
     artefacts: list[dict[str, str]] = []
