@@ -3738,10 +3738,10 @@ def _write_deep_platform_pages(site_dir: Path) -> None:
 <html lang="fr"><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>{title}</title><style>
-body{{margin:0;background:#090d17;color:#eaf0fa;font-family:Inter,Segoe UI,Arial,sans-serif;line-height:1.58}}
-main{{max-width:980px;margin:0 auto;padding:32px 20px 64px}}a{{color:#74b4ff}}
-.card{{border:1px solid #23314a;border-radius:18px;background:#111a2c;padding:18px;margin:14px 0}}
-.muted{{color:#8395b0}}code{{background:#172238;border-radius:7px;padding:2px 6px}}
+body{{margin:0;background:#06080c;color:#eaf1f6;font-family:Inter,Segoe UI,Arial,sans-serif;line-height:1.58}}
+main{{max-width:980px;margin:0 auto;padding:32px 20px 64px}}a{{color:#35e0ce}}
+.card{{border:1px solid #1b2531;border-radius:18px;background:#0e141d;padding:18px;margin:14px 0}}
+.muted{{color:#8a9aab}}code{{background:#10161f;border-radius:7px;padding:2px 6px}}
 </style></head><body><main><p><a href="index.html">← MeteoVoid</a></p>
 <h1>{title}</h1><p class="muted">{subtitle}</p>
 <div class="card"><strong>API :</strong> <code>{endpoint}</code></div>{body}
