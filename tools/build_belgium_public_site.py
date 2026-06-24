@@ -3662,6 +3662,8 @@ def _write_stormscope_page(
     pkg_web = _stormscope_web_dir(pkg_web)
     src = pkg_web / (source_filename or filename)
     if not src.exists():
+        src = pkg_web / "app-shell.html"
+    if not src.exists():
         src = pkg_web / "index.html"
     if not src.exists():
         return False

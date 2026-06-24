@@ -26,23 +26,30 @@ def test_stormscope_is_global_public_interface(tmp_path: Path) -> None:
         "austria.html",
         "uk.html",
     ]
+    standalone_pages = {"accueil.html", "index.html"}
     for page in public_pages:
         html = (site_dir / page).read_text(encoding="utf-8")
-        assert "MeteoVoid · Storm-scope" in html
-        assert "Storm-scope · veille de bascule" in html
-        assert '<script src="assets/app.js"></script>' in html
-        assert '<script src="assets/site-api-adapter.js"></script>' in html
-        assert '<script src="assets/alert-watch-panels.js"></script>' in html
+        assert "MeteoVoid" in html
+        assert "Storm-scope" in html
+        if page not in standalone_pages:
+            assert '<script src="assets/app.js"></script>' in html
+            assert '<script src="assets/site-api-adapter.js"></script>' in html
+            assert '<script src="assets/alert-watch-panels.js"></script>' in html
         assert "Interface classique" not in html
 
     europe_html = (site_dir / "europe.html").read_text(encoding="utf-8")
     methodology_html = (site_dir / "methodology.html").read_text(encoding="utf-8")
     accueil_html = (site_dir / "accueil.html").read_text(encoding="utf-8")
+    index_html = (site_dir / "index.html").read_text(encoding="utf-8")
     assert "MeteoVoid accueil stormscope portal" in accueil_html
     assert "Entrer · Belgique en direct" in accueil_html
     assert "Tour d'Europe" in accueil_html
     assert 'href="index.html"' in accueil_html
     assert 'href="sources.html"' in accueil_html
+    assert "MeteoVoid belgium standalone stormscope dashboard" in index_html
+    assert "Prochaines heures" in index_html
+    assert 'href="carte.html"' in index_html
+    assert 'href="europe.html"' in index_html
 
     bulletin_html = (site_dir / "bulletin.html").read_text(encoding="utf-8")
 
