@@ -2,7 +2,7 @@
 <meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>MeteoVoid · Italie</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <link rel="stylesheet" href="assets/app.css"/>
@@ -10,7 +10,7 @@
 <div class="skybg"></div><canvas id="sky"></canvas><div class="flash" id="flash"></div>
 <div class="app">
 <header class="bar"><div class="in">
-  <div class="logo"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" fill="#74B4FF"/></svg></div>
+  <div class="logo"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" fill="#35e0ce"/></svg></div>
   <div><div class="bname">MeteoVoid</div><div class="bsub">Storm-scope · veille de bascule</div></div>
   <div class="grow"></div>
   <nav class="zones"><a href="accueil.html">Accueil</a><a href="index.html">Belgique</a><a href="europe.html">Europe</a><a href="france.html">France</a><a href="germany.html">Allemagne</a><a href="netherlands.html">Pays-Bas</a><a href="spain.html">Espagne</a><a href="switzerland.html">Suisse</a><a href="italy.html" class="active">Italie</a><a href="austria.html">Autriche</a><a href="denmark.html">Danemark</a><a href="uk.html">Royaume-Uni</a><a href="methodology.html">Méthode</a></nav>
@@ -20,15 +20,15 @@
 <section class="view" id="view-veille"><div class="hero"><div class="hero-grid">
   <figure class="scope"><figcaption>Coupe atmosphérique</figcaption>
     <svg viewBox="0 0 248 440" preserveAspectRatio="none">
-      <defs><linearGradient id="charge" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#F2783C"/><stop offset=".55" stop-color="#F2B23E"/><stop offset="1" stop-color="#EE4F5C"/></linearGradient>
+      <defs><linearGradient id="charge" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#F2783C"/><stop offset=".55" stop-color="#f7a23b"/><stop offset="1" stop-color="#f2603c"/></linearGradient>
       <filter id="g"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
-      <rect x="0" y="422" width="248" height="18" fill="#0a1322"/><line x1="0" y1="422" x2="248" y2="422" stroke="#2a3a55"/>
-      <line x1="0" y1="96" x2="248" y2="96" stroke="#EAF0FA" stroke-opacity=".45" stroke-dasharray="2 5"/>
-      <text x="240" y="88" text-anchor="end" font-family="JetBrains Mono" font-size="9" fill="#8395B0">SEUIL DE BASCULE</text>
+      <rect x="0" y="422" width="248" height="18" fill="#070d16"/><line x1="0" y1="422" x2="248" y2="422" stroke="#2a3a55"/>
+      <line x1="0" y1="96" x2="248" y2="96" stroke="#eaf1f6" stroke-opacity=".45" stroke-dasharray="2 5"/>
+      <text x="240" y="88" text-anchor="end" font-family="JetBrains Mono" font-size="9" fill="#8a9aab">SEUIL DE BASCULE</text>
       <g id="chargeG" style="transform-box:fill-box;transform-origin:bottom;transform:scaleY(0)"><rect id="chargeRect" x="78" y="0" width="92" height="422" fill="url(#charge)" opacity=".92" rx="6"/></g>
-      <line x1="40" y1="176" x2="208" y2="176" stroke="#74B4FF" stroke-width="2"/>
-      <text x="44" y="169" font-family="JetBrains Mono" font-size="9" fill="#74B4FF">COUVERCLE · INHIBITION</text>
-      <path id="lit" d="M128 176 L116 128 L132 132 L118 78" stroke="#D2E7FF" stroke-width="2.4" fill="none" filter="url(#g)" opacity="0" stroke-linecap="round" stroke-linejoin="round"/>
+      <line x1="40" y1="176" x2="208" y2="176" stroke="#35e0ce" stroke-width="2"/>
+      <text x="44" y="169" font-family="JetBrains Mono" font-size="9" fill="#35e0ce">COUVERCLE · INHIBITION</text>
+      <path id="lit" d="M128 176 L116 128 L132 132 L118 78" stroke="#fff7d6" stroke-width="2.4" fill="none" filter="url(#g)" opacity="0" stroke-linecap="round" stroke-linejoin="round"/>
       <circle id="topDot" cx="124" cy="158" r="5.5" fill="#fff"/></svg></figure>
   <div class="state">
     <div class="eyebrow">État de l'atmosphère · <span id="vRegion">Belgique</span> · <b>non officiel</b></div>
