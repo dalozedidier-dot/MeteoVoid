@@ -23,11 +23,13 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 import os
 import shutil
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -1979,6 +1981,35 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     )
 
 
+def _write_public_manifest(api_dir: Path) -> None:
+    items: list[dict[str, Any]] = []
+    for path in sorted(api_dir.rglob("*.json")):
+        if path.name == "public_manifest.json":
+            continue
+        rel = path.relative_to(api_dir.parent).as_posix()
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            continue
+        items.append(
+            {
+                "path": rel,
+                "bytes": len(raw),
+                "sha256": hashlib.sha256(raw).hexdigest(),
+            }
+        )
+    _write_json(
+        api_dir / "public_manifest.json",
+        {
+            "contract": "meteovoid_public_api_manifest_v1",
+            "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "file_count": len(items),
+            "files": items,
+            "policy": "Every public JSON endpoint is hashed after build for auditability.",
+        },
+    )
+
+
 def _build_alert_watch_api(vm: dict[str, Any]) -> dict[str, Any]:
     """Build a compact public API exposing the whole Belgium Alert Watch state.
 
@@ -3224,6 +3255,17 @@ def build_api(vm: dict[str, Any], site_dir: Path, report_dir: Path | None = None
         _write_json(api_dir / "temporal_layers.json", deep_api.get("temporal_layers", {}))
         _write_json(api_dir / "signal_confidence.json", deep_api.get("signal_confidence", {}))
         _write_json(api_dir / "station_quality_map.json", deep_api.get("station_quality_map", {}))
+        _write_json(api_dir / "convergence_matrix.json", deep_api.get("convergence_matrix", {}))
+        _write_json(api_dir / "country_comparison.json", deep_api.get("country_comparison", {}))
+        _write_json(api_dir / "forecast_ledger.json", deep_api.get("forecast_ledger", {}))
+        _write_json(
+            api_dir / "operational_readiness.json", deep_api.get("operational_readiness", {})
+        )
+        _write_json(api_dir / "risk_ontology.json", deep_api.get("risk_ontology", {}))
+        _write_json(api_dir / "action_cards.json", deep_api.get("action_cards", {}))
+        _write_json(api_dir / "ui_contracts.json", deep_api.get("ui_contracts", {}))
+        _write_json(api_dir / "source_health.json", deep_api.get("source_health", {}))
+        _write_json(api_dir / "schema_catalog.json", deep_api.get("schema_catalog", {}))
         _write_json(api_dir / "platform.json", deep_api.get("platform", {}))
 
     _write_json(
@@ -3255,11 +3297,22 @@ def build_api(vm: dict[str, Any], site_dir: Path, report_dir: Path | None = None
                 "temporal_layers": "api/temporal_layers.json",
                 "signal_confidence": "api/signal_confidence.json",
                 "station_quality_map": "api/station_quality_map.json",
+                "convergence_matrix": "api/convergence_matrix.json",
+                "country_comparison": "api/country_comparison.json",
+                "forecast_ledger": "api/forecast_ledger.json",
+                "operational_readiness": "api/operational_readiness.json",
+                "risk_ontology": "api/risk_ontology.json",
+                "action_cards": "api/action_cards.json",
+                "ui_contracts": "api/ui_contracts.json",
+                "source_health": "api/source_health.json",
+                "schema_catalog": "api/schema_catalog.json",
+                "public_manifest": "api/public_manifest.json",
                 "platform": "api/platform.json",
             },
             "disclaimer": meta.get("disclaimer"),
         },
     )
+    _write_public_manifest(api_dir)
 
 
 def _write_europe_page_legacy_v1(site_dir: Path, model: dict[str, Any]) -> None:
@@ -3728,6 +3781,36 @@ main{{max-width:980px;margin:0 auto;padding:32px 20px 64px}}a{{color:#74b4ff}}
             "État OPERA ORD, wradlib, métriques radar et future conversion en tuiles.",
             "api/radar_machine.json",
             '<div class="card"><h2>Pipeline</h2><p>OPERA HDF5 → wradlib → métriques → tuiles → couche observée.</p></div>',
+        ),
+        "convergence.html": page(
+            "Matrice de convergence",
+            "Comparaison entre modèle, stations, grille, radar, live smoke et sources officielles.",
+            "api/convergence_matrix.json",
+            '<div class="card"><h2>Principe</h2><p>Un signal fort n’est solide que si plusieurs couches indépendantes convergent.</p></div>',
+        ),
+        "ledger.html": page(
+            "Ledger des prévisions",
+            "Structure append-only pour relier chaque prévision aux observations futures.",
+            "api/forecast_ledger.json",
+            '<div class="card"><h2>Objectif</h2><p>Conserver H-24, H-12, H-6 et H-3 pour mesurer les réussites, les faux positifs et les ratés.</p></div>',
+        ),
+        "ops.html": page(
+            "Readiness opérationnelle",
+            "Ce qui est prêt, ce qui reste candidat et ce qui doit être confirmé.",
+            "api/operational_readiness.json",
+            '<div class="card"><h2>Règle</h2><p>Le site doit continuer à fonctionner, mais afficher clairement les couches manquantes.</p></div>',
+        ),
+        "ontology.html": page(
+            "Ontologie des risques",
+            "Familles de risques et preuves attendues pour éviter les scores fourre-tout.",
+            "api/risk_ontology.json",
+            '<div class="card"><h2>Principe</h2><p>Chaque risque doit préciser s’il relève du potentiel modèle, du signal observé ou d’un événement validé.</p></div>',
+        ),
+        "manifest.html": page(
+            "Manifest public API",
+            "Empreintes sha256 des endpoints publics générés par le build.",
+            "api/public_manifest.json",
+            '<div class="card"><h2>Audit</h2><p>Chaque JSON public est hashé après génération pour rendre les sorties traçables.</p></div>',
         ),
     }
     for filename, html in pages.items():

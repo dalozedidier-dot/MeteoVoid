@@ -68,6 +68,33 @@
     const el = panel("mv-deep-radar-machine", "Radar machine OPERA", data.contract);
     el.innerHTML += '<div class="ing">' + kv("Fichiers OPERA", data.downloaded_file_count) + kv("Couche machine", data.machine_layer_ready ? "prête" : "non prête") + '</div><div class="note"><b>Pipeline.</b> ' + esc((data.recommended_pipeline || []).join(" → ")) + "</div>";
   }
+
+  function renderConvergence(data) {
+    const rows = (data.layers || []).map((x) => '<div class="det"><span class="dot" style="background:' + (x.available ? 'var(--c1)' : 'var(--faint)') + '"></span><div><div class="nm">' + esc(x.label) + '</div><div class="lv">' + esc(x.evidence) + '</div></div><div class="sc">' + esc(x.score == null ? '—' : x.score) + '</div></div>').join("");
+    const el = panel("mv-deep-convergence", "Matrice de convergence", data.contract);
+    el.innerHTML += '<div class="ing">' + kv("Accord", data.agreement_score) + kv("Lecture", data.label) + '</div><div class="net">' + rows + '</div>';
+  }
+  function renderOps(data) {
+    const rows = (data.checks || []).map((x) => '<div class="det"><span class="dot" style="background:' + (x.ok ? 'var(--c1)' : 'var(--c2)') + '"></span><div><div class="nm">' + esc(x.label) + '</div><div class="lv">' + esc(x.id) + '</div></div><div class="sc">' + esc(x.ok ? 'OK' : 'candidat') + '</div></div>').join("");
+    const el = panel("mv-deep-ops", "Readiness opérationnelle", data.contract);
+    el.innerHTML += '<div class="ing">' + kv("Score", data.score) + kv("Prêts", (data.ready_count || 0) + "/" + (data.check_count || 0)) + '</div><div class="net">' + rows + '</div>';
+  }
+  function renderActions(data) {
+    const el = panel("mv-deep-actions", "Cartes d’action", data.contract);
+    const expert = data.expert_card || {};
+    const checks = (expert.checks || []).map((x) => '<li>' + esc(x) + '</li>').join("");
+    el.innerHTML += '<div class="ing">' + kv("Niveau", data.level) + kv("Score", data.score) + '</div><div class="note"><b>' + esc((data.public_card || {}).title || "Lecture publique") + '.</b> ' + esc((data.public_card || {}).text || "") + '</div><ul>' + checks + '</ul>';
+  }
+  function renderLedger(data) {
+    const rows = (data.by_horizon || []).map((x) => '<div class="det"><span class="dot" style="background:var(--c2)"></span><div><div class="nm">' + esc(x.horizon) + '</div><div class="lv">prévisions archivées</div></div><div class="sc">' + esc(x.rows) + '</div></div>').join("");
+    const el = panel("mv-deep-ledger", "Ledger prévisionnel", data.contract);
+    el.innerHTML += '<div class="ing">' + kv("Prévisions", data.forecast_rows) + kv("Événements", data.event_rows) + '</div><div class="net">' + rows + '</div>';
+  }
+  function renderManifest(data) {
+    const files = (data.files || []).slice(0, 8).map((x) => '<div class="det"><span class="dot" style="background:var(--c1)"></span><div><div class="nm">' + esc(x.path) + '</div><div class="lv">sha256 ' + esc(String(x.sha256 || '').slice(0, 12)) + '</div></div><div class="sc">' + esc(x.bytes) + '</div></div>').join("");
+    const el = panel("mv-deep-manifest", "Manifest public", data.contract);
+    el.innerHTML += '<div class="ing">' + kv("Fichiers", data.file_count) + '</div><div class="net">' + files + '</div>';
+  }
   function addStyles() {
     if (document.getElementById("mv-deep-style")) return;
     const style = document.createElement("style");
@@ -77,8 +104,8 @@
   }
   async function boot() {
     addStyles();
-    const [sources, validation, explain, corridors, radar, temporal, confidence, quality] = await Promise.all([
-      readJson("api/europe_sources.json"), readJson("api/validation_summary.json"), readJson("api/explain.json"), readJson("api/corridors.json"), readJson("api/radar_machine.json"), readJson("api/temporal_layers.json"), readJson("api/signal_confidence.json"), readJson("api/station_quality_map.json")
+    const [sources, validation, explain, corridors, radar, temporal, confidence, quality, convergence, ops, actions, ledger, manifest] = await Promise.all([
+      readJson("api/europe_sources.json"), readJson("api/validation_summary.json"), readJson("api/explain.json"), readJson("api/corridors.json"), readJson("api/radar_machine.json"), readJson("api/temporal_layers.json"), readJson("api/signal_confidence.json"), readJson("api/station_quality_map.json"), readJson("api/convergence_matrix.json"), readJson("api/operational_readiness.json"), readJson("api/action_cards.json"), readJson("api/forecast_ledger.json"), readJson("api/public_manifest.json")
     ]);
     if (sources && sources.countries) renderSources(sources);
     if (validation && validation.contract) renderValidation(validation);
@@ -87,6 +114,11 @@
     if (temporal && temporal.contract) renderTemporal(temporal);
     if (confidence && confidence.contract) renderConfidence(confidence);
     if (quality && quality.contract) renderQuality(quality);
+    if (convergence && convergence.contract) renderConvergence(convergence);
+    if (ops && ops.contract) renderOps(ops);
+    if (actions && actions.contract) renderActions(actions);
+    if (ledger && ledger.contract) renderLedger(ledger);
+    if (manifest && manifest.contract) renderManifest(manifest);
     if (radar && radar.contract) renderRadar(radar);
   }
   window.addEventListener("DOMContentLoaded", () => boot().catch(() => {}));

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MeteoVoid convergence matrix",
+  "type": "object",
+  "required": ["contract", "generated_at", "agreement_score", "layers"],
+  "properties": {
+    "contract": {"const": "meteovoid_convergence_matrix_v1"},
+    "generated_at": {"type": "string"},
+    "agreement_score": {"type": "number", "minimum": 0, "maximum": 1},
+    "label": {"type": "string"},
+    "layers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "available", "evidence"],
+        "properties": {
+          "id": {"type": "string"},
+          "label": {"type": "string"},
+          "available": {"type": "boolean"},
+          "score": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+          "evidence": {"type": "string"}
+        }
+      }
+    }
+  }
+}

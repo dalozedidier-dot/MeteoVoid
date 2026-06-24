@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MeteoVoid public API manifest",
+  "type": "object",
+  "required": ["contract", "generated_at", "file_count", "files"],
+  "properties": {
+    "contract": {"const": "meteovoid_public_api_manifest_v1"},
+    "generated_at": {"type": "string"},
+    "file_count": {"type": "integer", "minimum": 0},
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "bytes", "sha256"],
+        "properties": {
+          "path": {"type": "string"},
+          "bytes": {"type": "integer", "minimum": 0},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+        }
+      }
+    }
+  }
+}

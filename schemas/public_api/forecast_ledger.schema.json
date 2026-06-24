@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MeteoVoid forecast ledger",
+  "type": "object",
+  "required": ["contract", "generated_at", "forecast_rows", "event_rows", "by_horizon"],
+  "properties": {
+    "contract": {"const": "meteovoid_forecast_ledger_v1"},
+    "generated_at": {"type": "string"},
+    "forecast_rows": {"type": "integer", "minimum": 0},
+    "event_rows": {"type": "integer", "minimum": 0},
+    "by_horizon": {"type": "array"},
+    "append_only_fields": {"type": "array", "items": {"type": "string"}}
+  }
+}

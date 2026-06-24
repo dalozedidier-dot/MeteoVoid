@@ -22,6 +22,11 @@ def assert_site(site_dir: Path) -> None:
         "sources.html",
         "validation.html",
         "corridors.html",
+        "convergence.html",
+        "ledger.html",
+        "ops.html",
+        "ontology.html",
+        "manifest.html",
     ]
     for page in required_pages:
         path = site_dir / page
@@ -39,6 +44,16 @@ def assert_site(site_dir: Path) -> None:
         "api/signal_confidence.json",
         "api/station_quality_map.json",
         "api/platform.json",
+        "api/convergence_matrix.json",
+        "api/country_comparison.json",
+        "api/forecast_ledger.json",
+        "api/operational_readiness.json",
+        "api/risk_ontology.json",
+        "api/action_cards.json",
+        "api/ui_contracts.json",
+        "api/source_health.json",
+        "api/schema_catalog.json",
+        "api/public_manifest.json",
     ]
     for contract in contracts:
         payload = json.loads((site_dir / contract).read_text(encoding="utf-8"))

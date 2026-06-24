@@ -395,7 +395,7 @@ def build_validation_summary(report_dir: Path) -> dict[str, Any]:
 
 def build_signal_explain(report_dir: Path) -> dict[str, Any]:
     report = _read_json(report_dir / "belgium_alert_report.json")
-    stations = report.get("stations") if isinstance(report.get("stations"), list) else []
+    stations = _list_from(report.get("stations"))
     drivers: dict[str, float] = {}
     for station in stations:
         if not isinstance(station, dict):
@@ -443,7 +443,9 @@ def build_corridor_summary(report_dir: Path) -> dict[str, Any]:
     rows = _read_csv(report_dir / "upstream_corridors.csv")
     corridors = []
     for corridor_id, label in UPSTREAM_CORRIDORS:
-        matches = [row for row in rows if corridor_id in str(row.get("id") or row.get("corridor") or "")]
+        matches = [
+            row for row in rows if corridor_id in str(row.get("id") or row.get("corridor") or "")
+        ]
         scores = [_num(row.get("score") or row.get("max_score"), 0.0) or 0.0 for row in matches]
         score = max(scores) if scores else 0.15 + 0.35 * _stable_unit(corridor_id)
         corridors.append(
@@ -492,7 +494,9 @@ def build_radar_machine_summary(report_dir: Path) -> dict[str, Any]:
     downloaded = _num(opera.get("downloaded_files"), 0.0) or _num(
         inventory.get("downloaded_files"), 0.0
     )
-    wradlib_ready = bool(metrics and metrics.get("status") not in {"missing_wradlib", "unavailable"})
+    wradlib_ready = bool(
+        metrics and metrics.get("status") not in {"missing_wradlib", "unavailable"}
+    )
     return {
         "contract": "meteovoid_radar_machine_v1",
         "generated_at": _now_iso(),
@@ -513,8 +517,10 @@ def build_radar_machine_summary(report_dir: Path) -> dict[str, Any]:
 
 def build_temporal_layers(map_live: dict[str, Any] | None = None) -> dict[str, Any]:
     payload = map_live or {}
-    timeline = payload.get("timeline") if isinstance(payload.get("timeline"), dict) else {}
-    hours = payload.get("hours") if isinstance(payload.get("hours"), list) else []
+    timeline = _dict_from(payload.get("timeline"))
+    radar_observed = _dict_from(timeline.get("radar_observed"))
+    nowcast = _dict_from(timeline.get("nowcast_short_term"))
+    hours = _list_from(payload.get("hours"))
     return {
         "contract": "meteovoid_temporal_layers_v1",
         "generated_at": _now_iso(),
@@ -524,30 +530,38 @@ def build_temporal_layers(map_live: dict[str, Any] | None = None) -> dict[str, A
             {
                 "id": "radar_observed",
                 "label": "radar observé",
-                "available": bool(timeline.get("radar_observed", {}).get("available")),
+                "available": bool(radar_observed.get("available")),
             },
             {
                 "id": "nowcast_short_term",
                 "label": "nowcast court terme",
-                "available": bool(timeline.get("nowcast_short_term", {}).get("available")),
+                "available": bool(nowcast.get("available")),
             },
         ],
     }
 
 
-def build_signal_confidence_summary(report_dir: Path, map_live: dict[str, Any] | None = None) -> dict[str, Any]:
+def build_signal_confidence_summary(
+    report_dir: Path, map_live: dict[str, Any] | None = None
+) -> dict[str, Any]:
     source_status = _read_json(report_dir / "source_status.json")
     radar = build_radar_machine_summary(report_dir)
     payload = map_live or {}
-    station_count = len(payload.get("stations", [])) if isinstance(payload.get("stations"), list) else 0
+    station_count = (
+        len(payload.get("stations", [])) if isinstance(payload.get("stations"), list) else 0
+    )
     grid_count = len(payload.get("grid", [])) if isinstance(payload.get("grid"), list) else 0
-    factors = [
+    factors: list[dict[str, Any]] = [
         {"factor": "station_network", "score": round(min(station_count / 24.0, 1.0), 3)},
         {"factor": "grid_density", "score": round(min(grid_count / 300.0, 1.0), 3)},
-        {"factor": "source_health", "score": round(_clamp01(source_status.get("source_health_score")), 3)},
+        {
+            "factor": "source_health",
+            "score": round(_clamp01(source_status.get("source_health_score")), 3),
+        },
         {"factor": "radar_machine", "score": 1.0 if radar.get("machine_layer_ready") else 0.0},
     ]
-    score = sum(float(row["score"]) for row in factors) / max(len(factors), 1)
+    factor_scores = [_num(row.get("score"), 0.0) or 0.0 for row in factors]
+    score = sum(factor_scores) / max(len(factor_scores), 1)
     return {
         "contract": "meteovoid_signal_confidence_v1",
         "generated_at": _now_iso(),
@@ -557,14 +571,16 @@ def build_signal_confidence_summary(report_dir: Path, map_live: dict[str, Any] |
     }
 
 
-def build_station_quality_map(report_dir: Path, map_live: dict[str, Any] | None = None) -> dict[str, Any]:
+def build_station_quality_map(
+    report_dir: Path, map_live: dict[str, Any] | None = None
+) -> dict[str, Any]:
     quality = _read_json(report_dir / "data_quality.json")
-    stations = map_live.get("stations", []) if isinstance(map_live, dict) else []
+    stations = _list_from(map_live.get("stations") if isinstance(map_live, dict) else [])
     rows = []
-    for station in stations if isinstance(stations, list) else []:
+    for station in stations:
         if not isinstance(station, dict):
             continue
-        signals = station.get("signals") if isinstance(station.get("signals"), list) else []
+        signals = _list_from(station.get("signals"))
         text = " ".join(str(item).lower() for item in signals)
         flatline = "flatline" in text or "stagn" in text
         gap = "gap" in text or "trou" in text
@@ -589,27 +605,443 @@ def build_station_quality_map(report_dir: Path, map_live: dict[str, Any] | None 
     }
 
 
+def _list_from(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _dict_from(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def build_country_comparison(country_index: dict[str, Any]) -> dict[str, Any]:
+    """Build a compact comparison table across all tracked country contracts."""
+
+    countries = _dict_from(country_index.get("countries"))
+    rows: list[dict[str, Any]] = []
+    for key, item_raw in sorted(countries.items()):
+        item = _dict_from(item_raw)
+        summary = _dict_from(item.get("summary"))
+        timeline = _dict_from(item.get("timeline"))
+        station_count = int(_num(summary.get("station_count"), 0.0) or 0)
+        grid_count = int(_num(summary.get("grid_count"), 0.0) or 0)
+        hour_count = int(_num(summary.get("hour_count"), 0.0) or 0)
+        has_radar = bool(_dict_from(timeline.get("radar_observed")).get("available"))
+        completeness = (
+            min(station_count / 6.0, 1.0) * 0.25
+            + min(grid_count / 20.0, 1.0) * 0.25
+            + min(hour_count / 48.0, 1.0) * 0.25
+            + (0.25 if has_radar else 0.0)
+        )
+        rows.append(
+            {
+                "country": key,
+                "label": item.get("label") or key,
+                "mode": item.get("mode"),
+                "primary_forecast": summary.get("primary_forecast"),
+                "national_observations": summary.get("national_observations"),
+                "radar_available": has_radar,
+                "station_count": station_count,
+                "grid_count": grid_count,
+                "hour_count": hour_count,
+                "completeness_score": round(_clamp01(completeness), 3),
+            }
+        )
+    return {
+        "contract": "meteovoid_country_comparison_v1",
+        "generated_at": _now_iso(),
+        "countries": rows,
+        "best_covered": sorted(rows, key=lambda row: row["completeness_score"], reverse=True)[:5],
+        "policy": "Compare coverage and source depth without pretending all countries have Belgium-level evidence.",
+    }
+
+
+def build_convergence_matrix(
+    report_dir: Path,
+    map_live: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Expose whether model, stations, radar, live smoke and official layers agree."""
+
+    payload = map_live or {}
+    radar = build_radar_machine_summary(report_dir)
+    live_smoke = _read_json(report_dir / "live_smoke_summary.json") or _read_json(
+        report_dir / "live_smoke.json"
+    )
+    watch = _read_json(report_dir / "belgium_alert_report.json")
+    source_status = _read_json(report_dir / "source_status.json")
+    hours = _list_from(payload.get("hours"))
+    stations = _list_from(payload.get("stations"))
+    grid = _list_from(payload.get("grid"))
+    hour_scores = [
+        _num(row.get("max_score") or row.get("score"), 0.0) or 0.0
+        for row in hours
+        if isinstance(row, dict)
+    ]
+    station_scores = [
+        _num(row.get("score"), 0.0) or 0.0 for row in stations if isinstance(row, dict)
+    ]
+    grid_scores = [_num(row.get("score"), 0.0) or 0.0 for row in grid if isinstance(row, dict)]
+    max_hour = max(hour_scores, default=0.0)
+    max_station = max(station_scores, default=0.0)
+    max_grid = max(grid_scores, default=0.0)
+    live_score = _num(live_smoke.get("score") or live_smoke.get("last_score"), None)
+    official = watch.get("official_warning") or watch.get("official_status") or "unknown"
+    radar_metrics = _dict_from(radar.get("opera_radar_metrics"))
+    layers = [
+        {
+            "id": "model_forecast",
+            "label": "prévision modèle",
+            "available": bool(hours),
+            "score": round(_clamp01(max_hour), 3),
+            "evidence": "timeline forecast_model",
+        },
+        {
+            "id": "station_network",
+            "label": "stations",
+            "available": bool(stations),
+            "score": round(_clamp01(max_station), 3),
+            "evidence": f"{len(stations)} stations",
+        },
+        {
+            "id": "grid_field",
+            "label": "grille spatiale",
+            "available": bool(grid),
+            "score": round(_clamp01(max_grid), 3),
+            "evidence": f"{len(grid)} points",
+        },
+        {
+            "id": "live_smoke",
+            "label": "live smoke",
+            "available": bool(live_smoke),
+            "score": round(_clamp01(live_score), 3) if live_score is not None else None,
+            "evidence": live_smoke.get("status") or "not_available",
+        },
+        {
+            "id": "radar_machine",
+            "label": "radar machine",
+            "available": bool(radar.get("machine_layer_ready")),
+            "score": 1.0 if radar.get("machine_layer_ready") else 0.0,
+            "evidence": radar_metrics.get("status") or "not_confirmed",
+        },
+        {
+            "id": "official_warning",
+            "label": "source officielle",
+            "available": official != "unknown",
+            "score": None,
+            "evidence": official,
+        },
+        {
+            "id": "source_health",
+            "label": "santé sources",
+            "available": bool(source_status),
+            "score": round(_clamp01(source_status.get("source_health_score")), 3),
+            "evidence": source_status.get("status") or "unknown",
+        },
+    ]
+    numeric_scores = [
+        score for row in layers if (score := _num(row.get("score"), None)) is not None
+    ]
+    active_count = sum(1 for row in layers if row.get("available"))
+    spread = max(numeric_scores) - min(numeric_scores) if len(numeric_scores) >= 2 else 0.0
+    agreement = _clamp01((active_count / len(layers)) * (1.0 - min(spread, 1.0) * 0.35))
+    if agreement >= 0.72:
+        label = "convergence forte"
+    elif agreement >= 0.45:
+        label = "convergence partielle"
+    else:
+        label = "signal encore fragile"
+    return {
+        "contract": "meteovoid_convergence_matrix_v1",
+        "generated_at": _now_iso(),
+        "agreement_score": round(agreement, 3),
+        "label": label,
+        "layers": layers,
+        "rules": [
+            "A model signal is not an observed event.",
+            "Radar machine confirmation is separated from visual radar availability.",
+            "Missing layers reduce confidence instead of being silently ignored.",
+        ],
+    }
+
+
+def build_forecast_ledger(report_dir: Path) -> dict[str, Any]:
+    """Build an append-only friendly forecast ledger summary."""
+
+    forecast_rows = _read_csv(report_dir / "forecast_history.csv")
+    history_rows = _read_csv(report_dir / "history.csv")
+    horizons = ["H-24", "H-12", "H-6", "H-3"]
+    rows_by_horizon: dict[str, int] = {horizon: 0 for horizon in horizons}
+    for row in forecast_rows:
+        raw = str(row.get("horizon") or row.get("lead_time") or row.get("lead_time_hours") or "")
+        for horizon in horizons:
+            if horizon.replace("H-", "") in raw or horizon in raw:
+                rows_by_horizon[horizon] += 1
+                break
+    return {
+        "contract": "meteovoid_forecast_ledger_v1",
+        "generated_at": _now_iso(),
+        "forecast_rows": len(forecast_rows),
+        "event_rows": len(history_rows),
+        "by_horizon": [
+            {"horizon": horizon, "rows": rows_by_horizon[horizon]} for horizon in horizons
+        ],
+        "append_only_fields": [
+            "run_id",
+            "generated_at",
+            "target_time",
+            "horizon",
+            "zone",
+            "risk_type",
+            "forecast_score",
+            "observed_score",
+            "radar_confirmed",
+            "lightning_confirmed",
+            "verdict",
+        ],
+        "next_step": "Store every forecast before the event and join it later with observations.",
+    }
+
+
+def build_operational_readiness(
+    report_dir: Path,
+    country_index: dict[str, Any],
+    map_live: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Summarize what is production-ready and what remains a candidate."""
+
+    payload = map_live or {}
+    countries = _dict_from(country_index.get("countries"))
+    checks = [
+        {
+            "id": "belgium_map_live",
+            "label": "contrat Belgique live",
+            "ok": bool(payload.get("hours") and payload.get("stations")),
+        },
+        {
+            "id": "country_contracts",
+            "label": "contrats pays Europe",
+            "ok": len(countries) >= 6,
+        },
+        {
+            "id": "radar_machine",
+            "label": "radar machine",
+            "ok": build_radar_machine_summary(report_dir).get("machine_layer_ready") is True,
+        },
+        {
+            "id": "validation_ledger",
+            "label": "ledger validation",
+            "ok": len(_read_csv(report_dir / "forecast_history.csv")) > 0,
+        },
+        {
+            "id": "live_smoke",
+            "label": "live smoke",
+            "ok": bool(_read_json(report_dir / "live_smoke.json")),
+        },
+    ]
+    ready_count = sum(1 for check in checks if check["ok"])
+    score = ready_count / max(len(checks), 1)
+    missing = [str(check["label"]) for check in checks if not check["ok"]]
+    return {
+        "contract": "meteovoid_operational_readiness_v1",
+        "generated_at": _now_iso(),
+        "score": round(score, 3),
+        "checks": checks,
+        "ready_count": ready_count,
+        "check_count": len(checks),
+        "missing_or_candidate": missing,
+        "deployment_policy": "Fail soft in the UI, but expose every missing layer explicitly.",
+    }
+
+
+def build_risk_ontology() -> dict[str, Any]:
+    """Define public risk families and which evidence layers should support them."""
+
+    families = [
+        (
+            "convective",
+            "Risque convectif",
+            ["CAPE", "CIN", "point_de_rosee", "rafales", "radar", "foudre"],
+        ),
+        ("heat", "Stress chaleur", ["temperature", "humidite", "point_de_rosee", "nuit_tropicale"]),
+        ("rain", "Pluie intense", ["precipitation", "radar", "PWAT", "saturation_sol"]),
+        ("wind", "Rafales", ["gradient", "rafales_modele", "radar", "ligne_convective"]),
+        ("data_quality", "Qualité donnée", ["fraicheur", "trous", "flatline", "voisins"]),
+    ]
+    return {
+        "contract": "meteovoid_risk_ontology_v1",
+        "generated_at": _now_iso(),
+        "families": [
+            {"id": item[0], "label": item[1], "required_evidence_layers": item[2]}
+            for item in families
+        ],
+        "policy": "Risk labels must identify whether they are model potential, observed signal or validated event.",
+    }
+
+
+def build_action_cards(
+    convergence: dict[str, Any],
+    confidence: dict[str, Any],
+) -> dict[str, Any]:
+    """Create public and expert action cards without replacing official warnings."""
+
+    agreement = _clamp01(convergence.get("agreement_score"))
+    confidence_score = _clamp01(confidence.get("score"))
+    combined = round(_clamp01((agreement + confidence_score) / 2.0), 3)
+    if combined >= 0.70:
+        level = "watch_confirmed"
+        public_text = (
+            "Signal cohérent. Suivre les bulletins officiels et éviter de banaliser l’évolution."
+        )
+    elif combined >= 0.45:
+        level = "watch_potential"
+        public_text = "Potentiel présent, confirmation partielle. Situation à surveiller sans conclure trop vite."
+    else:
+        level = "low_confidence"
+        public_text = "Signal incomplet ou peu convergent. La plateforme garde la veille ouverte."
+    return {
+        "contract": "meteovoid_action_cards_v1",
+        "generated_at": _now_iso(),
+        "level": level,
+        "score": combined,
+        "public_card": {
+            "title": "Lecture publique",
+            "text": public_text,
+            "official_warning_policy": "Toujours suivre les services météo nationaux et les autorités.",
+        },
+        "expert_card": {
+            "title": "Lecture expert",
+            "checks": [
+                "Comparer modèle, stations, radar et foudre.",
+                "Vérifier les couches manquantes avant de qualifier l’événement.",
+                "Archiver le run pour validation H-24/H-12/H-6/H-3.",
+            ],
+        },
+    }
+
+
+def build_ui_contracts() -> dict[str, Any]:
+    """Describe which UI pages are supposed to read which public endpoints."""
+
+    panels = [
+        ("index.html", ["api/map_live.json", "api/watch.json", "api/platform.json"]),
+        ("expert.html", ["api/explain.json", "api/convergence_matrix.json"]),
+        ("sources.html", ["api/europe_sources.json", "api/source_health.json"]),
+        ("validation.html", ["api/validation_summary.json", "api/forecast_ledger.json"]),
+        ("corridors.html", ["api/corridors.json"]),
+        ("radar-machine.html", ["api/radar_machine.json"]),
+        ("signal.html", ["api/signal_confidence.json", "api/action_cards.json"]),
+    ]
+    return {
+        "contract": "meteovoid_ui_contracts_v1",
+        "generated_at": _now_iso(),
+        "pages": [{"page": page, "required_endpoints": endpoints} for page, endpoints in panels],
+        "policy": "The UI should fail soft, show missing data, and never hide source uncertainty.",
+    }
+
+
+def build_schema_catalog() -> dict[str, Any]:
+    """Expose the public schema catalogue used by downstream checks."""
+
+    schemas = [
+        ("convergence_matrix", "schemas/public_api/convergence_matrix.schema.json"),
+        ("forecast_ledger", "schemas/public_api/forecast_ledger.schema.json"),
+        ("public_manifest", "schemas/public_api/public_manifest.schema.json"),
+    ]
+    return {
+        "contract": "meteovoid_schema_catalog_v1",
+        "generated_at": _now_iso(),
+        "schemas": [{"id": item[0], "path": item[1]} for item in schemas],
+        "policy": "Schemas document public JSON contracts; missing data must be explicit, not hidden.",
+    }
+
+
+def build_source_health() -> dict[str, Any]:
+    """Expose expected source status by source family."""
+
+    api = build_europe_sources_api()
+    countries = _dict_from(api.get("countries"))
+    rows: list[dict[str, Any]] = []
+    for country, profile_raw in sorted(countries.items()):
+        profile = _dict_from(profile_raw)
+        active = _list_from(profile.get("active"))
+        candidates = _list_from(profile.get("candidates"))
+        experimental = _list_from(profile.get("experimental"))
+        total = len(active) + len(candidates) + len(experimental)
+        rows.append(
+            {
+                "country": country,
+                "label": profile.get("label") or country,
+                "active_count": len(active),
+                "candidate_count": len(candidates),
+                "experimental_count": len(experimental),
+                "source_depth_score": round(min(total / 5.0, 1.0), 3),
+            }
+        )
+    return {
+        "contract": "meteovoid_source_health_v1",
+        "generated_at": _now_iso(),
+        "countries": rows,
+        "policy": "Active, candidate and experimental sources remain separated.",
+    }
+
+
 def build_deep_platform_api(
     report_dir: Path,
     map_live: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     country_index = build_country_contracts(belgium_map_live=map_live)
+    validation_summary = build_validation_summary(report_dir)
+    explain = build_signal_explain(report_dir)
+    corridors = build_corridor_summary(report_dir)
+    events = build_event_memory(report_dir)
+    radar_machine = build_radar_machine_summary(report_dir)
+    temporal_layers = build_temporal_layers(map_live)
+    signal_confidence = build_signal_confidence_summary(report_dir, map_live)
+    station_quality_map = build_station_quality_map(report_dir, map_live)
+    convergence_matrix = build_convergence_matrix(report_dir, map_live)
+    country_comparison = build_country_comparison(country_index)
+    forecast_ledger = build_forecast_ledger(report_dir)
+    operational_readiness = build_operational_readiness(report_dir, country_index, map_live)
+    risk_ontology = build_risk_ontology()
+    action_cards = build_action_cards(convergence_matrix, signal_confidence)
+    ui_contracts = build_ui_contracts()
+    source_health = build_source_health()
+    schema_catalog = build_schema_catalog()
     return {
         "countries": country_index,
         "sources": build_europe_sources_api(),
-        "validation_summary": build_validation_summary(report_dir),
-        "explain": build_signal_explain(report_dir),
-        "corridors": build_corridor_summary(report_dir),
-        "events": build_event_memory(report_dir),
-        "radar_machine": build_radar_machine_summary(report_dir),
-        "temporal_layers": build_temporal_layers(map_live),
-        "signal_confidence": build_signal_confidence_summary(report_dir, map_live),
-        "station_quality_map": build_station_quality_map(report_dir, map_live),
+        "validation_summary": validation_summary,
+        "explain": explain,
+        "corridors": corridors,
+        "events": events,
+        "radar_machine": radar_machine,
+        "temporal_layers": temporal_layers,
+        "signal_confidence": signal_confidence,
+        "station_quality_map": station_quality_map,
+        "convergence_matrix": convergence_matrix,
+        "country_comparison": country_comparison,
+        "forecast_ledger": forecast_ledger,
+        "operational_readiness": operational_readiness,
+        "risk_ontology": risk_ontology,
+        "action_cards": action_cards,
+        "ui_contracts": ui_contracts,
+        "source_health": source_health,
+        "schema_catalog": schema_catalog,
         "platform": {
-            "contract": "meteovoid_platform_deepening_v1",
+            "contract": "meteovoid_platform_deepening_v2",
             "generated_at": _now_iso(),
             "country_count": len(country_index.get("countries", {})),
             "primary_europe_source": "open_meteo",
             "advanced_country": "belgium",
+            "new_contracts": [
+                "convergence_matrix",
+                "country_comparison",
+                "forecast_ledger",
+                "operational_readiness",
+                "risk_ontology",
+                "action_cards",
+                "ui_contracts",
+                "source_health",
+                "schema_catalog",
+            ],
         },
     }
