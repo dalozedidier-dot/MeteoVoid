@@ -139,6 +139,8 @@
     const sourceSummary = sources.summary || sources;
     const radar = watch.radar || {};
     const radarStack = radar.radar_stack || radar;
+    const liveSmoke = watch.live_smoke || {};
+    const operaStatus = radar.opera_ord_status || {};
     const opera = radar.opera_ord_inventory || radarStack.opera_ord || {};
     const operaMetrics = radar.opera_radar_metrics || radarStack.opera_radar_metrics || {};
     const national = radar.european_national_radar || radarStack.european_national_radar || {};
@@ -176,11 +178,14 @@
       <div class="comp">
         ${card("Radar machine", radarStack.machine_radar_confirmation ? "disponible" : "non disponible", radarStack.honest_state || radarStack.status || "", "confirmation")}
         ${card("RainViewer", radarStack.rainviewer_overlay_ready ? "overlay prêt" : "visuel seulement", radarStack.rainviewer_evidence_level || "display_only", "affichage")}
-        ${card("OPERA ORD", opera.status || radarStack.opera_ord_status || "—", `liens : ${opera.data_links_count || opera.data_links || 0}`, "MeteoGate")}
-        ${card("Métriques OPERA", operaMetrics.status || "—", `fichiers lisibles : ${operaMetrics.analysed_file_count || 0}`, "radar machine")}
+        ${card("OPERA ORD", operaStatus.status || opera.status || radarStack.opera_ord_status || "—", `fichiers : ${(operaStatus.files_manifest && operaStatus.files_manifest.length) || opera.data_links_count || opera.data_links || 0}`, "MeteoGate")}
+        ${card("Métriques OPERA", operaMetrics.status || "—", `analysés : ${operaMetrics.analysed_file_count || 0} · machine : ${operaMetrics.machine_radar_available ? "oui" : "non"}`, "radar machine")}
+        ${card("Live Smoke", liveSmoke.available ? (liveSmoke.state || liveSmoke.status || "disponible") : "absent", liveSmoke.available ? `${liveSmoke.station_id || "—"} · ${liveSmoke.variable || "—"} · score ${n(liveSmoke.score, 3)}` : "artefact live_smoke_report non publié", "pipeline live")}
+        ${card("Qualité Live", liveSmoke.available ? `points ${liveSmoke.stats && liveSmoke.stats.n_points ? liveSmoke.stats.n_points : "—"}` : "—", liveSmoke.available ? `flatline ${n(liveSmoke.signals && liveSmoke.signals.flatline, 3)} · gap ${n(liveSmoke.signals && liveSmoke.signals.gap, 3)} · volatilité ${n(liveSmoke.signals && liveSmoke.signals.volatility, 3)}` : "", "Redis Streams")}
         ${card("Radars nationaux", national.status || radarStack.national_radar_status || "—", `pays : ${national.country_count || radarStack.national_radar_country_count || 0}`, "Europe")}
-        ${card("Nowcast pySTEPS", radarStack.pysteps_status || "—", "nécessite une séquence de frames radar locales", "Live Smoke")}
+        ${card("Nowcast pySTEPS", radarStack.pysteps_status || "—", "nécessite une séquence de frames radar locales", "court terme")}
       </div>
+      ${liveSmoke.available && liveSmoke.interpretation ? `<div class="note"><b>Lecture Live Smoke.</b> ${esc(liveSmoke.interpretation)} Les signaux flatline, gap, spatial et volatilité restent séparés du score convectif météo.</div>` : ""}
 
       <div class="sec-h"><h2>Sources · validation · amont</h2><div class="rule"></div><span class="meta">contrôle qualité</span></div>
       <div class="comp">

@@ -123,6 +123,17 @@ PUBLIC_FILES = [
     "source_status.json",
     "official_sources_status.json",
     "manifest.json",
+    "live_smoke_latest.json",
+    "live_smoke_latest_enriched.json",
+    "live_smoke_bulletin.json",
+    "live_smoke_bulletin.md",
+    "live_smoke_history.csv",
+    "live_smoke_history.jsonl",
+    "live_smoke_compose.log",
+    "live_smoke_ps.txt",
+    "live_smoke_fig_score.png",
+    "live_smoke_fig_incoherence.png",
+    "live_smoke_fig_contributions.png",
 ]
 
 # Expert deep-dive frames, grouped "by usage" (point 3 of the redesign).
@@ -1548,6 +1559,143 @@ def _build_bulletin(vm: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+
+def _copy_if_exists(src: Path, dst: Path) -> None:
+    if src.exists() and src.is_file():
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+
+
+def _ingest_optional_artifacts(
+    report_dir: Path,
+    live_smoke_dir: Path | None = None,
+    opera_ord_dir: Path | None = None,
+) -> None:
+    """Merge optional workflow artifacts into the public report directory.
+
+    Belgium Pages can be built from the Belgium Alert Watch artifact alone.  When
+    Live Smoke or OPERA ORD artifacts are available, this helper imports their
+    compact JSON/Markdown/log outputs with stable names so the public API and UI
+    can expose them without guessing GitHub artifact layouts.
+    """
+    if live_smoke_dir and live_smoke_dir.exists():
+        mapping = {
+            "latest.json": "live_smoke_latest.json",
+            "latest_enriched.json": "live_smoke_latest_enriched.json",
+            "bulletin.json": "live_smoke_bulletin.json",
+            "bulletin.md": "live_smoke_bulletin.md",
+            "history.csv": "live_smoke_history.csv",
+            "history.jsonl": "live_smoke_history.jsonl",
+            "compose.log": "live_smoke_compose.log",
+            "ps.txt": "live_smoke_ps.txt",
+            "fig_score.png": "live_smoke_fig_score.png",
+            "fig_incoherence.png": "live_smoke_fig_incoherence.png",
+            "fig_contributions.png": "live_smoke_fig_contributions.png",
+        }
+        for src_name, dst_name in mapping.items():
+            _copy_if_exists(live_smoke_dir / src_name, report_dir / dst_name)
+
+    if opera_ord_dir and opera_ord_dir.exists():
+        for name in (
+            "opera_ord_status.json",
+            "opera_ord_inventory.json",
+            "opera_ord_files_manifest.json",
+            "opera_radar_metrics.json",
+        ):
+            _copy_if_exists(opera_ord_dir / name, report_dir / name)
+
+
+def _load_live_smoke(report_dir: Path) -> dict[str, Any]:
+    latest = _load_json(report_dir / "live_smoke_latest.json") or _load_json(
+        report_dir / "latest.json"
+    )
+    enriched = _load_json(report_dir / "live_smoke_latest_enriched.json") or _load_json(
+        report_dir / "latest_enriched.json"
+    )
+    bulletin = _load_json(report_dir / "live_smoke_bulletin.json") or _load_json(
+        report_dir / "bulletin.json"
+    )
+    source = enriched or latest or bulletin
+    if not source:
+        return {
+            "contract": "meteovoid_live_smoke_public_v1",
+            "available": False,
+            "status": "missing",
+            "summary": "Aucun artefact Live Smoke n'est disponible dans le run publié.",
+            "artefacts": [],
+        }
+
+    signals = source.get("signals") if isinstance(source.get("signals"), dict) else {}
+    contributions = (
+        source.get("contributions") if isinstance(source.get("contributions"), dict) else {}
+    )
+    stats = source.get("stats") if isinstance(source.get("stats"), dict) else {}
+    meteo = source.get("meteo") if isinstance(source.get("meteo"), dict) else {}
+    incoherence = (
+        source.get("incoherence") if isinstance(source.get("incoherence"), dict) else {}
+    )
+    generated_at = (
+        source.get("ts_ingest_iso")
+        or source.get("ts_iso")
+        or bulletin.get("generated_at")
+        or source.get("generated_at")
+    )
+    artefacts = []
+    for label, file_name in (
+        ("Live Smoke latest", "live_smoke_latest.json"),
+        ("Live Smoke enrichi", "live_smoke_latest_enriched.json"),
+        ("Bulletin Live Smoke", "live_smoke_bulletin.md"),
+        ("Historique Live Smoke", "live_smoke_history.csv"),
+        ("Log Compose", "live_smoke_compose.log"),
+        ("Figure score", "live_smoke_fig_score.png"),
+        ("Figure incohérence", "live_smoke_fig_incoherence.png"),
+        ("Figure contributions", "live_smoke_fig_contributions.png"),
+    ):
+        if (report_dir / file_name).exists():
+            artefacts.append({"label": label, "href": "reports/latest/" + file_name})
+
+    return {
+        "contract": "meteovoid_live_smoke_public_v1",
+        "available": True,
+        "status": source.get("state") or meteo.get("severity") or "available",
+        "generated_at": generated_at,
+        "station_id": source.get("station_id"),
+        "variable": source.get("variable"),
+        "stream_id": source.get("stream_id"),
+        "score": _round(source.get("score"), 3),
+        "incoherence_score": _round(source.get("incoherence_score") or incoherence.get("total"), 3),
+        "severity": meteo.get("severity") or bulletin.get("severity"),
+        "state": source.get("state") or bulletin.get("state"),
+        "flags": meteo.get("flags") or bulletin.get("flags") or [],
+        "interpretation": meteo.get("interpretation") or bulletin.get("interpretation"),
+        "signals": {
+            "flatline": _round(signals.get("flatline"), 3),
+            "gap": _round(signals.get("gap"), 3),
+            "spatial": _round(signals.get("spatial"), 3),
+            "volatility": _round(signals.get("volatility"), 3),
+            "drift": _round(signals.get("drift"), 3),
+            "outlier": _round(signals.get("outlier"), 3),
+        },
+        "contributions": {
+            "flatline": _round(contributions.get("flatline"), 3),
+            "gap": _round(contributions.get("gap"), 3),
+            "spatial": _round(contributions.get("spatial"), 3),
+            "volatility": _round(contributions.get("volatility"), 3),
+            "drift": _round(contributions.get("drift"), 3),
+            "outlier": _round(contributions.get("outlier"), 3),
+        },
+        "stats": {
+            "n_points": stats.get("n_points"),
+            "window_s": stats.get("window_s"),
+            "gap_count": stats.get("gap_count"),
+            "gap_max_s": _round(stats.get("gap_max_s"), 3),
+            "missing_time_frac": _round(stats.get("missing_time_frac"), 3),
+            "imputed_frac": _round(stats.get("imputed_frac"), 3),
+            "spatial_context": stats.get("spatial_context"),
+        },
+        "artefacts": artefacts,
+    }
+
 def build_view_model(report_dir: Path) -> dict[str, Any]:
     report = _load_json(report_dir / "belgium_alert_report.json")
     alert_state = _load_json(report_dir / "alert_state.json")
@@ -1567,6 +1715,8 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
     radar_stack = _load_json(report_dir / "radar_stack.json")
     opera_metrics = _load_json(report_dir / "opera_radar_metrics.json")
     opera_inventory = _load_json(report_dir / "opera_ord_inventory.json")
+    opera_status = _load_json(report_dir / "opera_ord_status.json")
+    live_smoke = _load_live_smoke(report_dir)
     national_radar = _load_json(report_dir / "european_national_radar_status.json")
     national_radar_metrics = _load_json(report_dir / "european_national_radar_metrics.json")
     convective_live = _load_json(report_dir / "convective_live_inputs.json")
@@ -1682,6 +1832,7 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
         "validation": _validation(validation),
         "validation_history": validation_history,
         "data_quality": data_quality,
+        "live_smoke": live_smoke,
         "weather_5days": weather_5days,
         "official_geodata": geodata_status,
         "observation": _observation(obs_gap, nowcast),
@@ -1704,14 +1855,16 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
             radar_stack.get("summary") if isinstance(radar_stack.get("summary"), dict) else {}
         ),
         "opera_radar_metrics": opera_metrics,
+        "opera_ord_status": opera_status,
         "european_national_radar": (
             national_radar.get("summary") if isinstance(national_radar.get("summary"), dict) else {}
         ),
         "european_national_radar_metrics": national_radar_metrics,
         "convective_live_inputs": convective_live,
         "opera_ord_inventory": {
-            "status": opera_inventory.get("status"),
-            "enabled": opera_inventory.get("enabled"),
+            "status": opera_status.get("status") or opera_inventory.get("status"),
+            "enabled": opera_status.get("enabled", opera_inventory.get("enabled")),
+            "machine_radar_confirmation": opera_status.get("machine_radar_confirmation"),
             "queries_count": (
                 len(opera_inventory.get("queries", []))
                 if isinstance(opera_inventory.get("queries"), list)
@@ -1858,6 +2011,14 @@ def _build_alert_watch_api(vm: dict[str, Any]) -> dict[str, Any]:
         expert.get("upstream_watch") if isinstance(expert.get("upstream_watch"), dict) else {}
     )
     validation = expert.get("validation") if isinstance(expert.get("validation"), dict) else {}
+    live_smoke = (
+        expert.get("live_smoke") if isinstance(expert.get("live_smoke"), dict) else {}
+    )
+    opera_status = (
+        expert.get("opera_ord_status")
+        if isinstance(expert.get("opera_ord_status"), dict)
+        else {}
+    )
 
     artefacts: list[dict[str, str]] = []
     for frame in expert.get("frames", []):
@@ -1878,6 +2039,19 @@ def _build_alert_watch_api(vm: dict[str, Any]) -> dict[str, Any]:
                     "href": str(export.get("file")),
                 }
             )
+    live_smoke_artefacts = (
+        live_smoke.get("artefacts") if isinstance(live_smoke.get("artefacts"), list) else []
+    )
+    for item in live_smoke_artefacts:
+        if isinstance(item, dict) and item.get("href"):
+            artefacts.append(
+                {
+                    "group": "Live Smoke",
+                    "label": str(item.get("label") or item.get("href")),
+                    "href": str(item.get("href")),
+                }
+            )
+
     for label, href in (
         ("Statut OPERA ORD", "reports/latest/opera_ord_status.json"),
         ("Pile radar complète", "reports/latest/radar_stack.json"),
@@ -1922,11 +2096,13 @@ def _build_alert_watch_api(vm: dict[str, Any]) -> dict[str, Any]:
         "radar_stack": radar_stack,
         "radar": {
             "radar_stack": radar_stack,
+            "opera_ord_status": opera_status,
             "opera_radar_metrics": expert.get("opera_radar_metrics"),
             "opera_ord_inventory": expert.get("opera_ord_inventory"),
             "european_national_radar": expert.get("european_national_radar"),
             "european_national_radar_metrics": expert.get("european_national_radar_metrics"),
         },
+        "live_smoke": live_smoke,
         "validation": validation,
         "validation_history": validation_history,
         "data_quality": expert.get("data_quality"),
@@ -2986,6 +3162,7 @@ def build_api(vm: dict[str, Any], site_dir: Path, report_dir: Path | None = None
         {
             "generated_at": generated_at,
             **vm["expert"].get("radar_stack", {}),
+            "opera_ord_status": vm["expert"].get("opera_ord_status", {}),
             "opera_radar_metrics": vm["expert"].get("opera_radar_metrics", {}),
             "european_national_radar": vm["expert"].get("european_national_radar", {}),
             "european_national_radar_metrics": vm["expert"].get(
@@ -3019,6 +3196,7 @@ def build_api(vm: dict[str, Any], site_dir: Path, report_dir: Path | None = None
             **(vm["expert"].get("convective_live_inputs") or {}),
         },
     )
+    _write_json(api_dir / "live_smoke.json", vm["expert"].get("live_smoke") or {})
     _write_json(api_dir / "watch.json", _build_alert_watch_api(vm))
     if report_dir is not None:
         _write_json(api_dir / "map_live.json", _build_map_live_api(vm, report_dir))
@@ -3046,6 +3224,7 @@ def build_api(vm: dict[str, Any], site_dir: Path, report_dir: Path | None = None
                 "validation_history": "api/validation_history.json",
                 "official_geodata": "api/official_geodata.json",
                 "convective_live": "api/convective_live.json",
+                "live_smoke": "api/live_smoke.json",
                 "watch": "api/watch.json",
                 "map_live": "api/map_live.json",
                 "data_quality": "api/data_quality.json",
@@ -3462,8 +3641,14 @@ def _write_stormscope_public_pages(
     return True
 
 
-def build_index(report_dir: Path, site_dir: Path) -> dict[str, Any]:
+def build_index(
+    report_dir: Path,
+    site_dir: Path,
+    live_smoke_dir: Path | None = None,
+    opera_ord_dir: Path | None = None,
+) -> dict[str, Any]:
     site_dir.mkdir(parents=True, exist_ok=True)
+    _ingest_optional_artifacts(report_dir, live_smoke_dir, opera_ord_dir)
     _copy_outputs(report_dir, site_dir)
     vm = build_view_model(report_dir)
     build_api(vm, site_dir, report_dir)
@@ -5476,8 +5661,10 @@ def main() -> None:
     )
     parser.add_argument("--report-dir", required=True, type=Path)
     parser.add_argument("--site-dir", required=True, type=Path)
+    parser.add_argument("--live-smoke-dir", required=False, type=Path, default=None)
+    parser.add_argument("--opera-ord-dir", required=False, type=Path, default=None)
     args = parser.parse_args()
-    build_index(args.report_dir, args.site_dir)
+    build_index(args.report_dir, args.site_dir, args.live_smoke_dir, args.opera_ord_dir)
 
 
 if __name__ == "__main__":
