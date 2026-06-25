@@ -38,11 +38,11 @@ if _SRC.exists() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 from meteovoid.deep_platform import build_deep_platform_api  # noqa: E402
 from meteovoid.europe_country import build_all_countries  # noqa: E402
-from meteovoid.model_compare import build_model_compare_api  # noqa: E402
 from meteovoid.europe_sources import (  # noqa: E402
     build_europe_sources_api,
     public_profile_for_country,
 )
+from meteovoid.model_compare import build_model_compare_api  # noqa: E402
 from meteovoid.radar_sources import build_source_registry  # noqa: E402
 
 # Artifacts copied verbatim into reports/latest/ so the expert view (iframes) and

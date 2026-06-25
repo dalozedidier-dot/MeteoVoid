@@ -24,10 +24,7 @@ def test_model_compare_contract_tolerates_missing_map_live():
 
     assert api["center"]["label"] == "Belgique"
     assert all("fallback_score" in item for item in api["models"])
-    assert all(
-        item["score_source"] == "static_ci_fallback_until_browser_fetch"
-        for item in api["models"]
-    )
+    assert all(item["score_source"] == "static_ci_fallback_until_browser_fetch" for item in api["models"])
     assert api["agreement"]["spread"] is not None
 
 
