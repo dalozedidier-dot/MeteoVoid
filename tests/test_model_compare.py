@@ -10,7 +10,11 @@ def test_model_compare_contract_uses_map_live_score():
     assert api["contract"] == "meteovoid_open_meteo_model_compare_v1"
     assert api["generated_at"] == "2026-01-01T00:00:00+00:00"
     assert len(api["models"]) >= 6
-    assert api["agreement"]["label"] in {"accord fort", "accord partiel", "désaccord marqué"}
+    assert api["agreement"]["label"] in {
+        "accord fort",
+        "accord partiel",
+        "désaccord marqué",
+    }
     assert api["most_aggressive"]
     assert api["most_conservative"]
     assert any(item["family"] == "ecmwf" for item in api["models"])
@@ -24,7 +28,10 @@ def test_model_compare_contract_tolerates_missing_map_live():
 
     assert api["center"]["label"] == "Belgique"
     assert all("fallback_score" in item for item in api["models"])
-    assert all(item["score_source"] == "static_ci_fallback_until_browser_fetch" for item in api["models"])
+    assert all(
+        item["score_source"] == "static_ci_fallback_until_browser_fetch"
+        for item in api["models"]
+    )
     assert api["agreement"]["spread"] is not None
 
 
