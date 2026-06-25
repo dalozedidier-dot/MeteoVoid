@@ -19,4 +19,3 @@ Discipline : surface & composantes = anticipation, pas confirmation radar.
 - `index.html` : tableau opérationnel Belgique live.
 
 Ces deux pages ne doivent pas avoir le même rôle.
-
