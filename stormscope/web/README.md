@@ -12,3 +12,11 @@ switzerland/italy/austria/denmark/uk.html, methodology.html.
 Données live : indices Open-Meteo (CAPE/CIN/LI), radar RainViewer (affichage).
 Sur le site réel, brancher sur api/*.json (voir le paquet Claude Code).
 Discipline : surface & composantes = anticipation, pas confirmation radar.
+
+## Entrées publiques
+
+- `accueil.html` : page d’arrivée publique.
+- `index.html` : tableau opérationnel Belgique live.
+
+Ces deux pages ne doivent pas avoir le même rôle.
+

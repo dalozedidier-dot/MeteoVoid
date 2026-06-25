@@ -1,726 +1,116 @@
-<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>MeteoVoid · Storm-scope · Belgique</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-<style>
-:root{
-  --void:#06080c; --void2:#0a0e15; --panel:#0e141d; --panel-2:#10161f;
-  --line:#1b2531; --line-soft:#141b25;
-  --ink:#eaf1f6; --ink-dim:#8a9aab; --ink-faint:#56646f;
-  --teal:#35e0ce; --teal-deep:#0e8c84;
-  --indigo:#5b6cf0; --violet:#8b7cf6;
-  --amber:#f7a23b; --bolt:#ffe98a; --bolt-hot:#fff7d6; --danger:#f2603c;
-  --glass:rgba(14,20,29,.62);
-  --display:"Space Grotesk",ui-sans-serif,system-ui,sans-serif;
-  --body:"Inter",ui-sans-serif,system-ui,sans-serif;
-  --mono:"JetBrains Mono",ui-monospace,monospace;
-}
-*{box-sizing:border-box}
-html{scroll-behavior:smooth}
-body{
-  margin:0;background:var(--void);color:var(--ink);
-  font-family:var(--body);line-height:1.55;
-  -webkit-font-smoothing:antialiased;overflow-x:hidden;
-}
-a{color:inherit;text-decoration:none}
-::selection{background:rgba(53,224,206,.28)}
-
-/* ============ BOOT / ENTRÉE ============ */
-#boot{
-  position:fixed;inset:0;z-index:200;background:var(--void);
-  display:flex;align-items:center;justify-content:center;flex-direction:column;
-  transition:opacity .9s ease,visibility .9s;
-}
-#boot.gone{opacity:0;visibility:hidden;pointer-events:none}
-.boot-stage{position:relative;width:min(560px,86vw);text-align:center}
-.boot-horizon{
-  height:1px;width:0;margin:0 auto;background:linear-gradient(90deg,transparent,var(--teal),transparent);
-  box-shadow:0 0 16px var(--teal);animation:horizon 1s .15s ease forwards;
-}
-@keyframes horizon{to{width:100%}}
-.boot-word{
-  font-family:var(--display);font-weight:700;letter-spacing:.04em;
-  font-size:clamp(2rem,7vw,3.4rem);margin:.7em 0 .2em;line-height:1;
-  display:flex;justify-content:center;gap:.02em;
-}
-.boot-word span{
-  opacity:0;transform:translateY(14px);
-  animation:bootIn .5s forwards;
-}
-.boot-void{color:var(--teal)}
-.boot-sub{
-  font-family:var(--mono);font-size:.72rem;letter-spacing:.34em;
-  text-transform:uppercase;color:var(--ink-dim);opacity:0;
-  animation:bootIn .6s 1.1s forwards;
-}
-.boot-bar{
-  margin:1.6em auto 0;width:200px;height:2px;background:var(--line);
-  border-radius:2px;overflow:hidden;opacity:0;animation:bootIn .4s 1.2s forwards;
-}
-.boot-bar i{
-  display:block;height:100%;width:0;
-  background:linear-gradient(90deg,var(--indigo),var(--teal));
-  animation:fill 1.3s 1.25s cubic-bezier(.4,0,.1,1) forwards;
-}
-.boot-status{
-  font-family:var(--mono);font-size:.64rem;letter-spacing:.18em;color:var(--ink-faint);
-  margin-top:1em;height:1em;opacity:0;animation:bootIn .4s 1.3s forwards;
-}
-@keyframes bootIn{to{opacity:1;transform:none}}
-@keyframes fill{to{width:100%}}
-.boot-skip{
-  position:absolute;bottom:26px;left:50%;transform:translateX(-50%);
-  font-family:var(--mono);font-size:.62rem;letter-spacing:.2em;color:var(--ink-faint);
-  background:none;border:1px solid var(--line);border-radius:30px;padding:7px 16px;
-  cursor:pointer;text-transform:uppercase;transition:.2s;
-}
-.boot-skip:hover{color:var(--ink);border-color:var(--teal-deep)}
-
-/* ============ STORM CANVAS ============ */
-#sky{position:fixed;inset:0;z-index:0;display:block}
-.sky-veil{
-  position:fixed;inset:0;z-index:1;pointer-events:none;
-  background:radial-gradient(120% 80% at 50% -10%,transparent 40%,rgba(6,8,12,.55) 100%),
-             linear-gradient(180deg,transparent 55%,var(--void) 99%);
-}
-
-/* ============ SHELL ============ */
-.shell{position:relative;z-index:2}
-.wrap{width:min(1180px,92vw);margin:0 auto}
-
-/* topbar */
-.topbar{
-  position:sticky;top:0;z-index:40;
-  backdrop-filter:blur(14px);background:linear-gradient(180deg,rgba(6,8,12,.82),rgba(6,8,12,.25));
-  border-bottom:1px solid var(--line-soft);
-}
-.topbar .wrap{display:flex;align-items:center;gap:20px;height:60px}
-.brand{display:flex;align-items:center;gap:11px;font-family:var(--display);font-weight:600;letter-spacing:.02em}
-.brand .mark{
-  width:11px;height:11px;border-radius:50%;background:var(--teal);
-  box-shadow:0 0 0 4px rgba(53,224,206,.14),0 0 14px var(--teal);
-  animation:pulse 3s ease-in-out infinite;
-}
-@keyframes pulse{50%{box-shadow:0 0 0 7px rgba(53,224,206,.05),0 0 20px var(--teal)}}
-.brand b{font-weight:700}
-.brand .void{color:var(--teal)}
-.brand small{font-family:var(--mono);font-weight:400;font-size:.6rem;letter-spacing:.22em;color:var(--ink-dim);text-transform:uppercase}
-.geo{display:flex;gap:2px;margin-left:auto;overflow-x:auto;-ms-overflow-style:none;scrollbar-width:none}
-.geo::-webkit-scrollbar{display:none}
-.geo a{
-  font-family:var(--mono);font-size:.66rem;letter-spacing:.06em;color:var(--ink-dim);
-  padding:6px 9px;border-radius:7px;white-space:nowrap;transition:.18s;
-}
-.geo a:hover{color:var(--ink);background:rgba(255,255,255,.04)}
-.geo a.on{color:var(--void);background:var(--teal);font-weight:500}
-
-/* ============ HERO ============ */
-.hero{
-  min-height:calc(100vh - 60px);display:grid;
-  grid-template-columns:1.35fr .65fr;gap:40px;align-items:center;
-  padding:34px 0 60px;
-}
-.hero-read{max-width:620px}
-.eyebrow{
-  font-family:var(--mono);font-size:.68rem;letter-spacing:.26em;text-transform:uppercase;
-  color:var(--ink-dim);display:flex;align-items:center;gap:10px;margin-bottom:18px;
-}
-.eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--teal);box-shadow:0 0 10px var(--teal)}
-.tag-unof{color:var(--amber);border:1px solid rgba(247,162,59,.35);border-radius:20px;padding:2px 9px;font-size:.6rem}
-.state{
-  font-family:var(--display);font-weight:700;line-height:.92;letter-spacing:-.01em;
-  font-size:clamp(3.4rem,11vw,7.4rem);margin:0;
-  background:linear-gradient(180deg,var(--ink),#9fb3c2);
-  -webkit-background-clip:text;background-clip:text;color:transparent;
-  transition:color .6s;
-}
-.state.s-latent{background:linear-gradient(180deg,var(--teal),var(--teal-deep));-webkit-background-clip:text;background-clip:text;color:transparent}
-.state.s-transition{background:linear-gradient(180deg,var(--amber),#b9701d);-webkit-background-clip:text;background-clip:text;color:transparent}
-.state.s-bascule{background:linear-gradient(180deg,var(--danger),#9c3017);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 40px rgba(242,96,60,.4)}
-.state-line{font-family:var(--body);font-size:1.05rem;color:var(--ink-dim);margin:14px 0 26px;max-width:46ch}
-.state-line b{color:var(--ink);font-weight:600}
-
-/* distance rail */
-.rail{margin:0 0 30px}
-.rail-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:9px}
-.rail-head span{font-family:var(--mono);font-size:.64rem;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint)}
-.rail-head b{font-family:var(--mono);font-size:.8rem;color:var(--teal)}
-.rail-track{position:relative;height:8px;border-radius:6px;background:var(--line);overflow:hidden}
-.rail-fill{position:absolute;inset:0 100% 0 0;border-radius:6px;
-  background:linear-gradient(90deg,var(--indigo),var(--teal) 45%,var(--amber) 75%,var(--danger));
-  transition:right 1.1s cubic-bezier(.4,0,.1,1)}
-.rail-marks{display:flex;justify-content:space-between;margin-top:8px}
-.rail-marks i{font-family:var(--mono);font-size:.6rem;letter-spacing:.08em;color:var(--ink-faint);font-style:normal}
-.rail-marks i.act{color:var(--ink)}
-
-/* metric chips */
-.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;max-width:560px}
-.chip{background:var(--glass);border:1px solid var(--line);border-radius:13px;padding:13px 14px;backdrop-filter:blur(8px)}
-.chip k{display:block;font-family:var(--mono);font-size:.58rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint)}
-.chip v{display:block;font-family:var(--display);font-weight:600;font-size:1.5rem;margin-top:5px}
-.chip u{font-family:var(--mono);font-size:.7rem;color:var(--ink-dim);font-weight:400}
-
-/* ===== signature: colonne de bascule ===== */
-.column-wrap{display:flex;flex-direction:column;align-items:center;gap:14px}
-.col-title{font-family:var(--mono);font-size:.62rem;letter-spacing:.22em;text-transform:uppercase;color:var(--ink-dim);text-align:center}
-.column{
-  position:relative;width:96px;height:380px;border-radius:18px;
-  background:linear-gradient(180deg,rgba(10,14,21,.5),rgba(10,14,21,.85));
-  border:1px solid var(--line);overflow:hidden;
-  box-shadow:inset 0 0 30px rgba(0,0,0,.6);
-}
-.col-charge{
-  position:absolute;left:0;right:0;bottom:0;height:0%;
-  background:linear-gradient(180deg,var(--teal),var(--indigo) 80%);
-  box-shadow:0 0 24px rgba(53,224,206,.5);
-  transition:height 1.4s cubic-bezier(.3,0,.1,1),background 1s;
-  border-radius:0 0 17px 17px;
-  z-index:1;
-}
-.col-charge::before{
-  content:"";position:absolute;inset:0;opacity:.5;
-  background:repeating-linear-gradient(0deg,transparent 0 7px,rgba(255,255,255,.05) 7px 8px);
-}
-.col-charge.hot{background:linear-gradient(180deg,var(--danger),var(--amber) 70%);box-shadow:0 0 34px rgba(242,96,60,.6)}
-.col-lid{
-  position:absolute;left:0;right:0;height:30px;
-  background:repeating-linear-gradient(45deg,rgba(138,154,171,.16) 0 6px,rgba(138,154,171,.04) 6px 12px);
-  border-top:1px solid rgba(138,154,171,.4);border-bottom:1px solid rgba(138,154,171,.2);
-  transition:bottom 1.4s cubic-bezier(.3,0,.1,1);
-  z-index:2;pointer-events:none;
-}
-.col-seuil{
-  position:absolute;left:-8px;right:-8px;height:2px;background:var(--bolt);
-  box-shadow:0 0 12px var(--bolt);transition:bottom 1.4s cubic-bezier(.3,0,.1,1);
-  z-index:3;pointer-events:none;
-}
-.col-seuil b{
-  position:absolute;right:calc(100% + 8px);top:-7px;white-space:nowrap;
-  font-family:var(--mono);font-size:.56rem;letter-spacing:.1em;color:var(--bolt);text-transform:uppercase;
-}
-.column.breach{animation:breach .5s ease}
-@keyframes breach{0%,100%{box-shadow:inset 0 0 30px rgba(0,0,0,.6)}40%{box-shadow:inset 0 0 30px rgba(0,0,0,.6),0 0 40px rgba(255,233,138,.6)}}
-.col-scale{display:flex;flex-direction:column;justify-content:space-between;position:absolute;right:-46px;top:0;bottom:0}
-.col-scale i{font-family:var(--mono);font-size:.55rem;color:var(--ink-faint);font-style:normal}
-.col-legend{display:flex;flex-direction:column;gap:5px;font-family:var(--mono);font-size:.58rem;color:var(--ink-dim)}
-.col-legend span{display:flex;align-items:center;gap:7px}
-.col-legend em{width:9px;height:9px;border-radius:2px;font-style:normal}
-
-.scrollhint{
-  position:absolute;left:50%;bottom:22px;transform:translateX(-50%);
-  font-family:var(--mono);font-size:.6rem;letter-spacing:.2em;color:var(--ink-faint);
-  text-transform:uppercase;display:flex;flex-direction:column;align-items:center;gap:8px;
-}
-.scrollhint .arrow{width:1px;height:22px;background:linear-gradient(var(--teal),transparent);animation:drop 1.8s ease-in-out infinite}
-@keyframes drop{0%,100%{opacity:.3;transform:translateY(0)}50%{opacity:1;transform:translateY(6px)}}
-
-/* ============ SECTIONS ============ */
-section{padding:74px 0;position:relative}
-.sec-head{display:flex;align-items:baseline;gap:16px;margin-bottom:34px;flex-wrap:wrap}
-.sec-head h2{font-family:var(--display);font-weight:600;font-size:clamp(1.5rem,3.4vw,2.2rem);margin:0;letter-spacing:-.01em}
-.sec-head .lab{font-family:var(--mono);font-size:.66rem;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-dim)}
-.sec-head .live{margin-left:auto;font-family:var(--mono);font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:var(--teal);display:flex;align-items:center;gap:7px}
-.sec-head .live .d{width:6px;height:6px;border-radius:50%;background:var(--teal);box-shadow:0 0 9px var(--teal);animation:pulse 2.2s infinite}
-.reveal{opacity:0;transform:translateY(26px);transition:opacity .8s ease,transform .8s ease}
-.reveal.in{opacity:1;transform:none}
-
-/* hourly */
-.hours{display:flex;gap:6px;align-items:flex-end;overflow-x:auto;padding-bottom:10px;scrollbar-width:thin}
-.hbar{flex:0 0 auto;width:42px;text-align:center}
-.hbar .col{height:160px;display:flex;align-items:flex-end;justify-content:center}
-.hbar .col i{width:18px;border-radius:5px 5px 2px 2px;background:linear-gradient(180deg,var(--teal),var(--indigo));transition:height 1s;min-height:3px}
-.hbar.warn .col i{background:linear-gradient(180deg,var(--amber),var(--teal))}
-.hbar.crit .col i{background:linear-gradient(180deg,var(--danger),var(--amber));box-shadow:0 0 12px rgba(242,96,60,.5)}
-.hbar k{display:block;font-family:var(--mono);font-size:.58rem;color:var(--ink-dim);margin-top:8px}
-.hbar v{display:block;font-family:var(--mono);font-size:.6rem;color:var(--ink-faint)}
-
-/* bulletin cards */
-.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px}
-.card{background:var(--glass);border:1px solid var(--line);border-radius:16px;padding:18px;backdrop-filter:blur(8px);position:relative;overflow:hidden}
-.card .day{font-family:var(--mono);font-size:.64rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim)}
-.card .tmax{font-family:var(--display);font-weight:700;font-size:2rem;margin:8px 0 0}
-.card .tmin{font-family:var(--mono);font-size:.72rem;color:var(--ink-dim)}
-.card .bnote{margin-top:12px;font-family:var(--mono);font-size:.62rem;letter-spacing:.06em}
-.card .brisk{height:5px;border-radius:4px;background:var(--line);margin-top:7px;overflow:hidden}
-.card .brisk i{display:block;height:100%;background:linear-gradient(90deg,var(--teal),var(--amber),var(--danger))}
-.card.today{border-color:var(--teal-deep);box-shadow:0 0 0 1px rgba(53,224,206,.18),0 18px 40px -28px rgba(53,224,206,.6)}
-.card.today .day{color:var(--teal)}
-
-/* chaleur */
-.heat{display:grid;grid-template-columns:auto 1fr;gap:30px;align-items:center}
-.heat-dial{
-  width:170px;height:170px;border-radius:50%;display:grid;place-items:center;
-  background:conic-gradient(var(--teal) 0,var(--amber) 50%,var(--danger) 80%,var(--line) 80%);
-  position:relative;
-}
-.heat-dial::after{content:"";position:absolute;inset:14px;border-radius:50%;background:var(--void2);border:1px solid var(--line)}
-.heat-dial .val{position:relative;z-index:1;text-align:center}
-.heat-dial .val b{font-family:var(--display);font-weight:700;font-size:2.4rem;display:block;line-height:1}
-.heat-dial .val small{font-family:var(--mono);font-size:.58rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-dim)}
-.heat-scale{font-family:var(--mono);font-size:.72rem;color:var(--ink-dim);line-height:2}
-.heat-scale b{color:var(--ink)}
-
-/* méthode */
-.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;counter-reset:s}
-.step{border-top:1px solid var(--line);padding-top:18px;position:relative}
-.step::before{counter-increment:s;content:"0" counter(s);font-family:var(--mono);font-size:.7rem;color:var(--teal);letter-spacing:.1em}
-.step h3{font-family:var(--display);font-weight:600;font-size:1.05rem;margin:10px 0 8px}
-.step p{font-size:.92rem;color:var(--ink-dim);margin:0}
-
-/* carte teaser */
-.carte{position:relative;border:1px solid var(--line);border-radius:20px;overflow:hidden;background:var(--panel);min-height:280px;display:grid;place-items:center;text-align:center;padding:40px}
-.carte .grid-bg{position:absolute;inset:0;opacity:.5;
-  background-image:linear-gradient(rgba(53,224,206,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(53,224,206,.06) 1px,transparent 1px);
-  background-size:40px 40px;mask:radial-gradient(70% 70% at 50% 50%,#000,transparent)}
-.carte .be{position:relative;z-index:1}
-.carte h3{font-family:var(--display);font-weight:600;font-size:1.4rem;margin:0 0 10px}
-.carte p{color:var(--ink-dim);max-width:48ch;margin:0 auto 18px}
-.btn{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;
-  border:1px solid var(--teal-deep);color:var(--teal);padding:11px 20px;border-radius:30px;transition:.2s}
-.btn:hover{background:var(--teal);color:var(--void)}
-
-/* footer */
-footer{border-top:1px solid var(--line-soft);padding:50px 0 70px;position:relative;z-index:2}
-.fgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-bottom:30px}
-.fcol h4{font-family:var(--mono);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-faint);margin:0 0 10px}
-.fcol p{margin:3px 0;font-size:.86rem;color:var(--ink-dim)}
-.fcol p b{color:var(--ink)}
-.fnote{font-size:.82rem;color:var(--ink-dim);border:1px solid rgba(247,162,59,.25);background:rgba(247,162,59,.05);border-radius:12px;padding:14px 18px}
-.fnote b{color:var(--amber)}
-.fbase{font-family:var(--mono);font-size:.64rem;letter-spacing:.1em;color:var(--ink-faint);margin-top:26px;text-align:center}
-.fbase a{color:var(--teal-deep)}
-
-/* ============ RESPONSIVE ============ */
-@media(max-width:880px){
-  .hero{grid-template-columns:1fr;gap:30px;padding-top:24px;min-height:auto}
-  .column-wrap{flex-direction:row;align-items:flex-start;justify-content:flex-start;gap:24px}
-  .column{height:280px;width:80px}
-  .col-scale{display:none}
-  .metrics{grid-template-columns:repeat(2,1fr)}
-  .steps{grid-template-columns:1fr}
-  .heat{grid-template-columns:1fr;justify-items:center;text-align:center}
-  .fgrid{grid-template-columns:1fr}
-  .scrollhint{display:none}
-}
-@media(prefers-reduced-motion:reduce){
-  *{animation-duration:.001s!important;transition-duration:.2s!important}
-  .boot-bar i{width:100%}
-}
-</style>
-</head>
-<body>
-<!-- MeteoVoid belgium standalone stormscope dashboard -->
-
-<!-- ============ ENTRÉE / BOOT ============ -->
-<div id="boot">
-  <div class="boot-stage">
-    <div class="boot-horizon"></div>
-    <div class="boot-word" id="bootWord"></div>
-    <div class="boot-sub">Storm-scope · veille de bascule</div>
-    <div class="boot-bar"><i></i></div>
-    <div class="boot-status" id="bootStatus">initialisation de l'instrument…</div>
+<!doctype html><html lang="fr"><head>
+<meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>MeteoVoid · Belgique live</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<link rel="stylesheet" href="assets/app.css"/>
+<!-- MeteoVoid belgium operational stormscope dashboard · Prochaines heures · Carte live · Bulletin · Chaleur · Réseau · Expert -->
+</head><body>
+<div class="skybg"></div><canvas id="sky"></canvas><div class="flash" id="flash"></div>
+<div class="app">
+<header class="bar"><div class="in">
+  <div class="logo"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" fill="#35e0ce"/></svg></div>
+  <div><div class="bname">MeteoVoid</div><div class="bsub">Belgique live · tableau opérationnel</div></div>
+  <div class="grow"></div>
+  <nav class="zones"><a href="accueil.html">Accueil</a><a href="index.html" class="active">Belgique live</a><a href="europe.html">Europe</a><a href="france.html">France</a><a href="germany.html">Allemagne</a><a href="netherlands.html">Pays-Bas</a><a href="spain.html">Espagne</a><a href="switzerland.html">Suisse</a><a href="italy.html">Italie</a><a href="austria.html">Autriche</a><a href="denmark.html">Danemark</a><a href="uk.html">Royaume-Uni</a><a href="methodology.html">Méthode</a></nav>
+  <div class="live"><span class="spark"></span><span id="clock">—</span></div>
+</div><div class="subbar"><div class="in2"><nav class="tabs" id="nav"><a href="#veille">Veille</a><a href="#carte">Carte</a><a href="#heures">Heures</a><a href="#bulletin">Bulletin</a><a href="#chaleur">Chaleur</a><a href="#reseau">Réseau</a><a href="#expert">Expert</a><a href="#methode">Méthode</a></nav></div></div></header>
+<main class="wrap">
+<section class="view" id="view-veille"><div class="hero"><div class="hero-grid">
+  <figure class="scope"><figcaption>Coupe atmosphérique</figcaption>
+    <svg viewBox="0 0 248 440" preserveAspectRatio="none">
+      <defs><linearGradient id="charge" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#F2783C"/><stop offset=".55" stop-color="#f7a23b"/><stop offset="1" stop-color="#f2603c"/></linearGradient>
+      <filter id="g"><feGaussianBlur stdDeviation="4" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+      <rect x="0" y="422" width="248" height="18" fill="#070d16"/><line x1="0" y1="422" x2="248" y2="422" stroke="#2a3a55"/>
+      <line x1="0" y1="96" x2="248" y2="96" stroke="#eaf1f6" stroke-opacity=".45" stroke-dasharray="2 5"/>
+      <text x="240" y="88" text-anchor="end" font-family="JetBrains Mono" font-size="9" fill="#8a9aab">SEUIL DE BASCULE</text>
+      <g id="chargeG" style="transform-box:fill-box;transform-origin:bottom;transform:scaleY(0)"><rect id="chargeRect" x="78" y="0" width="92" height="422" fill="url(#charge)" opacity=".92" rx="6"/></g>
+      <line x1="40" y1="176" x2="208" y2="176" stroke="#35e0ce" stroke-width="2"/>
+      <text x="44" y="169" font-family="JetBrains Mono" font-size="9" fill="#35e0ce">COUVERCLE · INHIBITION</text>
+      <path id="lit" d="M128 176 L116 128 L132 132 L118 78" stroke="#fff7d6" stroke-width="2.4" fill="none" filter="url(#g)" opacity="0" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle id="topDot" cx="124" cy="158" r="5.5" fill="#fff"/></svg></figure>
+  <div class="state">
+    <div class="eyebrow">État de l'atmosphère · <span id="vRegion">Belgique</span> · <b>non officiel</b></div>
+    <h1 class="word" id="vWord">LECTURE…</h1>
+    <p class="read" id="vRead">Lecture des indices convectifs en direct (Open-Meteo)…</p>
+    <div class="axis"><div class="lab"><span>Distance à la bascule</span><span class="now mono" id="vAxis">—</span></div>
+      <div class="track"><div class="seuil"></div><div class="cur" id="cur" style="left:0%"></div></div>
+      <div class="ends"><span>stable</span><span>latent</span><span>transition</span><span>bascule</span></div></div>
+    <div class="chips" id="vChips"></div>
   </div>
-  <button class="boot-skip" onclick="endBoot()">entrer ↵</button>
-</div>
-
-<!-- ============ CIEL D'ORAGE ============ -->
-<canvas id="sky"></canvas>
-<div class="sky-veil"></div>
-
-<div class="shell">
-
-  <!-- TOPBAR -->
-  <header class="topbar">
-    <div class="wrap">
-      <a class="brand" href="#top">
-        <span class="mark"></span>
-        <span><b>Meteo</b><span class="void">Void</span></span>
-        <small>Belgique</small>
-      </a>
-      <nav class="geo">
-        <a class="on" href="index.html">Belgique</a>
-        <a href="europe.html">Europe</a><a href="france.html">France</a><a href="germany.html">Allemagne</a>
-        <a href="netherlands.html">Pays-Bas</a><a href="spain.html">Espagne</a><a href="switzerland.html">Suisse</a>
-        <a href="italy.html">Italie</a><a href="methodology.html">Méthode</a>
-      </nav>
+</div></div></section><section class="view" id="view-carte"><div class="sec">
+  <div class="sec-h"><h2>Carte</h2><div class="rule"></div><span class="meta">surface de bascule + radar · live</span></div>
+  <div class="maptools">
+    <div class="lyrs">
+      <label><input type="checkbox" id="cL-surf" checked>Surface de bascule</label>
+      <label><input type="checkbox" id="cL-sta" checked>Détecteurs</label>
+      <label><input type="checkbox" id="cL-rad" checked>Radar pluie</label>
+      <label><input type="checkbox" id="cL-sat">Satellite IR</label>
     </div>
-  </header>
-
-  <div class="wrap" id="top">
-
-    <!-- HERO -->
-    <div class="hero">
-      <div class="hero-read">
-        <div class="eyebrow">
-          <span class="dot"></span> État de l'atmosphère · Belgique · Uccle
-          <span class="tag-unof">non officiel</span>
-        </div>
-        <h1 class="state" id="stateWord">LECTURE…</h1>
-        <p class="state-line" id="stateLine">Lecture des indices convectifs en direct (Open-Meteo) — charge, couvercle et déclenchement.</p>
-
-        <div class="rail">
-          <div class="rail-head">
-            <span>Distance à la bascule</span>
-            <b id="scorePct">—</b>
-          </div>
-          <div class="rail-track"><div class="rail-fill" id="railFill"></div></div>
-          <div class="rail-marks" id="railMarks">
-            <i>stable</i><i>latent</i><i>transition</i><i>bascule</i>
-          </div>
-        </div>
-
-        <div class="metrics">
-          <div class="chip"><k>CAPE</k><v id="mCape">—<u> J/kg</u></v></div>
-          <div class="chip"><k>Inhibition</k><v id="mCin">—<u> J/kg</u></v></div>
-          <div class="chip"><k>Lifted Index</k><v id="mLi">—</v></div>
-          <div class="chip"><k>Déclenchement</k><v id="mTrig">—<u> %</u></v></div>
-        </div>
-      </div>
-
-      <!-- SIGNATURE : COLONNE DE BASCULE -->
-      <div class="column-wrap">
-        <div class="col-title">colonne de bascule</div>
-        <div class="column" id="column">
-          <div class="col-lid" id="colLid" style="bottom:64%"></div>
-          <div class="col-seuil" id="colSeuil" style="bottom:64%"><b>seuil</b></div>
-          <div class="col-charge" id="colCharge" style="height:0%"></div>
-          <div class="col-scale"><i>fort</i><i></i><i></i><i>nul</i></div>
-        </div>
-        <div class="col-legend">
-          <span><em style="background:var(--teal)"></em> énergie (CAPE)</span>
-          <span><em style="background:rgba(138,154,171,.5)"></em> couvercle (CIN)</span>
-          <span><em style="background:var(--bolt)"></em> seuil de bascule</span>
-        </div>
-      </div>
-    </div>
-    <div class="scrollhint"><span>défiler</span><span class="arrow"></span></div>
-
-    <!-- PROCHAINES HEURES -->
-    <section class="reveal" id="heures">
-      <div class="sec-head">
-        <span class="lab">/ 01</span>
-        <h2>Prochaines heures</h2>
-        <span class="live"><span class="d"></span> live</span>
-      </div>
-      <div class="hours" id="hours"></div>
-    </section>
-
-    <!-- BULLETIN -->
-    <section class="reveal" id="bulletin">
-      <div class="sec-head">
-        <span class="lab">/ 02</span>
-        <h2>Bulletin</h2>
-        <span class="live"><span class="d"></span> Uccle · live</span>
-      </div>
-      <div class="cards" id="cards"></div>
-    </section>
-
-    <!-- CHALEUR -->
-    <section class="reveal" id="chaleur">
-      <div class="sec-head">
-        <span class="lab">/ 03</span>
-        <h2>Chaleur</h2>
-        <span class="live"><span class="d"></span> humidex · live</span>
-      </div>
-      <div class="heat">
-        <div class="heat-dial" id="heatDial">
-          <div class="val"><b id="heatVal">—</b><small>humidex max</small></div>
-        </div>
-        <div class="heat-scale">
-          Échelle ressenti<br>
-          <b>&lt;30</b> confort · <b>30–39</b> inconfort<br>
-          <b>40–45</b> forte gêne · <b>&gt;45</b> danger
-        </div>
-      </div>
-    </section>
-
-    <!-- CARTE TEASER -->
-    <section class="reveal" id="carte">
-      <div class="sec-head">
-        <span class="lab">/ 04</span>
-        <h2>Carte</h2>
-        <span class="live"><span class="d"></span> surface de bascule</span>
-      </div>
-      <div class="carte">
-        <div class="grid-bg"></div>
-        <div class="be">
-          <h3>Surface de bascule + radar</h3>
-          <p>La carte interactive (indices convectifs Open-Meteo, radar RainViewer en couche d'affichage) se branche sur cette nouvelle interface — le radar reste indicatif, jamais une preuve machine.</p>
-          <a class="btn" href="carte.html">Ouvrir la carte live →</a>
-        </div>
-      </div>
-    </section>
-
-    <!-- MÉTHODE -->
-    <section class="reveal" id="methode">
-      <div class="sec-head">
-        <span class="lab">/ 05</span>
-        <h2>Comment se lit une bascule</h2>
-      </div>
-      <div class="steps">
-        <div class="step"><h3>L'énergie se charge</h3><p>Chaleur et humidité empilent du CAPE dans les basses couches.</p></div>
-        <div class="step"><h3>Le couvercle retient</h3><p>Une couche d'inhibition (CIN) empêche le déclenchement — l'énergie s'accumule sous pression.</p></div>
-        <div class="step"><h3>La percée</h3><p>Quand le forçage dépasse le couvercle, l'atmosphère bascule : le moment que MeteoVoid anticipe.</p></div>
-      </div>
-    </section>
-
   </div>
-
-  <!-- FOOTER -->
-  <footer>
-    <div class="wrap">
-      <div class="fgrid">
-        <div class="fcol"><h4>Indices</h4><p><b>Open-Meteo</b></p><p>CAPE · CIN · LI · CC BY 4.0</p></div>
-        <div class="fcol"><h4>Radar / satellite</h4><p><b>RainViewer</b></p><p>couche d'affichage uniquement</p></div>
-        <div class="fcol"><h4>Statut</h4><p><b>Non officiel</b></p><p>ne remplace pas l'IRM / KMI</p></div>
-      </div>
-      <div class="fnote"><b>Anticipation ≠ confirmation.</b> Une bascule affichée n'est pas une cellule confirmée tant que le radar ne l'a pas vue.</div>
-      <div class="fbase">MeteoVoid · Storm-scope · prototype non officiel · indices Open-Meteo · radar RainViewer · <a href="https://ori-c.be">ori-c.be</a></div>
+  <div class="mapbox"><div id="carteMap" class="lf"></div>
+    <div class="loading" id="cLoad">Lecture des indices…</div>
+    <div class="maprail"><div class="eyebrow" style="margin-bottom:4px">Belgique · maintenant</div><div class="w" id="cWord">—</div><div class="s" id="cSub">chargement</div></div>
+    <div class="mvtime"><button id="cPlay">&#9654;</button><input type="range" id="cTime" min="0" max="17" value="0"><div class="tl" id="cTl">maintenant</div></div>
+  </div>
+  <p class="note">La surface de bascule est calculée en direct (CAPE · inhibition · LI · déclenchement) — une anticipation, pas une confirmation radar. Le radar RainViewer est une couche d'affichage.</p>
+</div></section><section class="view" id="view-heures"><div class="sec">
+  <div class="sec-h"><h2>Prochaines heures</h2><div class="rule"></div><span class="meta">score de bascule · Belgique · live</span></div>
+  <div class="panel"><div class="bars" id="bars"></div>
+    <div class="hnote" id="hNote"></div></div>
+</div></section><section class="view" id="view-bulletin"><div class="sec">
+  <div class="sec-h"><h2>Bulletin</h2><div class="rule"></div><span class="meta" id="bullLoc">Belgique · Uccle · live</span></div>
+  <div class="eyebrow" style="margin-bottom:10px" id="bullToday">Aujourd'hui</div>
+  <div class="parts" id="bullParts"></div>
+  <div class="sec-h" style="margin-top:26px"><h2 style="font-size:20px">Jours suivants</h2><div class="rule"></div></div>
+  <div class="days" id="bullDays"></div>
+  <div class="sec-h" style="margin-top:26px"><h2 style="font-size:20px">14 jours</h2><div class="rule"></div><span class="meta">température + risque de bascule</span></div>
+  <div class="panel"><div class="chartwrap" id="bullChart"></div>
+    <div class="clegend">
+      <span><i class="d" style="background:var(--c4)"></i>Maxi (°C)</span>
+      <span><i class="d" style="background:var(--c2)"></i>Mini (°C)</span>
+      <span class="bsl">Bande du bas = risque de bascule&nbsp; <i class="sw" style="background:var(--c1)"></i><i class="sw" style="background:var(--c2)"></i><i class="sw" style="background:var(--c3)"></i><i class="sw" style="background:var(--c4)"></i> &nbsp;⚡ = transition/bascule</span>
     </div>
-  </footer>
-
-</div>
-
-<script>
-/* ====================== BOOT ====================== */
-const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-(function bootWord(){
-  const w='MeteoVoid', el=document.getElementById('bootWord');
-  [...w].forEach((c,i)=>{
-    const s=document.createElement('span');
-    s.textContent=c;
-    if(i>=5) s.className='boot-void';
-    s.style.animationDelay=(.25+i*.05)+'s';
-    el.appendChild(s);
-  });
-})();
-const bootMsgs=['initialisation de l\'instrument…','lecture des couches atmosphériques…','calcul de la surface de bascule…','synchronisation Open-Meteo…'];
-let bm=0;
-const bootStatus=document.getElementById('bootStatus');
-const bootTimer=setInterval(()=>{bm=(bm+1)%bootMsgs.length;bootStatus.textContent=bootMsgs[bm];},600);
-function endBoot(){
-  clearInterval(bootTimer);
-  document.getElementById('boot').classList.add('gone');
-}
-setTimeout(endBoot, reduce?400:2700);
-
-/* ====================== STORM CANVAS ====================== */
-const cv=document.getElementById('sky'), cx=cv.getContext('2d');
-let W,H,DPR, score=0.15, flash=0, bolt=null, boltT=0;
-function resize(){
-  DPR=Math.min(devicePixelRatio||1,2);
-  W=cv.width=innerWidth*DPR; H=cv.height=innerHeight*DPR;
-  cv.style.width=innerWidth+'px'; cv.style.height=innerHeight+'px';
-}
-resize(); addEventListener('resize',resize);
-
-const clouds=Array.from({length:7},()=>({
-  x:Math.random(), y:.1+Math.random()*.5, r:.18+Math.random()*.26,
-  sp:(.004+Math.random()*.01)*(Math.random()<.5?-1:1),
-  hue:Math.random()<.5?'88,108,240':'53,224,206', a:.05+Math.random()*.07
-}));
-const drops=Array.from({length:140},()=>({x:Math.random(),y:Math.random(),len:.01+Math.random()*.02,sp:.008+Math.random()*.012}));
-
-function makeBolt(){
-  const x0=(.2+Math.random()*.6)*W; let x=x0,y=0; const pts=[[x,y]];
-  const seg=H/12;
-  while(y<H*.7){ y+=seg*(.6+Math.random()*.6); x+=(Math.random()-.5)*W*.06; pts.push([x,y]); }
-  return pts;
-}
-function draw(){
-  cx.clearRect(0,0,W,H);
-  // base gradient sky
-  const g=cx.createLinearGradient(0,0,0,H);
-  g.addColorStop(0,'#070b12'); g.addColorStop(.6,'#0a0f18'); g.addColorStop(1,'#05070b');
-  cx.fillStyle=g; cx.fillRect(0,0,W,H);
-  // clouds
-  clouds.forEach(c=>{
-    c.x+=c.sp/200; if(c.x>1.3)c.x=-.3; if(c.x<-.3)c.x=1.3;
-    const cxp=c.x*W, cyp=c.y*H, rr=c.r*W;
-    const rg=cx.createRadialGradient(cxp,cyp,0,cxp,cyp,rr);
-    rg.addColorStop(0,`rgba(${c.hue},${c.a})`); rg.addColorStop(1,'rgba(0,0,0,0)');
-    cx.fillStyle=rg; cx.beginPath(); cx.arc(cxp,cyp,rr,0,7); cx.fill();
-  });
-  // rain (density scales with score)
-  const rainN=Math.floor(30+score*110);
-  cx.strokeStyle='rgba(150,180,200,.16)'; cx.lineWidth=DPR;
-  for(let i=0;i<rainN;i++){
-    const d=drops[i]; d.y+=d.sp; if(d.y>1)d.y=-.05,d.x=Math.random();
-    cx.beginPath(); cx.moveTo(d.x*W,d.y*H); cx.lineTo(d.x*W-3*DPR,(d.y+d.len)*H); cx.stroke();
-  }
-  // lightning trigger — frequency follows score
-  if(!reduce && Math.random()<0.002+score*0.02 && flash<=0){
-    flash=1; bolt=makeBolt(); boltT=1;
-    triggerColumnFlash();
-  }
-  if(flash>0){
-    cx.fillStyle=`rgba(255,247,214,${flash*0.18})`; cx.fillRect(0,0,W,H);
-    flash-=0.04;
-  }
-  if(bolt && boltT>0){
-    cx.strokeStyle=`rgba(255,247,214,${boltT})`; cx.lineWidth=2.4*DPR;
-    cx.shadowColor='rgba(255,233,138,.9)'; cx.shadowBlur=18*DPR;
-    cx.beginPath(); cx.moveTo(bolt[0][0],bolt[0][1]);
-    bolt.forEach(p=>cx.lineTo(p[0],p[1])); cx.stroke(); cx.shadowBlur=0;
-    boltT-=0.05; if(boltT<=0)bolt=null;
-  }
-  // horizon glow
-  const hg=cx.createLinearGradient(0,H*.82,0,H);
-  hg.addColorStop(0,'rgba(53,224,206,0)'); hg.addColorStop(1,`rgba(53,224,206,${0.04+score*0.05})`);
-  cx.fillStyle=hg; cx.fillRect(0,H*.82,W,H*.18);
-  requestAnimationFrame(draw);
-}
-if(reduce){ // single static frame
-  const g=cx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#070b12');g.addColorStop(1,'#05070b');
-  cx.fillStyle=g;cx.fillRect(0,0,W,H);
-  clouds.forEach(c=>{const rg=cx.createRadialGradient(c.x*W,c.y*H,0,c.x*W,c.y*H,c.r*W);rg.addColorStop(0,`rgba(${c.hue},${c.a})`);rg.addColorStop(1,'rgba(0,0,0,0)');cx.fillStyle=rg;cx.beginPath();cx.arc(c.x*W,c.y*H,c.r*W,0,7);cx.fill();});
-}else draw();
-
-function triggerColumnFlash(){
-  const col=document.getElementById('column');
-  if(score>0.42){col.classList.remove('breach');void col.offsetWidth;col.classList.add('breach');}
-}
-
-/* ====================== DATA · OPEN-METEO ====================== */
-const LAT=50.80, LON=4.358;
-const clamp01=x=>Math.max(0,Math.min(1,x));
-const FR_DAYS=['dim','lun','mar','mer','jeu','ven','sam'];
-
-function basculeScore(cape,li,trig,cin){
-  const charge=clamp01((cape||0)/2500);
-  const instab=clamp01(((li==null?0:-li)+2)/10);
-  const t=clamp01((trig||0)/100);
-  const lid = cin!=null ? clamp01(cin/160) : (0.45*(1-t));
-  let s=(0.5*charge+0.5*instab)*(0.35+0.65*t)*(1-0.6*lid);
-  if(charge>0.5 && t>0.5) s=Math.min(1,s+0.12);
-  return clamp01(s);
-}
-function stateOf(s){
-  if(s<0.18)return['STABLE','s-stable',0,"L'atmosphère est calme : pas d'énergie mobilisable à court terme."];
-  if(s<0.42)return['LATENT','s-latent',1,"De l'énergie se charge sous le couvercle — rien ne perce encore."];
-  if(s<0.68)return['TRANSITION','s-transition',2,"Le forçage approche le couvercle : la bascule devient possible."];
-  return['BASCULE','s-bascule',3,"Le seuil est franchi : l'atmosphère bascule, surveillance rapprochée."];
-}
-function humidex(t,rh){
-  if(t==null||rh==null)return null;
-  const a=17.27,b=237.7; const al=(a*t)/(b+t)+Math.log(rh/100);
-  const td=(b*al)/(a-al);
-  const e=6.11*Math.exp(5417.7530*(1/273.16-1/(273.15+td)));
-  return t+0.5555*(e-10);
-}
-
-async function load(){
-  const base=`https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}`
-    +`&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max`
-    +`&forecast_days=6&timezone=Europe%2FBrussels&hourly=`;
-  const full='temperature_2m,relative_humidity_2m,precipitation_probability,cape,lifted_index,convective_inhibition';
-  const lite='temperature_2m,relative_humidity_2m,precipitation_probability,cape,lifted_index';
-  for(const vars of [full,lite]){
-    try{
-      const r=await fetch(base+vars); if(!r.ok)continue;
-      const d=await r.json(); if(!d.hourly)continue;
-      render(d); return;
-    }catch(e){/* try next */}
-  }
-  fail();
-}
-function fail(){
-  document.getElementById('stateWord').textContent='HORS LIGNE';
-  document.getElementById('stateLine').innerHTML='Données Open-Meteo momentanément indisponibles. <b>Réessaie</b> dans un instant — l\'instrument reprend dès que la source répond.';
-  document.getElementById('hours').innerHTML='<div style="font-family:var(--mono);font-size:.8rem;color:var(--ink-dim);padding:20px">Flux indisponible.</div>';
-}
-
-function render(d){
-  const h=d.hourly, now=Date.now();
-  let idx=h.time.findIndex(t=>new Date(t).getTime()>=now-3600e3);
-  if(idx<0)idx=0;
-  const cape=h.cape?.[idx], li=h.lifted_index?.[idx], trig=h.precipitation_probability?.[idx];
-  const cin=h.convective_inhibition?.[idx];
-  score=basculeScore(cape,li,trig,cin);
-
-  // headline
-  const [word,cls,step,line]=stateOf(score);
-  const sw=document.getElementById('stateWord');
-  sw.textContent=word; sw.className='state '+cls;
-  document.getElementById('stateLine').innerHTML=line;
-  document.getElementById('scorePct').textContent=Math.round(score*100)+' / 100';
-  document.getElementById('railFill').style.right=(100-score*100)+'%';
-  [...document.querySelectorAll('#railMarks i')].forEach((m,i)=>m.classList.toggle('act',i===step));
-
-  // metrics
-  const set=(id,v,suf='')=>document.getElementById(id).innerHTML=(v==null?'—':Math.round(v))+(suf?`<u> ${suf}</u>`:'');
-  set('mCape',cape,'J/kg'); set('mCin',cin,'J/kg');
-  document.getElementById('mLi').textContent=(li==null?'—':li.toFixed(1));
-  set('mTrig',trig,'%');
-
-  // colonne de bascule
-  // La jauge doit représenter le même score que le verdict :
-  // BASCULE commence à 0.68, donc la charge doit franchir ce seuil.
-  // CAPE/CIN restent visibles dans les métriques, mais ne déplacent plus
-  // la ligne de seuil au-dessus de la charge.
-  const thresholdBottom=68;
-  const charge=score*100;
-  const ch=document.getElementById('colCharge');
-  ch.style.height=charge+'%';
-  ch.classList.toggle('hot',score>0.5);
-  document.getElementById('colLid').style.bottom=thresholdBottom+'%';
-  document.getElementById('colSeuil').style.bottom=thresholdBottom+'%';
-
-  // prochaines heures (24h)
-  const hc=document.getElementById('hours'); hc.innerHTML='';
-  for(let i=idx;i<idx+24 && i<h.time.length;i++){
-    const s=basculeScore(h.cape?.[i],h.lifted_index?.[i],h.precipitation_probability?.[i],h.convective_inhibition?.[i]);
-    const dt=new Date(h.time[i]);
-    const el=document.createElement('div');
-    el.className='hbar'+(s>0.68?' crit':s>0.42?' warn':'');
-    el.innerHTML=`<div class="col"><i style="height:${Math.max(3,s*160)}px"></i></div>
-      <k>${dt.getHours()}h</k><v>${Math.round(s*100)}</v>`;
-    hc.appendChild(el);
-  }
-
-  // bulletin
-  const da=d.daily, cards=document.getElementById('cards'); cards.innerHTML='';
-  da.time.forEach((t,i)=>{
-    const dt=new Date(t), today=i===0;
-    // max bascule sur la journée
-    let dayMax=0;
-    h.time.forEach((ht,hi)=>{ if(ht.slice(0,10)===t){ const s=basculeScore(h.cape?.[hi],h.lifted_index?.[hi],h.precipitation_probability?.[hi],h.convective_inhibition?.[hi]); if(s>dayMax)dayMax=s; }});
-    const lab=dayMax>0.68?'bascule':dayMax>0.42?'transition':dayMax>0.18?'latent':'stable';
-    const col=dayMax>0.68?'var(--danger)':dayMax>0.42?'var(--amber)':'var(--teal)';
-    const c=document.createElement('div'); c.className='card'+(today?' today':'');
-    c.innerHTML=`<div class="day">${today?'aujourd\'hui':FR_DAYS[dt.getDay()]+' '+dt.getDate()}</div>
-      <div class="tmax">${Math.round(da.temperature_2m_max[i])}°</div>
-      <div class="tmin">min ${Math.round(da.temperature_2m_min[i])}°</div>
-      <div class="bnote" style="color:${col}">${lab}</div>
-      <div class="brisk"><i style="width:${Math.round(dayMax*100)}%"></i></div>`;
-    cards.appendChild(c);
-  });
-
-  // chaleur — humidex max sur 24h
-  let hxMax=-99;
-  for(let i=idx;i<idx+24 && i<h.time.length;i++){
-    const hx=humidex(h.temperature_2m?.[i],h.relative_humidity_2m?.[i]);
-    if(hx!=null && hx>hxMax)hxMax=hx;
-  }
-  const hv=document.getElementById('heatVal');
-  if(hxMax>-99){
-    hv.textContent=Math.round(hxMax);
-    const pct=clamp01((hxMax-20)/30); // 20→50
-    const c=hxMax>45?'var(--danger)':hxMax>40?'var(--amber)':hxMax>30?'#e8c24a':'var(--teal)';
-    document.getElementById('heatDial').style.background=
-      `conic-gradient(${c} 0 ${pct*100}%, var(--line) ${pct*100}%)`;
-  }else hv.textContent='—';
-}
-load();
-
-/* ====================== SCROLL REVEALS ====================== */
-const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)e.target.classList.add('in')}),{threshold:.12});
-document.querySelectorAll('.reveal').forEach(s=>io.observe(s));
-</script>
-</body>
-</html>
+  </div>
+  <p class="note">Prévisions Open-Meteo (modèles haute résolution). La bande de risque est l'anticipation de bascule par jour — pas une confirmation radar.</p>
+</div></section><section class="view" id="view-chaleur"><div class="sec">
+  <div class="sec-h"><h2>Chaleur</h2><div class="rule"></div><span class="meta">humidex · ressenti · live</span></div>
+  <div class="heatgrid">
+    <div class="heatdial"><div class="eyebrow" style="justify-content:center;margin-bottom:10px">Humidex max · Belgique</div>
+      <div class="big" id="hxBig">—</div><div class="lbl">ressenti</div>
+      <div class="cmf" id="hxCmf">—</div>
+      <div style="font-size:12.5px;color:var(--dim);margin-top:14px" id="hxSub"></div></div>
+    <div class="panel"><div class="bars" id="heatBars" style="height:210px"></div>
+      <div class="hnote"><span>Échelle ressenti : <b style="color:var(--c1)">&lt;30 confort</b> · <b style="color:var(--c2)">30–39 inconfort</b> · <b style="color:var(--c3)">40–45 forte gêne</b> · <b style="color:var(--c4)">&gt;45 danger</b></span></div></div>
+  </div>
+</div></section><section class="view" id="view-reseau"><div class="sec">
+  <div class="sec-h"><h2>Réseau de détection</h2><div class="rule"></div><span class="meta" id="netMeta">stations · live</span></div>
+  <div class="net" id="net"></div>
+</div></section><section class="view" id="view-expert"><div class="sec">
+  <div class="sec-h"><h2>Expert · composantes de la bascule</h2><div class="rule"></div><span class="meta">Belgique · live · proxy modèle</span></div>
+  <div class="comp" id="comp"></div>
+  <div class="note"><b>Lecture honnête.</b> Chaque composante est un proxy transparent dérivé des indices Open-Meteo —
+    aucune n'est une mesure radar/foudre. Le signal de bascule combine charge, couvercle et déclenchement.</div>
+</div></section><section class="view" id="view-methode"><div class="sec">
+  <div class="sec-h"><h2>Comment se lit une bascule</h2><div class="rule"></div></div>
+  <div class="steps">
+    <div class="step"><div class="n">1</div><div><h4>L'énergie se charge</h4><p>Chaleur et humidité empilent du CAPE dans les basses couches.</p></div></div>
+    <div class="step"><div class="n">2</div><div><h4>Le couvercle retient</h4><p>Une couche d'inhibition (CIN) empêche le déclenchement — l'énergie s'accumule sous pression.</p></div></div>
+    <div class="step"><div class="n">3</div><div><h4>La percée</h4><p>Quand le forçage dépasse le couvercle, l'atmosphère bascule : c'est le moment que MeteoVoid anticipe.</p></div></div>
+  </div>
+  <div class="sec-h" style="margin-top:28px"><h2 style="font-size:20px">Sources &amp; limites</h2><div class="rule"></div></div>
+  <div class="ing">
+    <div class="cell2"><div class="k">Indices</div><div class="v" style="font-size:18px">Open-Meteo</div><div class="u">CAPE · CIN · LI · CC BY 4.0</div></div>
+    <div class="cell2"><div class="k">Radar / satellite</div><div class="v" style="font-size:18px">RainViewer</div><div class="u">couche d'affichage</div></div>
+    <div class="cell2"><div class="k">Statut</div><div class="v" style="font-size:18px">Non officiel</div><div class="u">ne remplace pas l'IRM/KMI</div></div>
+  </div>
+  <div class="note"><b>Anticipation ≠ confirmation.</b> Une bascule affichée n'est pas une cellule confirmée tant que le radar ne l'a pas vue.</div>
+</div></section><footer class="wrap" style="padding-left:0;padding-right:0">MeteoVoid · Storm-scope · prototype non officiel · indices Open-Meteo · radar RainViewer · ori-c.be</footer>
+</main></div>
+<script>window.MV_PAGE={"kind": "dashboard", "region": "belgium", "label": "Belgique", "center": [50.799, 4.358]};</script>
+<script src="assets/regions.js"></script>
+<script src="assets/site-api-adapter.js"></script>
+<script src="assets/app.js"></script>
+</body></html>

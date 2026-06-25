@@ -37,11 +37,11 @@ def assert_site(site_dir: Path) -> None:
     accueil_html = (site_dir / "accueil.html").read_text(encoding="utf-8")
     index_html = (site_dir / "index.html").read_text(encoding="utf-8")
     assert "MeteoVoid accueil stormscope portal" in accueil_html
-    assert "Entrer · Belgique en direct" in accueil_html
+    assert "Entrer · Belgique live" in accueil_html
     assert "api/watch.json" in accueil_html
-    assert "MeteoVoid belgium standalone stormscope dashboard" in index_html
+    assert "MeteoVoid belgium operational stormscope dashboard" in index_html
     assert "Prochaines heures" in index_html
-    assert 'href="carte.html"' in index_html
+    assert 'href="#carte"' in index_html
     app_js = (site_dir / "assets" / "app.js").read_text(encoding="utf-8")
     assert "map-static-fallback" in app_js
     assert "country-contract-live" in app_js
