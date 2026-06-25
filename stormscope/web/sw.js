@@ -1,4 +1,4 @@
-const CACHE_NAME = "meteovoid-stormscope-static-v15-mobile-overflow-live-refresh-fix";
+const CACHE_NAME = "meteovoid-stormscope-static-v16-deep-platform-audit-gauge-fix-mobile-live-model-compare";
 const STATIC_ASSETS = [
   "./",
   "./index.html",
@@ -23,6 +23,7 @@ const STATIC_ASSETS = [
   "./assets/alert-watch-panels.js",
   "./assets/europe-sources-panel.js",
   "./assets/deep-platform-panels.js",
+  "./assets/model-compare-panel.js",
 ];
 
 self.addEventListener("install", (event) => {

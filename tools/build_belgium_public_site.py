@@ -38,6 +38,7 @@ if _SRC.exists() and str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 from meteovoid.deep_platform import build_deep_platform_api  # noqa: E402
 from meteovoid.europe_country import build_all_countries  # noqa: E402
+from meteovoid.model_compare import build_model_compare_api  # noqa: E402
 from meteovoid.europe_sources import (  # noqa: E402
     build_europe_sources_api,
     public_profile_for_country,
@@ -3268,6 +3269,10 @@ def build_api(vm: dict[str, Any], site_dir: Path, report_dir: Path | None = None
         _write_json(api_dir / "schema_catalog.json", deep_api.get("schema_catalog", {}))
         _write_json(api_dir / "platform.json", deep_api.get("platform", {}))
 
+    model_compare_payload = build_model_compare_api(map_live_payload, generated_at=generated_at)
+    _write_json(api_dir / "model_compare.json", model_compare_payload)
+    _write_json(api_dir / "models" / "open_meteo_multimodel.json", model_compare_payload)
+
     _write_json(
         api_dir / "index.json",
         {
@@ -3636,6 +3641,9 @@ def _prepare_stormscope_html(html: str, *, default_view: str = "veille") -> str:
     deep_platform_script = '<script src="assets/deep-platform-panels.js"></script>'
     if deep_platform_script not in html and app_script in html:
         html = html.replace(app_script, app_script + "\n" + deep_platform_script)
+    model_compare_script = '<script src="assets/model-compare-panel.js"></script>'
+    if model_compare_script not in html and app_script in html:
+        html = html.replace(app_script, app_script + "\n" + model_compare_script)
     if default_view and default_view != "veille" and "METEOVOID_DEFAULT_VIEW" not in html:
         safe_view = default_view.replace("'", "")
         jump = (
