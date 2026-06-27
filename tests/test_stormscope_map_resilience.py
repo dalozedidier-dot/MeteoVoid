@@ -27,5 +27,10 @@ def test_stormscope_map_has_immediate_fallback_and_safe_geojson(tmp_path: Path) 
     assert "networkFirst(event.request)" in sw_js
     assert "trySiteApiMap" in app_js
     assert "alert-watch-live" in app_js
+    # Le réseau de stations doit survivre à un contrat live sans stations :
+    # on reconstitue le maillage configuré à partir de la grille modèle, à la
+    # fois pour la carte et pour le tableau de bord (vue Réseau).
+    assert "stationsFromConfigGrid" in app_js
+    assert app_js.count("stationsFromConfigGrid(R,") >= 2
     adapter_js = (site_dir / "assets" / "site-api-adapter.js").read_text(encoding="utf-8")
     assert "loadMapLiveFromSiteApi" in adapter_js
