@@ -1,4 +1,4 @@
-const CACHE_NAME = "meteovoid-stormscope-static-v19-station-network-fallback-deep-platform-audit";
+const CACHE_NAME = "meteovoid-stormscope-static-v19-entry-dashboard-split-station-network-fallback-deep-platform-audit";
 const STATIC_ASSETS = [
   "./",
   "./index.html",
