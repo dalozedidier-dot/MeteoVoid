@@ -106,7 +106,7 @@ jobs:
           cache: pip
 
       - name: Restore MeteoVoid history
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: .meteovoid_history
           key: belgium-alert-history-${{ github.ref_name }}-${{ github.run_id }}
@@ -223,7 +223,7 @@ jobs:
 
       - name: Save MeteoVoid history
         if: always()
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@v6
         with:
           path: .meteovoid_history
           key: belgium-alert-history-${{ github.ref_name }}-${{ github.run_id }}-${{ github.run_attempt }}
