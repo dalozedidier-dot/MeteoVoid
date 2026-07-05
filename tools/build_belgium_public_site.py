@@ -338,6 +338,53 @@ def _hour_label(iso: Any) -> str:
     return text or "—"
 
 
+def _parse_iso_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _freshness(generated_at: Any, *, now: datetime | None = None) -> dict[str, Any]:
+    generated = _parse_iso_datetime(generated_at)
+    max_fresh = 90
+    max_stale = 180
+    if generated is None:
+        return {
+            "status": "unknown",
+            "label": "horodatage absent",
+            "age_minutes": None,
+            "max_fresh_minutes": max_fresh,
+            "max_stale_minutes": max_stale,
+        }
+    current = (now or datetime.now(UTC)).astimezone(UTC)
+    age_minutes = max(0, int((current - generated).total_seconds() // 60))
+    if age_minutes <= max_fresh:
+        status = "fresh"
+        label = f"run frais - {age_minutes} min"
+    elif age_minutes <= max_stale:
+        status = "aging"
+        label = f"run a surveiller - {age_minutes} min"
+    else:
+        status = "stale"
+        label = f"run ancien - {age_minutes} min"
+    return {
+        "status": status,
+        "label": label,
+        "age_minutes": age_minutes,
+        "max_fresh_minutes": max_fresh,
+        "max_stale_minutes": max_stale,
+    }
+
+
 # --- view-model building ---------------------------------------------------------
 
 
@@ -1782,6 +1829,7 @@ def build_view_model(report_dir: Path) -> dict[str, Any]:
             "convective_live": "api/convective_live.json",
         },
     }
+    meta["freshness"] = _freshness(meta["generated_at"])
 
     simple = {
         "operational_level": op_level,
@@ -2094,6 +2142,7 @@ def _build_alert_watch_api(vm: dict[str, Any]) -> dict[str, Any]:
         "run_id": meta.get("run_id"),
         "timezone": meta.get("timezone"),
         "data_mode": meta.get("data_mode"),
+        "freshness": meta.get("freshness"),
         "disclaimer": meta.get("disclaimer"),
         "latest": {
             "operational_level": simple.get("operational_level"),
@@ -3114,6 +3163,7 @@ def build_api(vm: dict[str, Any], site_dir: Path, report_dir: Path | None = None
             "timezone": meta.get("timezone"),
             "data_mode": meta.get("data_mode"),
             "window": meta.get("window"),
+            "freshness": meta.get("freshness"),
             "disclaimer": meta.get("disclaimer"),
             "operational_level": vm["simple"]["operational_level"],
             "severity": vm["simple"]["severity"],
@@ -5082,9 +5132,18 @@ function updateLiveBadges(vm){
   const fm=document.getElementById("footerMode"); if(fm)fm.textContent=String(modeLabel).replace(/demo/gi,"run");
   const live=document.getElementById("liveState"); if(live)live.textContent="dernier run publié";
 }
+function updateFreshnessBadge(vm){
+  const freshness=((vm&&vm.meta)||{}).freshness||{};
+  const live=document.getElementById("liveState");
+  if(live&&freshness.label){
+    live.textContent=freshness.label;
+    live.title=freshness.age_minutes==null?"fraicheur inconnue":`Age du run : ${freshness.age_minutes} min`;
+  }
+}
 function applyLiveModel(vm){
   const state=hydrateFromVM(vm);
   updateLiveBadges(vm);
+  updateFreshnessBadge(vm);
   renderStatic();
   renderBulletin(vm);
   renderDynamicLinks(vm);
@@ -5097,6 +5156,7 @@ function loadLiveModel(){
     .then(r=>r.ok?r.json():Promise.reject(new Error("api_latest_http")))
     .then(latest=>{
       const vm={...FALLBACK,meta:{...(FALLBACK.meta||{}),generated_at:latest.generated_at||FALLBACK.meta?.generated_at,run_id:latest.run_id||FALLBACK.meta?.run_id,data_mode:latest.data_mode||FALLBACK.meta?.data_mode},simple:{...(FALLBACK.simple||{}),operational_level:latest.operational_level||FALLBACK.simple?.operational_level,severity:latest.severity||FALLBACK.simple?.severity,model_score:latest.model_score??FALLBACK.simple?.model_score,score_layers:latest.score_layers||FALLBACK.simple?.score_layers,confidence:latest.confidence||FALLBACK.simple?.confidence,critical_window:latest.critical_window||FALLBACK.simple?.critical_window,main_zone:latest.main_zone||FALLBACK.simple?.main_zone,synthesis:latest.synthesis||FALLBACK.simple?.synthesis,public_wording:latest.public_wording||FALLBACK.simple?.public_wording,official_alert:latest.official_alert??FALLBACK.simple?.official_alert,public_alert_allowed:latest.public_alert_allowed??FALLBACK.simple?.public_alert_allowed,strong_external_confirmation:latest.strong_external_confirmation??FALLBACK.simple?.strong_external_confirmation},operational:{...(FALLBACK.operational||{}),void_collapse_signal:latest.void_collapse_signal??FALLBACK.operational?.void_collapse_signal,transition_level:latest.transition_level||FALLBACK.operational?.transition_level,alert_explanation:latest.alert_explanation||FALLBACK.operational?.alert_explanation}};
+      if(latest.freshness){vm.meta={...(vm.meta||{}),freshness:latest.freshness};}
       return Promise.allSettled([
         fetch("api/stations.json",{cache:"no-store"}).then(r=>r.ok?r.json():null),
         fetch("api/timeline.json",{cache:"no-store"}).then(r=>r.ok?r.json():null),

@@ -272,6 +272,7 @@ def test_latest_api_has_expected_shape(tmp_path: Path) -> None:
     site_dir = tmp_path / "site"
     site.build_index(report_dir, site_dir)
     latest = json.loads((site_dir / "api" / "latest.json").read_text(encoding="utf-8"))
+    watch = json.loads((site_dir / "api" / "watch.json").read_text(encoding="utf-8"))
 
     assert latest["operational_level"]["label"] == "Veille renforcée"
     # operational level "watch_reinforced" must not be painted red (reserved for danger)
@@ -280,6 +281,9 @@ def test_latest_api_has_expected_shape(tmp_path: Path) -> None:
     assert latest["main_zone"]["name"] == "Brabant wallon"
     assert 0.0 <= latest["confidence"]["score"] <= 1.0
     assert latest["alert_explanation"]["bullets"]
+    assert latest["freshness"]["status"] in {"fresh", "aging", "stale"}
+    assert latest["freshness"]["age_minutes"] >= 0
+    assert watch["freshness"] == latest["freshness"]
 
 
 def test_level_meta_reserves_red_for_real_danger() -> None:
