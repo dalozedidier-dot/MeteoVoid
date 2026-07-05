@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 env:
-  PIP_CONSTRAINT: constraints-ci.txt
+  PIP_CONSTRAINT: ${{ github.workspace }}/constraints-ci.txt
   PYTHONFAULTHANDLER: "1"
   PYTHONUNBUFFERED: "1"
 
