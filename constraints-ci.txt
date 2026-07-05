@@ -1,0 +1,9 @@
+# CI-only constraints for native-heavy dependencies.
+#
+# The package metadata intentionally allows broad dependency ranges so library
+# users can resolve with their own stack. GitHub Actions, however, should avoid
+# silently jumping to brand-new native wheels that can segfault during pytest.
+numpy<2.3
+pandas<3
+matplotlib<3.10
+coverage<8
