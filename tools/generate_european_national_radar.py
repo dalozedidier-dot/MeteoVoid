@@ -18,6 +18,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--enable-live", action="store_true")
     parser.add_argument("--timeout-s", type=float, default=8.0)
     parser.add_argument(
+        "--generated-at",
+        default=None,
+        help="Optional ISO timestamp for deterministic generated_at fields.",
+    )
+    parser.add_argument(
         "--country-radar-file",
         action="append",
         default=[],
@@ -30,6 +35,7 @@ def main(argv: list[str] | None = None) -> int:
         live=bool(args.enable_live),
         timeout_s=float(args.timeout_s),
         country_files=parse_country_files(list(args.country_radar_file or [])),
+        generated_at=args.generated_at,
     )
     print(Path(args.out_dir) / "european_national_radar_status.json")
     print(f"status={payload.get('status')}")

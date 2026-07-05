@@ -58,6 +58,22 @@ def test_write_outputs_and_csv(tmp_path: Path) -> None:
     assert status["summary"]["country_count"] >= 4
 
 
+def test_generated_at_can_be_fixed_for_deterministic_outputs(tmp_path: Path) -> None:
+    generated_at = "2026-01-02T03:04:05+00:00"
+    payload = write_european_national_radar_outputs(tmp_path, generated_at=generated_at)
+    metrics = json.loads((tmp_path / "european_national_radar_metrics.json").read_text())
+    assert payload["generated_at"] == generated_at
+    assert payload["metrics"]["generated_at"] == generated_at
+    assert metrics["generated_at"] == generated_at
+
+
+def test_source_date_epoch_controls_generated_at(monkeypatch) -> None:
+    monkeypatch.setenv("SOURCE_DATE_EPOCH", "0")
+    payload = build_european_national_radar(live=False)
+    assert payload["generated_at"] == "1970-01-01T00:00:00+00:00"
+    assert payload["metrics"]["generated_at"] == "1970-01-01T00:00:00+00:00"
+
+
 def test_live_probe_success_without_api_key(tmp_path: Path, monkeypatch) -> None:
     config = tmp_path / "cfg.yaml"
     config.write_text(

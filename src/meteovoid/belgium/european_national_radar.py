@@ -20,7 +20,19 @@ COUNTRY_ORDER = ["france", "netherlands", "spain", "switzerland"]
 
 
 def _utc_now() -> str:
-    return datetime.now(UTC).astimezone().isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _generated_at(value: str | None = None) -> str:
+    if value:
+        return value
+    epoch = os.getenv("SOURCE_DATE_EPOCH", "").strip()
+    if epoch:
+        try:
+            return datetime.fromtimestamp(int(epoch), tz=UTC).isoformat(timespec="seconds")
+        except (OverflowError, OSError, ValueError):
+            pass
+    return _utc_now()
 
 
 def _json_dumps(payload: Any) -> str:
@@ -270,6 +282,7 @@ def build_european_national_radar(
     live: bool = False,
     timeout_s: float | None = None,
     country_files: dict[str, list[Path]] | None = None,
+    generated_at: str | None = None,
 ) -> dict[str, Any]:
     config = _load_yaml(config_path)
     runtime_raw = config.get("runtime")
@@ -340,9 +353,10 @@ def build_european_national_radar(
         )
 
     status = "machine_metrics_available" if any_machine else "interfaces_ready_no_machine_data"
+    generated = _generated_at(generated_at)
     return {
         "contract": "meteovoid_european_national_radar_v1",
-        "generated_at": _utc_now(),
+        "generated_at": generated,
         "enabled": True,
         "live_probe_enabled": bool(live),
         "status": status,
@@ -351,7 +365,7 @@ def build_european_national_radar(
         "countries": countries,
         "metrics": {
             "contract": "meteovoid_european_national_radar_metrics_v1",
-            "generated_at": _utc_now(),
+            "generated_at": generated,
             "status": "metrics_available" if any_machine else "no_country_machine_metrics",
             "machine_radar_available": any_machine,
             "countries": metrics,
@@ -488,6 +502,7 @@ def write_european_national_radar_outputs(
     live: bool = False,
     timeout_s: float | None = None,
     country_files: dict[str, list[Path]] | None = None,
+    generated_at: str | None = None,
 ) -> dict[str, Any]:
     root = Path(out_dir)
     root.mkdir(parents=True, exist_ok=True)
@@ -499,6 +514,7 @@ def write_european_national_radar_outputs(
         live=live,
         timeout_s=timeout_s,
         country_files=country_files,
+        generated_at=generated_at,
     )
     status_name = str(outputs.get("status_json") or "european_national_radar_status.json")
     metrics_name = str(outputs.get("metrics_json") or "european_national_radar_metrics.json")
