@@ -5,5 +5,5 @@
 # silently jumping to brand-new native wheels that can segfault during pytest.
 numpy<2.5
 pandas<4
-matplotlib<3.10
+matplotlib<3.12
 coverage<8
