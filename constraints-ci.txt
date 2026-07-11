@@ -3,7 +3,7 @@
 # The package metadata intentionally allows broad dependency ranges so library
 # users can resolve with their own stack. GitHub Actions, however, should avoid
 # silently jumping to brand-new native wheels that can segfault during pytest.
-numpy<2.3
+numpy<2.5
 pandas<4
 matplotlib<3.10
 coverage<8
