@@ -4,6 +4,6 @@
 # users can resolve with their own stack. GitHub Actions, however, should avoid
 # silently jumping to brand-new native wheels that can segfault during pytest.
 numpy<2.3
-pandas<3
+pandas<4
 matplotlib<3.10
 coverage<8
